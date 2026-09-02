@@ -18,7 +18,11 @@ export const metadata: Metadata = {
     "Clinic Natin bridges patients and doctors in Cagayan de Oro. Secure your queue spot digitally, avoid 7 AM manual lines, and monitor live queue numbers from anywhere.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
