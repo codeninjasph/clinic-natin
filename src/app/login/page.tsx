@@ -73,19 +73,7 @@ function LoginFormContent() {
       });
 
       if (error) {
-        // If sign in fails, offer to create account
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (signUpError) {
-          throw signUpError;
-        }
-        setSuccessMessage('Account created and signed in! Redirecting to Health Passport setup...');
-        setTimeout(() => {
-          router.push('/onboarding');
-        }, 700);
-        return;
+        throw error;
       }
 
       // Check user role and onboarding status
