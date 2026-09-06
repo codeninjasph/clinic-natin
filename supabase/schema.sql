@@ -128,12 +128,28 @@ CREATE TABLE IF NOT EXISTS profiles (
     avatar_url TEXT,
     date_of_birth DATE,
     gender TEXT CHECK (gender IN ('MALE', 'FEMALE', 'OTHER')),
+    blood_type TEXT,
+    weight_kg NUMERIC,
+    height_cm NUMERIC,
+    allergies TEXT[] DEFAULT '{}'::TEXT[],
+    comorbidities TEXT[] DEFAULT '{}'::TEXT[],
+    maintenance_meds TEXT[] DEFAULT '{}'::TEXT[],
+    priority_category TEXT DEFAULT 'NONE',
+    priority_id_number TEXT,
+    hmo_provider TEXT,
+    hmo_card_number TEXT,
+    philhealth_number TEXT,
+    emergency_contact_name TEXT,
+    emergency_contact_phone TEXT,
+    emergency_contact_relationship TEXT,
+    is_onboarding_completed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_profiles_auth_id ON profiles(auth_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_phone ON profiles(phone_number);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
 
 -- ============================================================================
 -- 3. DOCTORS & CLINIC SECRETARIES

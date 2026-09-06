@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
   User, Settings, Bell, Ticket, Activity, FileText, Pill,
   ChevronDown, ChevronRight, Calendar, MapPin, Stethoscope,
   RefreshCw, Wifi, WifiOff, Search, AlertCircle, CheckCircle2,
-  FlaskConical, Microscope, Zap, Phone, Mail,
+  FlaskConical, Microscope, Zap, Phone, Mail, HeartPulse,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -797,13 +798,20 @@ export default function PatientDashboardPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-slate-400 mb-0.5">{greeting} &#128075;</p>
                 <h1 className="text-xl font-black text-slate-800 truncate leading-tight">{profile?.full_name ?? firstName}</h1>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
                   {profile?.phone_number && (
                     <span className="flex items-center gap-1 text-[11px] text-slate-400"><Phone className="h-3 w-3" />{profile.phone_number}</span>
                   )}
                   {profile?.email && (
                     <span className="flex items-center gap-1 text-[11px] text-slate-400"><Mail className="h-3 w-3" />{profile.email}</span>
                   )}
+                  <Link
+                    href="/onboarding"
+                    className="inline-flex items-center gap-1 rounded-lg bg-brand-100/70 hover:bg-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand-700 transition"
+                  >
+                    <HeartPulse className="h-3 w-3" />
+                    Health Passport / Vitals &rarr;
+                  </Link>
                 </div>
               </div>
             </>

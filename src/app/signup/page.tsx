@@ -74,9 +74,9 @@ function SignupFormContent() {
       })
     );
 
-    setSuccessMessage('Demo patient profile initialized! Redirecting to live turn tracker...');
+    setSuccessMessage('Demo patient profile initialized! Redirecting to Health Passport setup...');
     setTimeout(() => {
-      router.push('/my-queue');
+      router.push('/onboarding');
     }, 800);
   };
 
@@ -144,8 +144,8 @@ function SignupFormContent() {
 
       setSuccessMessage('Account created successfully! Welcome to Clinic Natin.');
       setTimeout(() => {
-        router.push('/my-queue');
-      }, 900);
+        router.push('/onboarding');
+      }, 800);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign up failed. Please try again.';
       setErrorMessage(msg);
