@@ -81,13 +81,43 @@ function LoginFormContent() {
         if (signUpError) {
           throw signUpError;
         }
-        setSuccessMessage('Account created and signed in! Redirecting...');
-      } else {
-        setSuccessMessage('Welcome back! Loading your dashboard...');
+        setSuccessMessage('Account created and signed in! Redirecting to Health Passport setup...');
+        setTimeout(() => {
+          router.push('/onboarding');
+        }, 700);
+        return;
       }
 
+      // Check user role and onboarding status
+      let destination = returnUrl !== '/dashboard' ? returnUrl : '/my-queue';
+      if (data?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, is_onboarding_completed')
+          .eq('auth_id', data.user.id)
+          .maybeSingle();
+
+        const role = profile?.role || 'PATIENT';
+        document.cookie = `clinic_natin_role=${role}; path=/; max-age=86400; SameSite=Lax`;
+        localStorage.setItem('clinic_natin_demo_role', role);
+
+        if (role === 'SECRETARY' || role === 'ADMIN') {
+          destination = '/secretary/dashboard';
+        } else if (role === 'DOCTOR') {
+          destination = '/doctor/dashboard';
+        } else {
+          // If patient hasn't completed onboarding, bring them to /onboarding
+          if (!profile?.is_onboarding_completed) {
+            destination = '/onboarding';
+          } else {
+            destination = returnUrl === '/dashboard' ? '/my-queue' : returnUrl;
+          }
+        }
+      }
+
+      setSuccessMessage('Welcome back! Redirecting...');
       setTimeout(() => {
-        router.push(returnUrl);
+        router.push(destination);
       }, 700);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Authentication failed';

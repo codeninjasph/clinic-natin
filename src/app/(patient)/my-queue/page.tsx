@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   User, Settings, Bell, Ticket, Activity, FileText, Pill,
@@ -25,6 +26,7 @@ interface UserProfile {
   phone_number: string | null;
   email: string | null;
   avatar_url: string | null;
+  is_onboarding_completed?: boolean | null;
 }
 
 interface QueueSession {
@@ -510,6 +512,7 @@ function MedicalRecordItem({ record }: { record: MedicalRecord }) {
 // ============================================================================
 
 export default function PatientDashboardPage() {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activeAppointments, setActiveAppointments] = useState<ActiveAppointment[]>([]);
   const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
@@ -629,11 +632,16 @@ export default function PatientDashboardPage() {
       if (user) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, full_name, phone_number, email, avatar_url')
+          .select('id, full_name, phone_number, email, avatar_url, is_onboarding_completed')
           .eq('auth_id', user.id)
           .maybeSingle();
 
         if (!profileError && profileData) {
+          // If the patient hasn't completed onboarding yet, redirect to /onboarding
+          if (profileData.is_onboarding_completed === false || profileData.is_onboarding_completed === null) {
+            router.push('/onboarding');
+            return;
+          }
           setProfile(profileData as UserProfile);
           profileId = profileData.id;
         }
