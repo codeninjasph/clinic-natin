@@ -24,6 +24,7 @@ import {
   FileCheck2,
   X,
   Plus,
+  Pencil,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Progress } from '@/components/ui/progress';
@@ -124,7 +125,7 @@ export default function PatientOnboardingPage() {
   const [isCompleted, setIsCompleted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Load existing session data if available
+  // Load existing session data and stored health passport
   useEffect(() => {
     async function loadUser() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -133,19 +134,93 @@ export default function PatientOnboardingPage() {
         if (user.user_metadata?.full_name) {
           setUserName(user.user_metadata.full_name);
         }
-        if (user.user_metadata?.phone_number) {
-          // Pre-fill if needed
+
+        // Fetch stored health passport from profiles table
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('auth_id', user.id)
+          .maybeSingle();
+
+        if (profile) {
+          if (profile.full_name) setUserName(profile.full_name);
+          if (profile.email) setUserEmail(profile.email);
+          if (profile.date_of_birth) setDateOfBirth(profile.date_of_birth);
+          if (profile.gender) setGender(profile.gender);
+          if (profile.blood_type) setBloodType(profile.blood_type);
+          if (profile.weight_kg) setWeightKg(String(profile.weight_kg));
+
+          if (profile.height_cm) {
+            setHeightCm(String(profile.height_cm));
+            const totalInches = Math.round(profile.height_cm / 2.54);
+            setHeightFeet(String(Math.floor(totalInches / 12)));
+            setHeightInches(String(totalInches % 12));
+          }
+
+          if (profile.allergies && Array.isArray(profile.allergies) && profile.allergies.length > 0) {
+            setSelectedAllergies(profile.allergies);
+          }
+          if (profile.comorbidities && Array.isArray(profile.comorbidities) && profile.comorbidities.length > 0) {
+            setSelectedComorbidities(profile.comorbidities);
+          }
+          if (profile.maintenance_meds && Array.isArray(profile.maintenance_meds) && profile.maintenance_meds.length > 0) {
+            setMaintenanceMeds(profile.maintenance_meds);
+          }
+          if (profile.priority_category) setPriorityCategory(profile.priority_category);
+          if (profile.priority_id_number) setPriorityIdNumber(profile.priority_id_number);
+          if (profile.hmo_provider) setHmoProvider(profile.hmo_provider);
+          if (profile.hmo_card_number) setHmoCardNumber(profile.hmo_card_number);
+          if (profile.philhealth_number) setPhilhealthNumber(profile.philhealth_number);
+          if (profile.emergency_contact_name) setEmergencyName(profile.emergency_contact_name);
+          if (profile.emergency_contact_phone) setEmergencyPhone(profile.emergency_contact_phone);
+          if (profile.emergency_contact_relationship) setEmergencyRelation(profile.emergency_contact_relationship);
+
+          // If onboarding was already completed, activate the digital pass view directly!
+          if (profile.is_onboarding_completed) {
+            const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+            if (!urlParams?.get('edit')) {
+              setIsCompleted(true);
+            }
+          }
         }
       } else {
-        // Check local demo persona
-        const demoUser = localStorage.getItem('clinic_natin_demo_user');
-        if (demoUser) {
+        // Check local demo persona or saved localStorage
+        const savedProfileJson = localStorage.getItem('clinic_natin_patient_profile');
+        if (savedProfileJson) {
           try {
-            const parsed = JSON.parse(demoUser);
-            if (parsed.name) setUserName(parsed.name);
+            const parsed = JSON.parse(savedProfileJson);
+            if (parsed.full_name) setUserName(parsed.full_name);
             if (parsed.email) setUserEmail(parsed.email);
+            if (parsed.blood_type) setBloodType(parsed.blood_type);
+            if (parsed.weight_kg) setWeightKg(String(parsed.weight_kg));
+            if (parsed.height_cm) {
+              setHeightCm(String(parsed.height_cm));
+              const totalInches = Math.round(parsed.height_cm / 2.54);
+              setHeightFeet(String(Math.floor(totalInches / 12)));
+              setHeightInches(String(totalInches % 12));
+            }
+            if (parsed.allergies) setSelectedAllergies(parsed.allergies);
+            if (parsed.comorbidities) setSelectedComorbidities(parsed.comorbidities);
+            if (parsed.hmo_provider) setHmoProvider(parsed.hmo_provider);
+            if (parsed.is_onboarding_completed) {
+              const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+              if (!urlParams?.get('edit')) {
+                setIsCompleted(true);
+              }
+            }
           } catch {
             // Ignore
+          }
+        } else {
+          const demoUser = localStorage.getItem('clinic_natin_demo_user');
+          if (demoUser) {
+            try {
+              const parsed = JSON.parse(demoUser);
+              if (parsed.name) setUserName(parsed.name);
+              if (parsed.email) setUserEmail(parsed.email);
+            } catch {
+              // Ignore
+            }
           }
         }
       }
@@ -1193,8 +1268,25 @@ export default function PatientOnboardingPage() {
               </div>
             </div>
 
+            {/* Edit / Update Passport Button */}
+            <div className="text-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsCompleted(false);
+                  setCurrentStep(1);
+                }}
+                className="text-xs font-bold text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-xl gap-1.5"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                <span>Edit Vitals &amp; Health Records</span>
+              </Button>
+            </div>
+
             {/* Next Steps Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 max-w-md mx-auto">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 max-w-md mx-auto">
               <Link
                 href="/#doctor-directory"
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-700 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-brand-700/90 transition active:scale-95"
