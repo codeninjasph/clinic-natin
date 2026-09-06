@@ -24,8 +24,51 @@ import {
   HelpCircle,
   AlertTriangle,
   BadgePercent,
-  Check
+  Check,
+  Ticket,
+  UserPlus,
 } from 'lucide-react';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from '@/components/ui/accordion';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselPrevious,
+  CarouselNext,
+} from '@/components/ui/carousel';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 // ---------------------------------------------------------------------------
 // Doctor Data Types & Sample Records (Cagayan de Oro focused)
@@ -297,20 +340,27 @@ export default function HomePage() {
           </nav>
 
           {/* Action CTAs */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/my-queue"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-brand-300/80 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 hover:border-brand-700/40 active:scale-95"
+            >
+              <Ticket className="h-4 w-4 text-brand-700" />
+              <span>Track Turn</span>
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-brand-800 active:scale-95"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Patient Sign Up</span>
+            </Link>
             <Link
               href="/dashboard"
-              className="rounded-xl border border-brand-300/80 bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 hover:border-brand-700/40 active:scale-95"
+              className="hidden sm:inline-flex rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-95"
             >
-              Clinic Login
+              Staff Portal
             </Link>
-            <a
-              href="#doctor-directory"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700/90 active:scale-95"
-            >
-              <Search className="h-4 w-4" />
-              Find a Doctor
-            </a>
           </div>
         </div>
       </header>
@@ -350,22 +400,38 @@ export default function HomePage() {
               </p>
 
               {/* Primary CTAs */}
-              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
+              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 pt-2">
                 <a
                   href="#doctor-directory"
-                  className="flex w-full sm:w-auto items-center justify-center gap-2.5 rounded-xl bg-brand-700 px-8 py-4 text-base font-bold text-white shadow-lg shadow-brand-700/25 transition-all duration-200 hover:bg-brand-700/90 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+                  className="flex w-full sm:w-auto items-center justify-center gap-2.5 rounded-xl bg-brand-700 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-lg shadow-brand-700/25 transition-all duration-200 hover:bg-brand-700/90 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
                 >
-                  <Search className="h-5 w-5" />
+                  <Search className="h-4 w-4 sm:h-5 sm:w-5" />
                   Find a Doctor
                   <ArrowRight className="h-4 w-4 opacity-80" />
                 </a>
 
                 <Link
-                  href="/dashboard"
-                  className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-brand-300 bg-brand-100 px-7 py-4 text-base font-semibold text-brand-700 shadow-xs transition-all duration-200 hover:bg-brand-300/50 hover:border-brand-700/30"
+                  href="/signup"
+                  className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 px-6 py-3.5 text-sm sm:text-base font-bold text-white shadow-md shadow-emerald-700/20 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
                 >
-                  <Building2 className="h-5 w-5" />
-                  Clinic Partner Login
+                  <UserPlus className="h-4 w-4 sm:h-5 sm:w-5" />
+                  Sign Up as Patient
+                </Link>
+
+                <Link
+                  href="/my-queue"
+                  className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-brand-700/30 bg-brand-50 px-5 py-3.5 text-sm sm:text-base font-bold text-brand-700 shadow-xs transition-all duration-200 hover:bg-brand-100"
+                >
+                  <Ticket className="h-4 w-4 sm:h-5 sm:w-5 text-brand-700" />
+                  Track Turn
+                </Link>
+
+                <Link
+                  href="/dashboard"
+                  className="hidden sm:flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-sm sm:text-base font-semibold text-slate-700 shadow-xs transition-all duration-200 hover:bg-slate-50"
+                >
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400" />
+                  Staff
                 </Link>
               </div>
 
@@ -386,81 +452,220 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Column: Live Queue Tracker Card Simulation */}
+            {/* Right Column: Hero Section Slider (shadcn/ui Carousel) */}
             <div className="lg:col-span-5">
-              <div className="relative mx-auto max-w-md">
-                {/* Decorative border backdrop */}
+              <div className="relative mx-auto max-w-md px-2 sm:px-0">
+                {/* Decorative border backdrop glow */}
                 <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-brand-300 to-brand-700/40 opacity-50 blur-lg" />
                 
-                {/* Interactive Card */}
-                <div className="relative rounded-3xl border border-white/80 bg-white/95 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
-                  {/* Card Header */}
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-                      </span>
-                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                        Live Clinic Tracker
-                      </span>
-                    </div>
-                    <span className="text-xs font-medium text-slate-500">
-                      Maria Reyna XU Hospital
-                    </span>
-                  </div>
+                <Carousel
+                  opts={{
+                    loop: true,
+                    align: 'start',
+                  }}
+                  className="relative w-full"
+                >
+                  <CarouselContent>
+                    {/* Slide 1: Patient Live Queue Tracker */}
+                    <CarouselItem>
+                      <div className="rounded-3xl border border-white/80 bg-white/95 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                            </span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
+                              Live Patient Tracker
+                            </span>
+                          </div>
+                          <span className="text-xs font-medium text-slate-500">
+                            Maria Reyna XU Hospital
+                          </span>
+                        </div>
 
-                  {/* Doctor Info */}
-                  <div className="mt-4 flex items-center gap-3.5">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-base font-bold text-white shadow-sm">
-                      DR
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-base sm:text-lg">
-                        Dr. Reyes, MD
-                      </h3>
-                      <span className="inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
-                        Pediatrics Specialist
-                      </span>
-                    </div>
-                  </div>
+                        <div className="mt-4 flex items-center gap-3.5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-700 text-base font-bold text-white shadow-sm">
+                            DR
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                              Dr. Reyes, MD
+                            </h3>
+                            <span className="inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-700">
+                              Pediatrics Specialist &bull; Rm 304
+                            </span>
+                          </div>
+                        </div>
 
-                  {/* Current Serving Number Display */}
-                  <div className="mt-5 rounded-2xl bg-brand-50 border border-brand-100 p-4 text-center">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Currently Serving
-                    </span>
-                    <div className="text-4xl font-extrabold text-brand-700 tracking-tight my-1">
-                      #14
-                    </div>
-                    <p className="text-xs text-slate-600">
-                      Patient in Room 304 • Est. 8 mins remaining
-                    </p>
-                  </div>
+                        <div className="mt-5 rounded-2xl bg-brand-50 border border-brand-100 p-4 text-center">
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            Currently Serving
+                          </span>
+                          <div className="text-4xl font-extrabold text-brand-700 tracking-tight my-1">
+                            #14
+                          </div>
+                          <p className="text-xs text-slate-600">
+                            Patient in Consultation &bull; Est. 8 mins remaining
+                          </p>
+                        </div>
 
-                  {/* Live Simulation of Patient's Spot */}
-                  <div className="mt-4 space-y-2.5 rounded-xl bg-slate-50 p-3.5 text-xs border border-slate-100">
-                    <div className="flex justify-between font-medium">
-                      <span className="text-slate-500">Your Booking Token:</span>
-                      <span className="font-bold text-slate-900">#18 (4 Ahead of You)</span>
-                    </div>
-                    <div className="flex justify-between font-medium">
-                      <span className="text-slate-500">Recommended Departure:</span>
-                      <span className="font-semibold text-emerald-700">Leave home at 10:45 AM</span>
-                    </div>
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1">
-                      <div className="bg-brand-700 h-full rounded-full w-3/4 animate-pulse" />
-                    </div>
-                  </div>
+                        <div className="mt-4 space-y-2.5 rounded-xl bg-slate-50 p-3.5 text-xs border border-slate-100">
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Your Booking Token:</span>
+                            <span className="font-bold text-slate-900">#18 (4 Ahead of You)</span>
+                          </div>
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Recommended Departure:</span>
+                            <span className="font-semibold text-emerald-700">Leave home at 10:45 AM</span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden mt-1">
+                            <div className="bg-brand-700 h-full rounded-full w-3/4 animate-pulse" />
+                          </div>
+                        </div>
 
-                  {/* SMS / App Alert Preview */}
-                  <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-brand-100/50 p-3 text-xs text-slate-700 border border-brand-300/40">
-                    <Radio className="h-4 w-4 text-brand-700 shrink-0" />
-                    <span>
-                      <strong className="text-brand-700">SMS Notification:</strong> We&apos;ll text you when 2 patients remain!
-                    </span>
-                  </div>
-                </div>
+                        <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-brand-100/60 p-3 text-xs text-slate-700 border border-brand-300/40">
+                          <Radio className="h-4 w-4 text-brand-700 shrink-0" />
+                          <span>
+                            <strong className="text-brand-700">SMS Notification:</strong> We&apos;ll text you when 2 patients remain!
+                          </span>
+                        </div>
+                      </div>
+                    </CarouselItem>
+
+                    {/* Slide 2: Secretary Queue Controller */}
+                    <CarouselItem>
+                      <div className="rounded-3xl border border-white/80 bg-white/95 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-2.5 w-2.5 rounded-full bg-blue-600" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-blue-700">
+                              Secretary Queue Suite
+                            </span>
+                          </div>
+                          <span className="text-xs font-medium text-slate-500">
+                            Polymedic Medical Plaza
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-3.5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm">
+                            EB
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                              Elena Bautista
+                            </h3>
+                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200">
+                              Lead Secretary &bull; Dr. Santos Clinic
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 rounded-2xl bg-blue-50/60 border border-blue-200 p-4 text-center">
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            Now Calling Next
+                          </span>
+                          <div className="text-4xl font-extrabold text-blue-700 tracking-tight my-1">
+                            #15
+                          </div>
+                          <div className="flex justify-center gap-2 mt-1">
+                            <Badge variant="warning">Senior Citizen Priority</Badge>
+                            <Badge variant="secondary">Rm 412</Badge>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-3.5 text-xs border border-slate-100">
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Active Queue Status:</span>
+                            <span className="font-bold text-slate-800">12 Waiting Outside</span>
+                          </div>
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Daily Intake:</span>
+                            <span className="font-semibold text-emerald-700">24 Patients Served &bull; 0 Delay</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs font-bold">
+                          <div className="rounded-xl bg-brand-700 text-white py-2.5 shadow-sm">
+                            &bull; Call Next (#16)
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white py-2.5 text-slate-700">
+                            + Walk-In Ticket
+                          </div>
+                        </div>
+                      </div>
+                    </CarouselItem>
+
+                    {/* Slide 3: Instant Digital Slot Reservation */}
+                    <CarouselItem>
+                      <div className="rounded-3xl border border-white/80 bg-white/95 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                          <div className="flex items-center gap-2">
+                            <Ticket className="h-4 w-4 text-purple-600" />
+                            <span className="text-xs font-bold uppercase tracking-wider text-purple-700">
+                              Digital Token Issued
+                            </span>
+                          </div>
+                          <span className="text-xs font-medium text-slate-500">
+                            CUMC Medical Arts
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-3.5">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-purple-600 text-base font-bold text-white shadow-sm">
+                            JC
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                              Dr. Juan Carlos Dela Cruz
+                            </h3>
+                            <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-700 border border-purple-200">
+                              Internal Medicine Specialist
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 rounded-2xl bg-purple-50/60 border border-purple-200 p-4 text-center">
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            Verified Token Code
+                          </span>
+                          <div className="text-3xl font-black text-purple-700 tracking-wider font-mono my-1">
+                            CN-A109
+                          </div>
+                          <p className="text-xs text-slate-600">
+                            Guaranteed Queue Slot for Today
+                          </p>
+                        </div>
+
+                        <div className="mt-4 space-y-2.5 rounded-xl bg-slate-50 p-3.5 text-xs border border-slate-100">
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Platform Fee:</span>
+                            <span className="font-bold text-emerald-700">₱40 Settled via GCash</span>
+                          </div>
+                          <div className="flex justify-between font-medium items-center">
+                            <span className="text-slate-500">HMO Accreditation:</span>
+                            <div className="flex gap-1">
+                              <Badge variant="brand" className="text-[10px] px-1.5 py-0">Maxicare</Badge>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">PhilHealth</Badge>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-2.5 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                          <span>
+                            <strong>Arrival Window:</strong> 11:15 AM &bull; Room 208
+                          </span>
+                        </div>
+                      </div>
+                    </CarouselItem>
+                  </CarouselContent>
+
+                  {/* Navigation Arrows */}
+                  <CarouselPrevious className="left-1 sm:-left-4" />
+                  <CarouselNext className="right-1 sm:-right-4" />
+                </Carousel>
               </div>
             </div>
 
@@ -583,207 +788,232 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Search & Filter Toolbar */}
-          <div className="rounded-3xl border border-brand-100 bg-white p-5 sm:p-6 shadow-sm mb-10 space-y-5">
+          {/* Patient Registration Callout Banner */}
+          <div className="mb-6 rounded-3xl bg-gradient-to-r from-brand-700 to-emerald-700 p-5 text-white shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="h-11 w-11 rounded-2xl bg-white/15 flex items-center justify-center shrink-0 shadow-inner">
+                <UserPlus className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold sm:text-base">First time consulting at a Cagayan de Oro clinic?</p>
+                <p className="text-xs text-brand-100 mt-0.5">
+                  Create a free patient account to auto-sync your consultation queue tokens, live SMS alerts, and priority lane status.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/signup"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-brand-700 hover:bg-brand-50 transition shadow-xs active:scale-95"
+            >
+              <span>Sign Up as Patient (Free)</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          {/* Search & Filter Toolbar with shadcn components */}
+          <Card className="rounded-3xl border border-brand-100 bg-white p-5 sm:p-6 shadow-sm mb-10 space-y-5">
             {/* Primary Inputs Row */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
               
-              {/* Search Bar */}
+              {/* Search Bar using shadcn Input */}
               <div className="md:col-span-6 relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                <input
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search doctors in Cagayan de Oro..."
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-12 pr-10 text-sm font-medium text-slate-900 placeholder-slate-400 focus:border-brand-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-100 transition-all"
+                  placeholder="Search doctors, hospital, or specialty in Cagayan de Oro..."
+                  className="pl-11 pr-10 h-12 rounded-2xl border-slate-200 bg-slate-50/70 text-sm font-medium focus:bg-white"
                 />
                 {searchQuery && (
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-slate-400 hover:text-slate-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full text-slate-400 hover:text-slate-600"
                   >
                     <X className="h-4 w-4" />
-                  </button>
+                  </Button>
                 )}
               </div>
 
-              {/* Specialization Dropdown */}
+              {/* Specialization Dropdown using shadcn Select */}
               <div className="md:col-span-3">
-                <div className="relative">
-                  <select
-                    value={selectedSpecialty}
-                    onChange={(e) => setSelectedSpecialty(e.target.value)}
-                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50/70 py-3.5 pl-4 pr-10 text-sm font-semibold text-slate-800 focus:border-brand-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-100 transition-all cursor-pointer"
-                  >
+                <Select
+                  value={selectedSpecialty}
+                  onValueChange={(val) => setSelectedSpecialty(val)}
+                >
+                  <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-slate-50/70 text-sm font-semibold text-slate-800 focus:bg-white">
+                    <SelectValue placeholder="All Specializations" />
+                  </SelectTrigger>
+                  <SelectContent>
                     {SPECIALTY_OPTIONS.map((spec) => (
-                      <option key={spec} value={spec}>
+                      <SelectItem key={spec} value={spec}>
                         {spec}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                  <Filter className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                </div>
+                  </SelectContent>
+                </Select>
               </div>
 
-              {/* Toggle Switches */}
-              <div className="md:col-span-3 flex items-center justify-between sm:justify-start gap-4">
+              {/* Toggle Buttons using shadcn Button */}
+              <div className="md:col-span-3 flex items-center justify-between sm:justify-start gap-3">
                 {/* HMO Toggle */}
-                <button
+                <Button
+                  type="button"
+                  variant={onlyHmo ? 'brand' : 'outline'}
                   onClick={() => setOnlyHmo(!onlyHmo)}
-                  className={`flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-bold transition-all border ${
-                    onlyHmo
-                      ? 'border-brand-700 bg-brand-700 text-white shadow-xs'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
+                  className="flex-1 h-12 rounded-2xl text-xs sm:text-sm font-bold shadow-xs gap-2"
                 >
                   <ShieldCheck className="h-4 w-4" />
                   <span>Accepts HMO</span>
-                </button>
+                </Button>
 
                 {/* Live Queue Only Toggle */}
-                <button
+                <Button
+                  type="button"
+                  variant={onlyLiveQueue ? 'default' : 'outline'}
                   onClick={() => setOnlyLiveQueue(!onlyLiveQueue)}
-                  className={`flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-bold transition-all border ${
-                    onlyLiveQueue
-                      ? 'border-emerald-600 bg-emerald-600 text-white shadow-xs'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  className={`flex-1 h-12 rounded-2xl text-xs sm:text-sm font-bold shadow-xs gap-2 ${
+                    onlyLiveQueue ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
                   }`}
                 >
                   <Radio className="h-4 w-4" />
                   <span className="hidden sm:inline">Active Queue</span>
                   <span className="sm:hidden">Live</span>
-                </button>
+                </Button>
               </div>
 
             </div>
 
-            {/* Quick Specialty Filter Pills */}
+            {/* Quick Specialty Filter Pills using shadcn Badge */}
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
               <span className="text-xs font-semibold text-slate-500 mr-1">Quick Select:</span>
               {['Pediatrics', 'Internal Medicine', 'Cardiology', 'OB-GYN', 'Dermatology'].map((tag) => (
-                <button
+                <Badge
                   key={tag}
+                  variant={selectedSpecialty === tag ? 'brand' : 'outline'}
                   onClick={() =>
                     setSelectedSpecialty(selectedSpecialty === tag ? 'All Specializations' : tag)
                   }
-                  className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
-                    selectedSpecialty === tag
-                      ? 'bg-brand-700 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-brand-100 hover:text-brand-700'
-                  }`}
+                  className="cursor-pointer py-1.5 px-3 rounded-xl text-xs font-medium transition-all hover:bg-brand-100 hover:text-brand-700 active:scale-95"
                 >
                   {tag}
-                </button>
+                </Badge>
               ))}
               {(searchQuery || selectedSpecialty !== 'All Specializations' || onlyHmo || onlyLiveQueue) && (
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setSearchQuery('');
                     setSelectedSpecialty('All Specializations');
                     setOnlyHmo(false);
                     setOnlyLiveQueue(false);
                   }}
-                  className="ml-auto text-xs font-semibold text-rose-600 hover:underline flex items-center gap-1"
+                  className="ml-auto text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl h-8 px-2.5"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-3.5 w-3.5 mr-1" />
                   Clear Filters
-                </button>
+                </Button>
               )}
             </div>
-          </div>
+          </Card>
 
-          {/* Doctor Cards Grid */}
+          {/* Doctor Cards Grid using shadcn Card suite */}
           {filteredDoctors.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredDoctors.map((doctor) => (
-                <article
+                <Card
                   key={doctor.id}
-                  className="group flex flex-col justify-between rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm transition-all duration-200 hover:border-brand-300 hover:shadow-md hover:-translate-y-1"
+                  className="group flex flex-col justify-between rounded-3xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:border-brand-300 hover:shadow-md hover:-translate-y-1 overflow-hidden"
                 >
-                  {/* Top Section */}
-                  <div>
-                    {/* Header: Doctor initials & Live Queue Status */}
+                  {/* Top Header Section */}
+                  <CardHeader className="p-6 pb-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${doctor.avatarBg} text-sm font-bold text-white shadow-xs`}
-                        >
-                          {doctor.name.replace('Dr. ', '').substring(0, 2).toUpperCase()}
-                        </div>
+                        <Avatar className={`h-12 w-12 rounded-2xl ${doctor.avatarBg} text-sm font-bold text-white shadow-xs`}>
+                          <AvatarFallback className={`${doctor.avatarBg} text-white font-bold`}>
+                            {doctor.name.replace('Dr. ', '').substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
                         <div>
-                          <h3 className="text-lg font-bold text-slate-900 group-hover:text-brand-700 transition-colors">
+                          <CardTitle className="text-lg font-bold text-slate-900 group-hover:text-brand-700 transition-colors">
                             {doctor.name}
-                          </h3>
-                          <span className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
+                          </CardTitle>
+                          <Badge variant="brand" className="mt-1 text-[11px] px-2 py-0">
                             {doctor.specialty}
-                          </span>
+                          </Badge>
                         </div>
                       </div>
 
-                      {/* Queue Status Pill */}
+                      {/* Queue Status Badge */}
                       {doctor.isQueueLive ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                        <Badge variant="success" className="gap-1.5 py-1 px-2.5">
                           <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                           </span>
                           Serving #{doctor.currentServingNumber}
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                        <Badge variant="warning" className="gap-1 py-1 px-2.5 font-medium">
                           <Clock className="h-3 w-3" />
                           Starts {doctor.nextStartTime?.split('at')[1] || 'Soon'}
-                        </span>
+                        </Badge>
                       )}
                     </div>
+                  </CardHeader>
 
-                    {/* Clinic Details */}
-                    <div className="mt-5 space-y-2.5 text-xs text-slate-600 border-t border-slate-100 pt-4">
-                      {/* Clinic Name & Location */}
-                      <div className="flex items-start gap-2.5">
-                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
-                        <div>
-                          <p className="font-bold text-slate-800 text-sm">
-                            {doctor.clinicName}
-                          </p>
-                          <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1">
-                            <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                            {doctor.clinicAddress}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Schedule */}
-                      <div className="flex items-center gap-2.5 pt-1">
-                        <Calendar className="h-4 w-4 shrink-0 text-brand-700" />
-                        <span className="font-medium text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100">
-                          {doctor.schedule}
-                        </span>
-                      </div>
-
-                      {/* HMO Acceptance */}
-                      <div className="pt-2">
-                        {doctor.acceptsHmo ? (
-                          <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            <span>HMO Accepted</span>
-                            <span className="text-[11px] font-normal text-slate-500">
-                              ({doctor.hmoProviders?.slice(0, 2).join(', ')}
-                              {(doctor.hmoProviders?.length || 0) > 2 ? ' +' : ''})
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="text-slate-400 font-medium text-[11px]">
-                            Cash Consultation Only
-                          </div>
-                        )}
+                  {/* Clinic Details Content */}
+                  <CardContent className="p-6 pt-0 space-y-3 text-xs text-slate-600">
+                    <Separator className="my-1 bg-slate-100" />
+                    
+                    {/* Clinic Name & Location */}
+                    <div className="flex items-start gap-2.5">
+                      <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">
+                          {doctor.clinicName}
+                        </p>
+                        <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                          {doctor.clinicAddress}
+                        </p>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Card Bottom CTA & Fees */}
-                  <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                    {/* Schedule */}
+                    <div className="flex items-center gap-2.5 pt-1">
+                      <Calendar className="h-4 w-4 shrink-0 text-brand-700" />
+                      <span className="font-medium text-slate-700 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100">
+                        {doctor.schedule}
+                      </span>
+                    </div>
+
+                    {/* HMO Acceptance */}
+                    <div className="pt-2">
+                      {doctor.acceptsHmo ? (
+                        <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          <span>HMO Accepted</span>
+                          <span className="text-[11px] font-normal text-slate-500">
+                            ({doctor.hmoProviders?.slice(0, 2).join(', ')}
+                            {(doctor.hmoProviders?.length || 0) > 2 ? ' +' : ''})
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-slate-400 font-medium text-[11px]">
+                          Cash Consultation Only
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+
+                  {/* Card Footer CTA & Fees */}
+                  <CardFooter className="p-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50/40">
                     <div>
                       <div className="text-[11px] text-slate-400 uppercase font-bold tracking-wider">
                         Doctor Fee
@@ -794,16 +1024,18 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    <button
+                    <Button
+                      variant="brand"
+                      size="sm"
                       onClick={() => setSelectedDoctorForQueue(doctor)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-4 py-2.5 text-xs font-bold text-white shadow-xs transition-all hover:bg-brand-700/90 active:scale-95"
+                      className="rounded-xl px-4 py-2 text-xs font-bold shadow-xs gap-1.5"
                     >
                       <Users className="h-3.5 w-3.5" />
                       Join Queue
                       <ChevronRight className="h-3.5 w-3.5 opacity-80" />
-                    </button>
-                  </div>
-                </article>
+                    </Button>
+                  </CardFooter>
+                </Card>
               ))}
             </div>
           ) : (
@@ -972,33 +1204,62 @@ export default function HomePage() {
             </h2>
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h4 className="font-bold text-slate-900 text-base">
-                How much does it cost to use Clinic Natin?
-              </h4>
-              <p className="mt-2 text-sm text-slate-600">
-                Patients pay a nominal ₱40 cashless convenience fee (via GCash, Maya, or Card) to secure a digital queue number. The doctor&apos;s regular consultation fee is settled directly at the clinic as usual (or billed through your HMO).
-              </p>
-            </div>
+          <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-sm">
+            <Accordion type="single" collapsible defaultValue="item-1" className="w-full">
+              <AccordionItem value="item-1">
+                <AccordionTrigger>
+                  How much does it cost to use Clinic Natin?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Patients pay a nominal <strong>₱40 cashless reservation fee</strong> (settled securely via GCash, Maya, or Card) to reserve a verified digital queue token. The doctor&apos;s regular professional consultation fee is paid directly at the clinic cashier or billed to your HMO provider as usual.
+                </AccordionContent>
+              </AccordionItem>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h4 className="font-bold text-slate-900 text-base">
-                What happens if the doctor is delayed or has emergency rounds?
-              </h4>
-              <p className="mt-2 text-sm text-slate-600">
-                The clinic secretary updates the live session in real-time. You will see the delayed status instantly on the live tracking page and receive an automated SMS update so you don&apos;t travel prematurely.
-              </p>
-            </div>
+              <AccordionItem value="item-2">
+                <AccordionTrigger>
+                  How does live turn tracking work?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Once you book a slot, you get an official digital token code (e.g., <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-brand-700">CN-A109</code>) and a live countdown showing <strong>Now Serving</strong>. You can rest comfortably at home or a nearby coffee shop. The platform sends you an automated SMS notification when you are 2 numbers away so you arrive right on time.
+                </AccordionContent>
+              </AccordionItem>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h4 className="font-bold text-slate-900 text-base">
-                Can I use my HMO card with Clinic Natin?
-              </h4>
-              <p className="mt-2 text-sm text-slate-600">
-                Yes! When filtering doctors, toggle &quot;Accepts HMO&quot; to see doctors accredited with Maxicare, Intellicare, Medicard, and PhilHealth. You only present your HMO approval / card when you arrive at the clinic desk.
-              </p>
-            </div>
+              <AccordionItem value="item-3">
+                <AccordionTrigger>
+                  Can I use my HMO card (Maxicare, Intellicare, Medicard, PhilHealth)?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Yes! Use the <strong>&quot;Accepts HMO&quot;</strong> toggle on the doctor directory to filter specialists accredited with major healthcare providers including Maxicare, Intellicare, Medicard, and PhilHealth. Present your physical card or digital Letter of Authorization (LOA) to the secretary upon arrival.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="item-4">
+                <AccordionTrigger>
+                  What happens if the doctor is delayed or on emergency rounds?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Doctors and clinic secretaries update session statuses in real time. If a doctor is delayed due to an emergency surgery or hospital rounds, an announcement banner instantly displays on your live queue tracker and an automated SMS alert is dispatched so you don&apos;t travel prematurely.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="item-5">
+                <AccordionTrigger>
+                  Are there priority lanes for Seniors, PWDs, and Pregnant patients?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Yes. Clinic Natin fully complies with Philippine law (RA 9994 for Senior Citizens and RA 7277 for PWDs). Clinic secretaries have dedicated priority queue controls to route senior, PWD, and pregnant patients smoothly without disrupting the online queue flow.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="item-6">
+                <AccordionTrigger>
+                  How do walk-in patients join the queue?
+                </AccordionTrigger>
+                <AccordionContent>
+                  Walk-in patients without smartphones are registered directly by the clinic secretary at the front desk. They receive a printed ticket that is synchronized into the same live digital sequence, ensuring complete fairness and zero confusion for all patients.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </div>
         </div>
       </section>
@@ -1049,6 +1310,12 @@ export default function HomePage() {
                     HMO & PhilHealth Info
                   </a>
                 </li>
+                <li>
+                  <Link href="/signup" className="hover:text-brand-700 transition font-bold text-brand-700 flex items-center gap-1">
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Patient Sign Up (Free) &rarr;
+                  </Link>
+                </li>
               </ul>
             </div>
 
@@ -1059,14 +1326,24 @@ export default function HomePage() {
               </h4>
               <ul className="space-y-2 text-sm text-slate-600">
                 <li>
-                  <Link href="/dashboard" className="hover:text-brand-700 transition">
+                  <Link href="/secretary/dashboard" className="hover:text-brand-700 transition">
                     Secretary Dashboard
                   </Link>
                 </li>
                 <li>
-                  <a href="#" className="hover:text-brand-700 transition">
-                    Clinic Onboarding
-                  </a>
+                  <Link href="/doctor/dashboard" className="hover:text-brand-700 transition">
+                    Doctor Suite
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/my-queue" className="hover:text-brand-700 transition">
+                    Patient Live Turn Tracker
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/login" className="hover:text-brand-700 transition font-semibold text-brand-700">
+                    Sign In / Staff Portal &rarr;
+                  </Link>
                 </li>
                 <li>
                   <a href="#" className="hover:text-brand-700 transition">
@@ -1101,52 +1378,51 @@ export default function HomePage() {
       </footer>
 
       {/* ----------------------------------------------------------------- */}
-      {/* JOIN QUEUE DEMO MODAL */}
+      {/* JOIN QUEUE DEMO MODAL (SHADCN DIALOG) */}
       {/* ----------------------------------------------------------------- */}
-      {selectedDoctorForQueue && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-100">
-            
-            {/* Close Button */}
-            <button
-              onClick={resetQueueModal}
-              className="absolute top-6 right-6 rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
+      <Dialog
+        open={Boolean(selectedDoctorForQueue)}
+        onOpenChange={(open) => {
+          if (!open) resetQueueModal();
+        }}
+      >
+        {selectedDoctorForQueue && (
+          <DialogContent className="sm:max-w-lg p-6 sm:p-8 rounded-3xl border-slate-200">
             {!queueSubmitted ? (
               <div>
-                {/* Modal Header */}
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-700 text-white font-bold">
-                    DR
+                <DialogHeader className="mb-5 text-left">
+                  <div className="flex items-center gap-3">
+                    <Avatar className={`h-12 w-12 rounded-2xl ${selectedDoctorForQueue.avatarBg} text-white font-bold shadow-xs`}>
+                      <AvatarFallback className={`${selectedDoctorForQueue.avatarBg} text-white font-bold`}>
+                        {selectedDoctorForQueue.name.replace('Dr. ', '').substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-slate-900">
+                        Join {selectedDoctorForQueue.name}&apos;s Queue
+                      </DialogTitle>
+                      <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                        {selectedDoctorForQueue.clinicName} &bull; {selectedDoctorForQueue.specialty}
+                      </DialogDescription>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">
-                      Join {selectedDoctorForQueue.name}&apos;s Queue
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      {selectedDoctorForQueue.clinicName}
-                    </p>
-                  </div>
-                </div>
+                </DialogHeader>
 
                 {/* Queue Summary Box */}
-                <div className="rounded-2xl bg-brand-50 p-4 border border-brand-100 mb-6 space-y-2 text-xs">
-                  <div className="flex justify-between">
+                <div className="rounded-2xl bg-brand-50 p-4 border border-brand-100 mb-5 space-y-2 text-xs">
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-600">Currently Serving:</span>
-                    <span className="font-bold text-brand-700">
+                    <Badge variant="brand" className="text-xs">
                       #{selectedDoctorForQueue.currentServingNumber || 'Not Started'}
-                    </span>
+                    </Badge>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-600">Total in Queue:</span>
                     <span className="font-semibold text-slate-800">
                       {selectedDoctorForQueue.totalInQueue} patients
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <span className="text-slate-600">Convenience Fee:</span>
                     <span className="font-bold text-slate-900">
                       ₱40 (GCash / Maya)
@@ -1160,13 +1436,13 @@ export default function HomePage() {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                       Patient Full Name
                     </label>
-                    <input
+                    <Input
                       type="text"
                       required
                       value={patientName}
                       onChange={(e) => setPatientName(e.target.value)}
                       placeholder="e.g., Juan Dela Cruz"
-                      className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                      className="h-11 rounded-xl border-slate-200 focus:border-brand-700"
                     />
                   </div>
 
@@ -1174,23 +1450,25 @@ export default function HomePage() {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                       Mobile Number (For SMS Updates)
                     </label>
-                    <input
+                    <Input
                       type="tel"
                       required
                       value={patientPhone}
                       onChange={(e) => setPatientPhone(e.target.value)}
                       placeholder="e.g., 0917 123 4567"
-                      className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                      className="h-11 rounded-xl border-slate-200 focus:border-brand-700"
                     />
                   </div>
 
                   <div className="pt-2">
-                    <button
+                    <Button
                       type="submit"
-                      className="w-full rounded-xl bg-brand-700 py-3.5 text-sm font-bold text-white shadow-md hover:bg-brand-700/90 transition active:scale-98"
+                      variant="brand"
+                      size="lg"
+                      className="w-full h-12 rounded-xl text-sm font-bold shadow-md hover:bg-brand-700/90"
                     >
                       Confirm Spot & Proceed to ₱40 Payment
-                    </button>
+                    </Button>
                     <p className="mt-2 text-[11px] text-center text-slate-400">
                       Secured with GCash / Maya checkout. No waiting in line required.
                     </p>
@@ -1199,16 +1477,16 @@ export default function HomePage() {
               </div>
             ) : (
               /* Success Confirmation */
-              <div className="text-center py-4">
+              <div className="text-center py-2">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-brand-100 text-brand-700 mb-4">
                   <CheckCircle2 className="h-10 w-10" />
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900">
+                <DialogTitle className="text-2xl font-bold text-slate-900 text-center">
                   Spot Confirmed!
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
+                </DialogTitle>
+                <DialogDescription className="text-sm text-slate-600 mt-1 text-center">
                   You are registered in {selectedDoctorForQueue.name}&apos;s queue.
-                </p>
+                </DialogDescription>
 
                 <div className="mt-6 rounded-2xl bg-brand-50 border border-brand-100 p-5">
                   <span className="text-xs uppercase font-bold text-slate-500 tracking-wider">
@@ -1222,7 +1500,7 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <div className="mt-5 text-left rounded-xl bg-slate-50 p-4 text-xs text-slate-600 space-y-2">
+                <div className="mt-5 text-left rounded-xl bg-slate-50 p-4 text-xs text-slate-600 space-y-2 border border-slate-100">
                   <div className="flex items-center gap-2 font-medium text-slate-800">
                     <Smartphone className="h-4 w-4 text-brand-700" />
                     SMS updates will be sent to {patientPhone}
@@ -1233,17 +1511,22 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={resetQueueModal}
-                  className="mt-6 w-full rounded-xl bg-brand-700 py-3 text-sm font-bold text-white shadow-sm hover:bg-brand-700/90"
-                >
-                  Done & Return to Homepage
-                </button>
+                <DialogFooter className="mt-6 sm:justify-stretch">
+                  <Button
+                    type="button"
+                    variant="brand"
+                    size="lg"
+                    onClick={resetQueueModal}
+                    className="w-full h-12 rounded-xl text-sm font-bold shadow-sm"
+                  >
+                    Done & Return to Homepage
+                  </Button>
+                </DialogFooter>
               </div>
             )}
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }
