@@ -27,6 +27,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { 
+  DigitalHealthPassportData 
+} from '@/components/patient/DigitalHealthPassportCard';
+import { DigitalHealthPassportDialog } from '@/components/patient/DigitalHealthPassportDialog';
+
 
 interface UserProfile {
   id: string;
@@ -76,6 +81,8 @@ export default function PatientAccountPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('personal');
+  const [isPassportOpen, setIsPassportOpen] = useState(false);
+
 
   // Form States - Personal Profile
   const [fullName, setFullName] = useState('');
@@ -490,11 +497,15 @@ export default function PatientAccountPage() {
 
               {/* Health Passport Quick Chip */}
               <div className="flex items-center gap-2 shrink-0">
-                <Button asChild variant="outline" size="sm" className="rounded-xl text-xs font-bold border-brand-200 bg-brand-50/50 text-brand-700 hover:bg-brand-100">
-                  <Link href="/onboarding">
-                    <HeartPulse className="h-3.5 w-3.5 mr-1" />
-                    Open Health Passport
-                  </Link>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setIsPassportOpen(true)}
+                  className="rounded-xl text-xs font-bold border-brand-200 bg-brand-50/50 text-brand-700 hover:bg-brand-100"
+                >
+                  <HeartPulse className="h-3.5 w-3.5 mr-1" />
+                  View Health Passport
                 </Button>
               </div>
             </div>
@@ -1008,6 +1019,28 @@ export default function PatientAccountPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Standardized Digital Health Passport Modal */}
+      <DigitalHealthPassportDialog
+        open={isPassportOpen}
+        onOpenChange={setIsPassportOpen}
+        data={{
+          patientName: profile?.full_name || fullName || 'Dianne Pondoc',
+          patientIdCode: profile?.id ? `CN-P${profile.id.replace(/-/g, '').slice(0, 5).toUpperCase()}` : 'CN-P8821',
+          bloodType: profile?.blood_type || 'A+',
+          bmi: profile?.weight_kg && profile?.height_cm
+            ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+            : '21.2',
+          priorityCategory: priorityCategory || 'Regular',
+          hmoProvider: hmoProvider || 'Maxicare',
+          allergies: profile?.allergies || [],
+          comorbidities: profile?.comorbidities || [],
+          heightCm: profile?.height_cm || 155,
+          weightKg: profile?.weight_kg || 51,
+          clinicTag: 'CDO Outpatient',
+        }}
+        onEdit={() => router.push('/onboarding')}
+      />
     </main>
   );
 }

@@ -30,6 +30,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import { 
+  DigitalHealthPassportCard, 
+  DigitalHealthPassportData 
+} from '@/components/patient/DigitalHealthPassportCard';
+import { DigitalHealthPassportDialog } from '@/components/patient/DigitalHealthPassportDialog';
+
 
 // ============================================================================
 // Types
@@ -258,12 +264,40 @@ export default function PatientDashboardPage() {
   // Modals state
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPassportOpen, setIsPassportOpen] = useState(false);
   const [selectedRxRecord, setSelectedRxRecord] = useState<MedicalRecord | null>(null);
 
   // Settings form local edits
   const [settingsTab, setSettingsTab] = useState<'passport' | 'hmo' | 'emergency' | 'alerts' | 'account'>('passport');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState<string | null>(null);
+
+  // Standardized Digital Health Passport data
+  const passportData: DigitalHealthPassportData = useMemo(() => {
+    const patientIdCode = profile?.id
+      ? `CN-P${profile.id.replace(/-/g, '').slice(0, 5).toUpperCase()}`
+      : 'CN-P8821';
+
+    const bmiVal =
+      profile?.weight_kg && profile?.height_cm
+        ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+        : null;
+
+    return {
+      patientName: profile?.full_name || 'Dianne Pondoc',
+      patientIdCode,
+      bloodType: profile?.blood_type || 'A+',
+      bmi: bmiVal || '21.2',
+      priorityCategory: profile?.priority_category || 'Regular',
+      hmoProvider: profile?.hmo_provider || 'Maxicare',
+      allergies: profile?.allergies || [],
+      comorbidities: profile?.comorbidities || [],
+      heightCm: profile?.height_cm || 155,
+      weightKg: profile?.weight_kg || 51,
+      clinicTag: 'CDO Outpatient',
+    };
+  }, [profile]);
+
 
   // Editable settings fields
   const [emergencyName, setEmergencyName] = useState('');
@@ -946,10 +980,7 @@ export default function PatientDashboardPage() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => {
-                      setSettingsTab('passport');
-                      setIsSettingsOpen(true);
-                    }}
+                    onClick={() => setIsPassportOpen(true)}
                     className="rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold flex-1 sm:flex-initial"
                   >
                     <HeartPulse className="h-3.5 w-3.5 mr-1" />
@@ -1274,84 +1305,14 @@ export default function PatientDashboardPage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* TAB 1: HEALTH PASSPORT */}
+            {/* TAB 1: OFFICIAL DIGITAL HEALTH PASSPORT */}
             <TabsContent value="passport" className="space-y-4 pt-2">
-              <div className="rounded-2xl bg-brand-50 p-4 border border-brand-200">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">Digital Health Passport</h4>
-                    <p className="text-xs text-slate-500">Vitals pre-populate automatically during consultations</p>
-                  </div>
-                  <Badge variant="brand" className="text-[11px]">Active</Badge>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
-                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Blood Type</p>
-                    <p className="text-sm font-black text-slate-800 mt-0.5">{profile?.blood_type || '\u2014'}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Weight</p>
-                    <p className="text-sm font-black text-slate-800 mt-0.5">{profile?.weight_kg ? `${profile.weight_kg} kg` : '\u2014'}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Height</p>
-                    <p className="text-sm font-black text-slate-800 mt-0.5">
-                      {profile?.height_cm ? `${profile.height_cm} cm (${cmToFtIn(profile.height_cm)})` : '\u2014'}
-                    </p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">BMI</p>
-                    <p className="text-sm font-black text-emerald-700 mt-0.5">
-                      {profile?.weight_kg && profile?.height_cm
-                        ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
-                        : '\u2014'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Allergies & Comorbidities Badges */}
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Documented Drug Allergies</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {profile?.allergies && profile.allergies.length > 0 ? (
-                    profile.allergies.map((a) => (
-                      <Badge key={a} variant="destructive" className="text-xs py-1 px-2.5">
-                        <AlertTriangle className="h-3 w-3 mr-1" />
-                        {a}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">No drug allergies recorded on file.</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Chronic Comorbidities</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {profile?.comorbidities && profile.comorbidities.length > 0 ? (
-                    profile.comorbidities.map((c) => (
-                      <Badge key={c} variant="outline" className="text-xs py-1 px-2.5 border-amber-300 bg-amber-50 text-amber-800 font-semibold">
-                        {c}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-400 italic">No chronic comorbidities reported.</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Button asChild variant="outline" className="w-full rounded-xl text-xs font-bold">
-                  <Link href="/onboarding">
-                    <HeartPulse className="h-3.5 w-3.5 mr-1.5 text-brand-700" />
-                    Re-tune Health Passport &amp; Stepper
-                    <ExternalLink className="h-3 w-3 ml-auto opacity-60" />
-                  </Link>
-                </Button>
-              </div>
+              <DigitalHealthPassportCard
+                data={passportData}
+                onEdit={() => router.push('/onboarding')}
+                showPrintButton={true}
+                showEditButton={true}
+              />
             </TabsContent>
 
             {/* TAB 2: PRIORITY & HMO */}
@@ -1604,6 +1565,16 @@ export default function PatientDashboardPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ===================================================================== */}
+      {/* ── DIALOG: OFFICIAL DIGITAL HEALTH PASSPORT (UNIFIED WALLET PASS) ── */}
+      {/* ===================================================================== */}
+      <DigitalHealthPassportDialog
+        open={isPassportOpen}
+        onOpenChange={setIsPassportOpen}
+        data={passportData}
+        onEdit={() => router.push('/onboarding')}
+      />
 
       {/* ===================================================================== */}
       {/* ── DIALOG 3: OFFICIAL DIGITAL PRESCRIPTION (PRINT / SAVE) ── */}

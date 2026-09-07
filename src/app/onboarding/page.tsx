@@ -40,6 +40,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DigitalHealthPassportCard } from '@/components/patient/DigitalHealthPassportCard';
+
 
 // Common Philippine Clinical Presets
 const COMMON_ALLERGIES = [
@@ -1196,94 +1198,28 @@ export default function PatientOnboardingPage() {
               </p>
             </div>
 
-            {/* Top-Tier Digital Clinic Pass (Physical Card Look) */}
-            <div className="relative mx-auto max-w-md overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-brand-950 to-slate-900 p-7 text-white shadow-2xl border border-white/20">
-              {/* Background ambient lighting */}
-              <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-emerald-500/20 blur-2xl" />
-              <div className="absolute -left-12 -bottom-12 h-44 w-44 rounded-full bg-brand-500/20 blur-2xl" />
-
-              {/* Card Header */}
-              <div className="relative flex items-center justify-between border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-white shadow-inner">
-                    <Stethoscope className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-black tracking-wide">
-                      CLINIC <span className="text-emerald-400">NATIN</span>
-                    </div>
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400">
-                      Verified Patient Pass
-                    </div>
-                  </div>
-                </div>
-                <Badge variant="brand" className="text-[11px] px-2.5 py-0.5 font-bold">
-                  CDO Outpatient
-                </Badge>
-              </div>
-
-              {/* Patient Details */}
-              <div className="relative my-5 flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-xs uppercase font-bold text-slate-400 tracking-wider">
-                    Patient Name
-                  </div>
-                  <div className="text-xl font-black text-white mt-0.5 tracking-tight">
-                    {userName}
-                  </div>
-                  <div className="text-xs text-emerald-400 font-mono mt-0.5">
-                    ID: {patientIdCode}
-                  </div>
-                </div>
-
-                {/* Visual QR Code Display */}
-                <div className="flex flex-col items-center justify-center rounded-2xl bg-white p-2.5 shadow-md">
-                  <QrCode className="h-16 w-16 text-slate-900" />
-                  <span className="text-[9px] font-bold text-slate-600 mt-0.5">1-Sec Check-in</span>
-                </div>
-              </div>
-
-              {/* Medical Specs Grid */}
-              <div className="relative grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-3.5 border border-white/10 text-center text-xs">
-                <div>
-                  <div className="text-[10px] uppercase text-slate-400 font-bold">Blood Group</div>
-                  <div className="text-sm font-extrabold text-emerald-400 mt-0.5">{bloodType}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase text-slate-400 font-bold">BMI</div>
-                  <div className="text-sm font-extrabold text-white mt-0.5">{bmiData?.value || '22.0'}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase text-slate-400 font-bold">Priority</div>
-                  <div className="text-sm font-extrabold text-white mt-0.5">
-                    {priorityCategory === 'NONE' ? 'Regular' : priorityCategory}
-                  </div>
-                </div>
-              </div>
-
-              {/* Allergies / HMO Footer bar */}
-              <div className="relative mt-4 flex items-center justify-between text-[11px] text-slate-300">
-                <span>HMO: <strong className="text-white">{hmoProvider}</strong></span>
-                <span>Allergies: <strong className="text-rose-400">{selectedAllergies.length > 0 ? selectedAllergies[0] : 'None'}</strong></span>
-              </div>
-            </div>
-
-            {/* Edit / Update Passport Button */}
-            <div className="text-center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setIsCompleted(false);
-                  setCurrentStep(1);
-                }}
-                className="text-xs font-bold text-slate-500 hover:text-brand-700 hover:bg-brand-50 rounded-xl gap-1.5"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span>Edit Vitals &amp; Health Records</span>
-              </Button>
-            </div>
+            {/* Standardized Official Digital Health Passport Card */}
+            <DigitalHealthPassportCard
+              data={{
+                patientName: userName,
+                patientIdCode,
+                bloodType,
+                bmi: bmiData?.value || '22.0',
+                priorityCategory: priorityCategory === 'NONE' ? 'Regular' : priorityCategory,
+                hmoProvider,
+                allergies: selectedAllergies,
+                comorbidities: selectedComorbidities,
+                heightCm,
+                weightKg,
+                clinicTag: 'CDO Outpatient',
+              }}
+              onEdit={() => {
+                setIsCompleted(false);
+                setCurrentStep(1);
+              }}
+              showPrintButton={true}
+              showEditButton={true}
+            />
 
             {/* Next Steps Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 max-w-md mx-auto">
