@@ -220,6 +220,27 @@ function cmToFtIn(cm: number): string {
   return `${feet}'${inches}"`;
 }
 
+const NOTIF_STORAGE_KEY = 'clinic_natin_read_notif_ids';
+
+function getStoredReadIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(NOTIF_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveStoredReadIds(ids: string[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(ids));
+  } catch (e) {
+    console.error('Failed to save read notifications:', e);
+  }
+}
+
 // ============================================================================
 // Main Page Component
 // ============================================================================
@@ -260,33 +281,8 @@ export default function PatientDashboardPage() {
   // Medical record filter
   const [recordFilter, setRecordFilter] = useState<'ALL' | 'MEDICATION' | 'LAB_TEST'>('ALL');
 
-  // Notifications state
-  const [notifications, setNotifications] = useState<PatientNotification[]>([
-    {
-      id: 'notif-1',
-      title: 'Queue Call Reminder',
-      message: 'Token CN-A109 is currently #9 in line. Maria Reyna XU Hospital Room 304.',
-      time: 'Just now',
-      type: 'queue',
-      isRead: false,
-    },
-    {
-      id: 'notif-2',
-      title: 'Doctor Schedule Notice',
-      message: 'Dr. Maria Santos, MD is in Room 304. Outpatient consultations moving smoothly.',
-      time: '15m ago',
-      type: 'broadcast',
-      isRead: false,
-    },
-    {
-      id: 'notif-3',
-      title: 'Digital Health Passport Active',
-      message: 'Your RA 9994 Priority Verification and clinical vitals have been validated on file.',
-      time: '2h ago',
-      type: 'profile',
-      isRead: true,
-    },
-  ]);
+  // Notifications state (synced with localStorage)
+  const [notifications, setNotifications] = useState<PatientNotification[]>([]);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.isRead).length, [notifications]);
 
@@ -531,6 +527,86 @@ export default function PatientDashboardPage() {
     setPhilhealthNumber(p.philhealth_number || '');
   }
 
+  // Synchronize notifications with real active appointments & medical records, respecting localStorage read state
+  useEffect(() => {
+    const storedReadIds = getStoredReadIds();
+    const items: PatientNotification[] = [];
+
+    // 1. Active appointment turn notification
+    if (activeAppointments.length > 0) {
+      const appt = activeAppointments[0];
+      const notifId = `appt-${appt.id}-${appt.status}-${appt.queue_session.current_serving_number}`;
+      const isServing = appt.status === 'SERVING';
+      items.push({
+        id: notifId,
+        title: isServing ? `It's Your Turn! Enter Room ${appt.room_number}` : `Queue Turn: Token ${appt.token_code}`,
+        message: isServing
+          ? `Doctor is now calling Token ${appt.token_code} (#${appt.queue_number}). Please proceed inside Room ${appt.room_number}.`
+          : `Currently serving #${appt.queue_session.current_serving_number}. You are #${appt.queue_number} for ${appt.doctor_title} ${appt.doctor_name} at ${appt.hospital_name}.`,
+        time: isServing ? 'Now Serving' : 'Active queue',
+        type: 'queue',
+        isRead: storedReadIds.has(notifId),
+      });
+
+      if (appt.queue_session.announcement_notice) {
+        const annId = `ann-${appt.queue_session_id}-${appt.queue_session.announcement_notice}`;
+        items.push({
+          id: annId,
+          title: 'Doctor Broadcast Notice',
+          message: appt.queue_session.announcement_notice,
+          time: 'Today',
+          type: 'broadcast',
+          isRead: storedReadIds.has(annId),
+        });
+      }
+    }
+
+    // 2. Medical records notice
+    if (medicalRecords.length > 0) {
+      const latest = medicalRecords[0];
+      const recId = `rec-${latest.id}`;
+      items.push({
+        id: recId,
+        title: 'Digital Prescription & Record Posted',
+        message: `Consultation diagnosis and prescription orders for "${latest.diagnosis}" are on file.`,
+        time: formatShortDate(latest.created_at),
+        type: 'medical',
+        isRead: storedReadIds.has(recId),
+      });
+    }
+
+    // 3. Health Passport active notice
+    if (profile?.is_onboarding_completed) {
+      const passId = `passport-${profile.id}`;
+      const priorityText = profile.priority_category && profile.priority_category !== 'NONE'
+        ? `${profile.priority_category === 'SENIOR' ? 'RA 9994 Senior Citizen' : profile.priority_category} priority status`
+        : 'patient priority';
+      items.push({
+        id: passId,
+        title: 'Digital Health Passport Active',
+        message: `Your clinical vitals and ${priorityText} have been validated on file.`,
+        time: 'Verified',
+        type: 'profile',
+        isRead: storedReadIds.has(passId),
+      });
+    }
+
+    // Fallback if none yet
+    if (items.length === 0) {
+      const defaultId = 'notif-welcome';
+      items.push({
+        id: defaultId,
+        title: 'Welcome to Clinic Natin',
+        message: 'Search for verified doctors across CDO and track your turn in real time.',
+        time: 'Just now',
+        type: 'profile',
+        isRead: storedReadIds.has(defaultId),
+      });
+    }
+
+    setNotifications(items);
+  }, [activeAppointments, medicalRecords, profile]);
+
   // Realtime synchronization on queue_sessions, appointments, and medical_records
   useEffect(() => {
     if (!profile?.id) return;
@@ -548,14 +624,16 @@ export default function PatientDashboardPage() {
           )
         );
         if (updated.announcement_notice) {
+          const annId = `ann-${Date.now()}`;
+          const storedReadIds = getStoredReadIds();
           setNotifications((prev) => [
             {
-              id: `ann-${Date.now()}`,
+              id: annId,
               title: 'Doctor Delay / Update Notice',
               message: updated.announcement_notice || '',
               time: 'Just now',
               type: 'broadcast',
-              isRead: false,
+              isRead: storedReadIds.has(annId),
             },
             ...prev,
           ]);
@@ -574,14 +652,16 @@ export default function PatientDashboardPage() {
               prev.map((appt) => (appt.id === updated.id ? { ...appt, status: newStatus } : appt))
             );
             if (newStatus === 'SERVING') {
+              const servId = `serv-${Date.now()}`;
+              const storedReadIds = getStoredReadIds();
               setNotifications((prev) => [
                 {
-                  id: `serv-${Date.now()}`,
+                  id: servId,
                   title: "It's Your Turn! Please Proceed Inside",
                   message: `Doctor is now calling Token ${updated.token_code} (#${updated.queue_number}). Please enter consultation room.`,
                   time: 'Just now',
                   type: 'queue',
-                  isRead: false,
+                  isRead: storedReadIds.has(servId),
                 },
                 ...prev,
               ]);
@@ -598,14 +678,16 @@ export default function PatientDashboardPage() {
         { event: 'INSERT', schema: 'public', table: 'medical_records', filter: `patient_id=eq.${profileId}` },
         () => {
           fetchMedicalRecords(profileId);
+          const recId = `rec-${Date.now()}`;
+          const storedReadIds = getStoredReadIds();
           setNotifications((prev) => [
             {
-              id: `rec-${Date.now()}`,
+              id: recId,
               title: 'Digital Prescription & Record Posted',
               message: 'Your doctor completed your consultation. New clinical diagnosis and digital prescription are now in your Medical History.',
               time: 'Just now',
               type: 'medical',
-              isRead: false,
+              isRead: storedReadIds.has(recId),
             },
             ...prev,
           ]);
@@ -701,7 +783,29 @@ export default function PatientDashboardPage() {
   };
 
   const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setNotifications((prev) => {
+      const updated = prev.map((n) => ({ ...n, isRead: true }));
+      const existing = getStoredReadIds();
+      updated.forEach((n) => existing.add(n.id));
+      saveStoredReadIds(Array.from(existing));
+      return updated;
+    });
+  };
+
+  const handleNotificationClick = (notif: PatientNotification) => {
+    if (!notif.isRead) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      );
+      const existing = getStoredReadIds();
+      existing.add(notif.id);
+      saveStoredReadIds(Array.from(existing));
+    }
+    if (notif.type === 'medical') {
+      setIsNotificationsOpen(false);
+      const elem = document.getElementById('medical-history');
+      if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleSignOut = async () => {
@@ -1021,13 +1125,17 @@ export default function PatientDashboardPage() {
                 </div>
               </div>
 
-              {unreadCount > 0 && (
+              {unreadCount > 0 ? (
                 <button
                   onClick={handleMarkAllRead}
-                  className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1"
+                  className="text-xs font-bold text-brand-700 hover:text-brand-800 flex items-center gap-1 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition active:scale-95"
                 >
-                  <Check className="h-3 w-3" /> Mark read
+                  <Check className="h-3.5 w-3.5" /> Mark read
                 </button>
+              ) : (
+                <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> All read
+                </span>
               )}
             </div>
           </DialogHeader>
@@ -1037,15 +1145,18 @@ export default function PatientDashboardPage() {
               notifications.map((n) => (
                 <div
                   key={n.id}
-                  className={`p-3.5 rounded-2xl border transition-all ${
+                  onClick={() => handleNotificationClick(n)}
+                  role="button"
+                  tabIndex={0}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
                     n.isRead
-                      ? 'bg-slate-50/70 border-slate-200'
-                      : 'bg-brand-50/50 border-brand-200 ring-1 ring-brand-300/30'
+                      ? 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
+                      : 'bg-brand-50/50 border-brand-200 ring-1 ring-brand-300/40 hover:bg-brand-50'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <div
-                      className={`h-8 w-8 rounded-xl shrink-0 flex items-center justify-center text-white text-xs ${
+                      className={`h-8 w-8 rounded-xl shrink-0 flex items-center justify-center text-white text-xs shadow-xs ${
                         n.type === 'queue'
                           ? 'bg-emerald-600'
                           : n.type === 'broadcast'
@@ -1063,7 +1174,12 @@ export default function PatientDashboardPage() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-bold text-slate-900 truncate">{n.title}</p>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">{n.title}</p>
+                          {!n.isRead && (
+                            <span className="h-2 w-2 rounded-full bg-brand-700 shrink-0 ring-2 ring-brand-100" />
+                          )}
+                        </div>
                         <span className="text-[10px] text-slate-400 shrink-0">{n.time}</span>
                       </div>
                       <p className="text-xs text-slate-600 mt-1 leading-relaxed">{n.message}</p>
