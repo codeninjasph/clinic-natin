@@ -941,20 +941,32 @@ export default function PatientDashboardPage() {
                   </div>
                 </div>
 
-                {/* Passport Quick CTA */}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setSettingsTab('passport');
-                    setIsSettingsOpen(true);
-                  }}
-                  className="rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold shrink-0 self-stretch sm:self-auto"
-                >
-                  <HeartPulse className="h-3.5 w-3.5 mr-1" />
-                  Health Passport
-                  <ChevronRight className="h-3.5 w-3.5 ml-1 opacity-60" />
-                </Button>
+                {/* CTAs: Health Passport & Account Settings */}
+                <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0 flex-wrap">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setSettingsTab('passport');
+                      setIsSettingsOpen(true);
+                    }}
+                    className="rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold flex-1 sm:flex-initial"
+                  >
+                    <HeartPulse className="h-3.5 w-3.5 mr-1" />
+                    Passport
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex-1 sm:flex-initial shadow-2xs"
+                  >
+                    <Link href="/account">
+                      <User className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                      Account
+                    </Link>
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -1244,18 +1256,21 @@ export default function PatientDashboardPage() {
             onValueChange={(val) => setSettingsTab(val as typeof settingsTab)}
             className="w-full"
           >
-            <TabsList className="grid grid-cols-4 h-10 rounded-xl bg-slate-100 p-1">
+            <TabsList className="grid grid-cols-5 h-10 rounded-xl bg-slate-100 p-1">
               <TabsTrigger value="passport" className="text-xs font-bold rounded-lg">
                 Passport
               </TabsTrigger>
               <TabsTrigger value="hmo" className="text-xs font-bold rounded-lg">
-                Priority &amp; HMO
+                HMO
               </TabsTrigger>
               <TabsTrigger value="emergency" className="text-xs font-bold rounded-lg">
                 Emergency
               </TabsTrigger>
               <TabsTrigger value="alerts" className="text-xs font-bold rounded-lg">
-                SMS Alerts
+                Alerts
+              </TabsTrigger>
+              <TabsTrigger value="account" className="text-xs font-bold rounded-lg">
+                Account
               </TabsTrigger>
             </TabsList>
 
@@ -1527,6 +1542,45 @@ export default function PatientDashboardPage() {
                   </select>
                 </div>
               </div>
+            </TabsContent>
+
+            {/* TAB 5: ACCOUNT & SECURITY */}
+            <TabsContent value="account" className="space-y-4 pt-2">
+              <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">{profile?.full_name}</h4>
+                    <p className="text-xs text-slate-500">{profile?.email || 'patient@clinicnatin.ph'}</p>
+                  </div>
+                  <Badge variant="brand" className="text-[10px] font-bold">
+                    Verified Patient
+                  </Badge>
+                </div>
+                <div className="text-xs text-slate-600 space-y-1.5 pt-2 border-t border-slate-200">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Mobile Phone:</span>
+                    <span className="font-semibold text-slate-800">{profile?.phone_number || '+63 9XX XXX XXXX'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Patient Identifier:</span>
+                    <span className="font-mono text-[11px] text-slate-700">{profile?.id?.slice(0, 16)}…</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Data Privacy Compliance:</span>
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <ShieldCheck className="h-3 w-3" /> RA 10173 Active
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <Button asChild variant="brand" className="w-full rounded-xl text-xs font-bold shadow-xs">
+                <Link href="/account">
+                  <User className="h-3.5 w-3.5 mr-1.5" />
+                  Open Full Account &amp; Security Hub
+                  <ChevronRight className="h-3.5 w-3.5 ml-auto opacity-70" />
+                </Link>
+              </Button>
             </TabsContent>
           </Tabs>
 
