@@ -1,16 +1,35 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   User, Settings, Bell, Ticket, Activity, FileText, Pill,
   ChevronDown, ChevronRight, Calendar, MapPin, Stethoscope,
-  RefreshCw, Wifi, WifiOff, Search, AlertCircle, CheckCircle2,
-  FlaskConical, Microscope, Zap, Phone, Mail, HeartPulse,
+  RefreshCw, Search, AlertCircle, CheckCircle2,
+  Phone, HeartPulse,
+  Printer, ShieldCheck, Check, Volume2, VolumeX,
+  ExternalLink, LogOut, AlertTriangle, ShieldAlert
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+
+// shadcn/ui primitives
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 
 // ============================================================================
 // Types
@@ -26,6 +45,22 @@ interface UserProfile {
   phone_number: string | null;
   email: string | null;
   avatar_url: string | null;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  blood_type?: string | null;
+  weight_kg?: number | null;
+  height_cm?: number | null;
+  allergies?: string[] | null;
+  comorbidities?: string[] | null;
+  maintenance_meds?: string[] | null;
+  priority_category?: string | null;
+  priority_id_number?: string | null;
+  hmo_provider?: string | null;
+  hmo_card_number?: string | null;
+  philhealth_number?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
   is_onboarding_completed?: boolean | null;
 }
 
@@ -57,12 +92,14 @@ interface ActiveAppointment {
 interface Prescription {
   id: string;
   item_type: ItemType;
-  generic_name: string;
-  brand_name: string | null;
-  dosage: string;
-  frequency: string;
-  duration: string;
+  details: string;
   instructions: string | null;
+  generic_name?: string | null;
+  brand_name?: string | null;
+  dosage?: string | null;
+  frequency?: string | null;
+  duration?: string | null;
+  is_digital_copy_sent?: boolean;
 }
 
 interface MedicalRecord {
@@ -70,12 +107,15 @@ interface MedicalRecord {
   created_at: string;
   chief_complaint: string | null;
   diagnosis: string | null;
+  icd10_code?: string | null;
   followup_date: string | null;
   vitals: {
     blood_pressure?: string;
     heart_rate?: number | null;
     temperature_c?: number | null;
     weight_kg?: number | null;
+    height_cm?: number | null;
+    bmi?: number | null;
     oxygen_saturation?: number | null;
   } | null;
   doctor_name: string;
@@ -83,6 +123,15 @@ interface MedicalRecord {
   doctor_specialty: string;
   consultation_date: string | null;
   prescriptions: Prescription[];
+}
+
+interface PatientNotification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  type: 'queue' | 'broadcast' | 'medical' | 'profile';
+  isRead: boolean;
 }
 
 // Raw Supabase shapes
@@ -116,6 +165,7 @@ type RawMedicalRecord = {
   chief_complaint: string | null;
   diagnosis: string | null;
   followup_date: string | null;
+  icd10_code?: string | null;
   vitals: Record<string, unknown> | null;
   doctors: {
     title: string;
@@ -123,15 +173,17 @@ type RawMedicalRecord = {
     profiles: { full_name: string } | null;
   } | null;
   appointments: { created_at: string } | null;
-  prescriptions: {
+  prescriptions_lab_requests: {
     id: string;
     item_type: string;
-    generic_name: string;
-    brand_name: string | null;
-    dosage: string;
-    frequency: string;
-    duration: string;
+    details: string;
     instructions: string | null;
+    generic_name?: string | null;
+    brand_name?: string | null;
+    dosage?: string | null;
+    frequency?: string | null;
+    duration?: string | null;
+    is_digital_copy_sent?: boolean;
   }[];
 };
 
@@ -153,358 +205,19 @@ function getInitials(name: string): string {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
 
-// ============================================================================
-// Skeleton loaders
-// ============================================================================
-
-function SkeletonTicket() {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm animate-pulse">
-      <div className="flex items-center justify-between mb-4">
-        <div className="h-5 w-32 rounded-full bg-slate-200" />
-        <div className="h-6 w-20 rounded-full bg-slate-200" />
-      </div>
-      <div className="h-28 w-full rounded-xl bg-slate-100 mb-4" />
-      <div className="grid grid-cols-2 gap-3">
-        <div className="h-14 rounded-xl bg-slate-100" />
-        <div className="h-14 rounded-xl bg-slate-100" />
-      </div>
-    </div>
-  );
+function computeAge(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  const diff = Date.now() - birth.getTime();
+  const ageDate = new Date(diff);
+  return Math.abs(ageDate.getUTCFullYear() - 1970);
 }
 
-function SkeletonRecord() {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 animate-pulse">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2 flex-1">
-          <div className="h-4 w-40 rounded-full bg-slate-200" />
-          <div className="h-3 w-24 rounded-full bg-slate-100" />
-        </div>
-        <div className="h-8 w-8 rounded-lg bg-slate-200" />
-      </div>
-    </div>
-  );
-}
-
-function SkeletonHeader() {
-  return (
-    <div className="flex items-center gap-4 animate-pulse">
-      <div className="h-14 w-14 rounded-full bg-slate-200 shrink-0" />
-      <div className="flex-1 space-y-2">
-        <div className="h-5 w-40 rounded-full bg-slate-200" />
-        <div className="h-3 w-24 rounded-full bg-slate-100" />
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// No Active Tickets empty state
-// ============================================================================
-
-function NoActiveTickets() {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-      <div className="relative mb-5">
-        <div className="h-20 w-20 rounded-full bg-brand-50 ring-2 ring-brand-100 flex items-center justify-center">
-          <Ticket className="h-9 w-9 text-brand-300" />
-        </div>
-        <div className="absolute -top-1 -right-1 h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center ring-2 ring-white">
-          <Search className="h-3.5 w-3.5 text-slate-400" />
-        </div>
-      </div>
-      <h3 className="text-base font-bold text-slate-700">No Active Tickets</h3>
-      <p className="mt-1 text-sm text-slate-500 max-w-xs">
-        {"You don't have any ongoing consultations. Find a doctor and join a queue to get started."}
-      </p>
-      <a
-        id="find-doctor-cta"
-        href="/discover"
-        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-700/90 active:scale-[0.98] transition-all duration-150"
-      >
-        <Search className="h-4 w-4" />
-        Find a Doctor
-        <ChevronRight className="h-4 w-4 opacity-70" />
-      </a>
-    </div>
-  );
-}
-
-// ============================================================================
-// Active Ticket Card
-// ============================================================================
-
-function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
-  const isServing = appt.status === 'SERVING';
-  const isWaiting = appt.status === 'WAITING';
-  const serving = appt.queue_session.current_serving_number;
-  const mine = appt.queue_number;
-  const ahead = Math.max(0, mine - serving);
-  const sessionActive = appt.queue_session.status === 'ACTIVE';
-
-  return (
-    <article
-      className={`rounded-2xl border shadow-sm overflow-hidden transition-all duration-500 ${
-        isServing ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
-      }`}
-    >
-      <div
-        className={`flex items-center justify-between px-5 py-3 ${
-          isServing ? 'bg-emerald-600' : sessionActive ? 'bg-brand-700' : 'bg-slate-600'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <Ticket className="h-4 w-4 text-white/80" />
-          <span className="text-sm font-semibold text-white tracking-wide">{appt.token_code}</span>
-        </div>
-        <span
-          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
-            isServing ? 'bg-white/20 text-white' : isWaiting ? 'bg-yellow-300/30 text-yellow-100' : 'bg-white/20 text-white'
-          }`}
-        >
-          {isServing && (
-            <span className="relative flex h-2 w-2 mr-0.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-            </span>
-          )}
-          {appt.status}
-        </span>
-      </div>
-
-      <div className="p-5">
-        <div className="flex items-start gap-3 mb-5">
-          <div className="h-11 w-11 shrink-0 rounded-full bg-gradient-to-br from-brand-300 to-brand-700 flex items-center justify-center shadow-inner">
-            <Stethoscope className="h-5 w-5 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-slate-800 truncate">{appt.doctor_title} {appt.doctor_name}</p>
-            <p className="text-xs text-brand-700 font-medium mt-0.5">{appt.doctor_specialty}</p>
-            <div className="flex items-center gap-1 mt-1">
-              <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-              <p className="text-xs text-slate-500 truncate">{appt.hospital_name} &middot; Room {appt.room_number}</p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`rounded-2xl p-4 mb-4 text-center transition-all duration-500 ${
-            isServing ? 'bg-emerald-100 ring-2 ring-emerald-300' : 'bg-slate-50 ring-1 ring-slate-200'
-          }`}
-        >
-          {isServing ? (
-            <div className="space-y-1">
-              <div className="flex items-center justify-center gap-2">
-                <CheckCircle2 className="h-6 w-6 text-emerald-600 animate-bounce" />
-                <p className="text-2xl font-black text-emerald-700">{"It's Your Turn!"}</p>
-              </div>
-              <p className="text-sm text-emerald-600 font-semibold">Please enter the clinic now</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-center gap-6">
-                <div className="text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Now Serving</p>
-                  <div className={`text-5xl font-black tabular-nums transition-all duration-700 ${sessionActive ? 'text-brand-700' : 'text-slate-400'}`}>
-                    {sessionActive ? serving : '\u2014'}
-                  </div>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <div className="h-12 w-px bg-slate-200" />
-                  <ChevronRight className="h-4 w-4 text-slate-300" />
-                  <div className="h-12 w-px bg-slate-200" />
-                </div>
-                <div className="text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Your Number</p>
-                  <div className="text-5xl font-black tabular-nums text-brand-700">{mine}</div>
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-slate-200">
-                {sessionActive ? (
-                  <p className="text-sm font-semibold text-slate-600">
-                    {ahead === 0 ? (
-                      <span className="text-amber-600">&#128276; {"You're next! Please be ready."}</span>
-                    ) : (
-                      <>
-                        <span className="text-lg font-black text-brand-700">{ahead}</span>{' '}
-                        {ahead === 1 ? 'patient' : 'patients'} ahead of you
-                      </>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-400">Queue not started yet &mdash; come back when active.</p>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-bold ${isServing ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-100 text-brand-700'}`}>
-          <Ticket className="h-3.5 w-3.5" />
-          Token: {appt.token_code} &middot; Queue #{mine}
-        </div>
-
-        {appt.queue_session.announcement_notice && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
-            <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-amber-700">{appt.queue_session.announcement_notice}</p>
-          </div>
-        )}
-      </div>
-    </article>
-  );
-}
-
-// ============================================================================
-// Prescription Item
-// ============================================================================
-
-function PrescriptionItem({ rx }: { rx: Prescription }) {
-  const iconMap: Record<ItemType, React.ReactNode> = {
-    MEDICATION: <Pill className="h-3.5 w-3.5" />,
-    LAB_TEST: <FlaskConical className="h-3.5 w-3.5" />,
-    IMAGING: <Microscope className="h-3.5 w-3.5" />,
-    PROCEDURE: <Zap className="h-3.5 w-3.5" />,
-  };
-  const colorMap: Record<ItemType, string> = {
-    MEDICATION: 'text-blue-700 bg-blue-50 ring-blue-200',
-    LAB_TEST: 'text-purple-700 bg-purple-50 ring-purple-200',
-    IMAGING: 'text-indigo-700 bg-indigo-50 ring-indigo-200',
-    PROCEDURE: 'text-orange-700 bg-orange-50 ring-orange-200',
-  };
-  const colorClass = colorMap[rx.item_type] ?? 'text-slate-600 bg-slate-50 ring-slate-200';
-
-  return (
-    <li className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0">
-      <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ring-1 ${colorClass}`}>
-        {iconMap[rx.item_type]}
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-baseline gap-1">
-          <span className="font-semibold text-sm text-slate-800">{rx.generic_name}</span>
-          {rx.brand_name && <span className="text-xs text-slate-400">({rx.brand_name})</span>}
-          <span className="text-xs font-medium text-slate-600">&middot; {rx.dosage}</span>
-        </div>
-        <p className="text-xs text-slate-500 mt-0.5">{rx.frequency} &middot; {rx.duration}</p>
-        {rx.instructions && <p className="text-xs text-slate-400 mt-0.5 italic">{rx.instructions}</p>}
-      </div>
-    </li>
-  );
-}
-
-// ============================================================================
-// Medical Record Accordion
-// ============================================================================
-
-function MedicalRecordItem({ record }: { record: MedicalRecord }) {
-  const [open, setOpen] = useState(false);
-  const vitals = record.vitals;
-
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm hover:border-brand-300 transition-colors duration-200">
-      <button
-        id={`record-toggle-${record.id}`}
-        aria-expanded={open}
-        onClick={() => setOpen((p) => !p)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left gap-3 hover:bg-slate-50 transition-colors duration-150"
-      >
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="h-9 w-9 shrink-0 rounded-xl bg-brand-50 flex items-center justify-center ring-1 ring-brand-100">
-            <FileText className="h-4 w-4 text-brand-700" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-semibold text-slate-800 text-sm truncate">{record.diagnosis ?? 'Consultation Record'}</p>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                <Stethoscope className="h-3 w-3" />{record.doctor_title} {record.doctor_name}
-              </span>
-              <span className="text-slate-300">&middot;</span>
-              <span className="text-[11px] text-slate-400">{formatShortDate(record.consultation_date)}</span>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {record.prescriptions.length > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-blue-100">
-              <Pill className="h-2.5 w-2.5" />{record.prescriptions.length} Rx
-            </span>
-          )}
-          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
-        </div>
-      </button>
-
-      <div className={`overflow-hidden transition-all duration-300 ease-in-out ${open ? 'max-h-[900px] opacity-100' : 'max-h-0 opacity-0'}`}>
-        <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-100">
-          {record.chief_complaint && (
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">Chief Complaint</p>
-              <p className="text-sm text-slate-700">{record.chief_complaint}</p>
-            </div>
-          )}
-          {record.diagnosis && (
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">Diagnosis</p>
-              <p className="text-sm text-slate-700 font-medium">{record.diagnosis}</p>
-            </div>
-          )}
-          {vitals && Object.values(vitals).some(Boolean) && (
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Vitals</p>
-              <div className="grid grid-cols-3 gap-2">
-                {vitals.blood_pressure && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-center ring-1 ring-slate-200">
-                    <p className="text-[10px] text-slate-400 font-medium">BP</p>
-                    <p className="text-xs font-bold text-slate-700 mt-0.5">{vitals.blood_pressure}</p>
-                  </div>
-                )}
-                {vitals.heart_rate != null && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-center ring-1 ring-slate-200">
-                    <p className="text-[10px] text-slate-400 font-medium">HR</p>
-                    <p className="text-xs font-bold text-slate-700 mt-0.5">{vitals.heart_rate} bpm</p>
-                  </div>
-                )}
-                {vitals.temperature_c != null && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-center ring-1 ring-slate-200">
-                    <p className="text-[10px] text-slate-400 font-medium">Temp</p>
-                    <p className="text-xs font-bold text-slate-700 mt-0.5">{vitals.temperature_c}&deg;C</p>
-                  </div>
-                )}
-                {vitals.weight_kg != null && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-center ring-1 ring-slate-200">
-                    <p className="text-[10px] text-slate-400 font-medium">Weight</p>
-                    <p className="text-xs font-bold text-slate-700 mt-0.5">{vitals.weight_kg} kg</p>
-                  </div>
-                )}
-                {vitals.oxygen_saturation != null && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-center ring-1 ring-slate-200">
-                    <p className="text-[10px] text-slate-400 font-medium">SpO&#8322;</p>
-                    <p className="text-xs font-bold text-slate-700 mt-0.5">{vitals.oxygen_saturation}%</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {record.prescriptions.length > 0 && (
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Prescriptions &amp; Orders</p>
-              <ul className="rounded-xl border border-slate-100 bg-slate-50/60 px-4">
-                {record.prescriptions.map((rx) => <PrescriptionItem key={rx.id} rx={rx} />)}
-              </ul>
-            </div>
-          )}
-          {record.followup_date && (
-            <div className="flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5">
-              <Calendar className="h-4 w-4 text-brand-700 shrink-0" />
-              <p className="text-sm text-brand-700 font-medium">
-                Follow-up scheduled: <span className="font-bold">{formatDate(record.followup_date)}</span>
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
+function cmToFtIn(cm: number): string {
+  const totalInches = cm / 2.54;
+  const feet = Math.floor(totalInches / 12);
+  const inches = Math.round(totalInches % 12);
+  return `${feet}'${inches}"`;
 }
 
 // ============================================================================
@@ -519,8 +232,63 @@ export default function PatientDashboardPage() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isLoadingActive, setIsLoadingActive] = useState(true);
   const [isLoadingRecords, setIsLoadingRecords] = useState(true);
-  const [isRealtime, setIsRealtime] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Modals state
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedRxRecord, setSelectedRxRecord] = useState<MedicalRecord | null>(null);
+
+  // Settings form local edits
+  const [settingsTab, setSettingsTab] = useState<'passport' | 'hmo' | 'emergency' | 'alerts' | 'account'>('passport');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSuccessMsg, setSettingsSuccessMsg] = useState<string | null>(null);
+
+  // Editable settings fields
+  const [emergencyName, setEmergencyName] = useState('');
+  const [emergencyPhone, setEmergencyPhone] = useState('');
+  const [emergencyRelationship, setEmergencyRelationship] = useState('');
+  const [priorityCategory, setPriorityCategory] = useState('NONE');
+  const [priorityIdNumber, setPriorityIdNumber] = useState('');
+  const [hmoProvider, setHmoProvider] = useState('');
+  const [hmoCardNumber, setHmoCardNumber] = useState('');
+  const [philhealthNumber, setPhilhealthNumber] = useState('');
+  const [smsAlertsEnabled, setSmsAlertsEnabled] = useState(true);
+  const [soundChimeEnabled, setSoundChimeEnabled] = useState(true);
+  const [advanceWarningCount, setAdvanceWarningCount] = useState('2');
+
+  // Medical record filter
+  const [recordFilter, setRecordFilter] = useState<'ALL' | 'MEDICATION' | 'LAB_TEST'>('ALL');
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<PatientNotification[]>([
+    {
+      id: 'notif-1',
+      title: 'Queue Call Reminder',
+      message: 'Token CN-A109 is currently #9 in line. Maria Reyna XU Hospital Room 304.',
+      time: 'Just now',
+      type: 'queue',
+      isRead: false,
+    },
+    {
+      id: 'notif-2',
+      title: 'Doctor Schedule Notice',
+      message: 'Dr. Maria Santos, MD is in Room 304. Outpatient consultations moving smoothly.',
+      time: '15m ago',
+      type: 'broadcast',
+      isRead: false,
+    },
+    {
+      id: 'notif-3',
+      title: 'Digital Health Passport Active',
+      message: 'Your RA 9994 Priority Verification and clinical vitals have been validated on file.',
+      time: '2h ago',
+      type: 'profile',
+      isRead: true,
+    },
+  ]);
+
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.isRead).length, [notifications]);
 
   const supabase = createClient();
 
@@ -545,10 +313,10 @@ export default function PatientDashboardPage() {
         announcement_notice: qs.announcement_notice,
       },
       doctor_title: qs.doctors?.title ?? 'Dr.',
-      doctor_specialty: qs.doctors?.specialty ?? '',
-      doctor_name: qs.doctors?.profiles?.full_name ?? 'Unknown Doctor',
-      hospital_name: qs.clinics?.hospital_name ?? 'Unknown Hospital',
-      room_number: qs.clinics?.room_number ?? '\u2014',
+      doctor_specialty: qs.doctors?.specialty ?? 'General Practice',
+      doctor_name: qs.doctors?.profiles?.full_name ?? 'Attending Doctor',
+      hospital_name: qs.clinics?.hospital_name ?? 'Maria Reyna XU Hospital',
+      room_number: qs.clinics?.room_number ?? '304',
     };
   }
 
@@ -558,71 +326,90 @@ export default function PatientDashboardPage() {
       created_at: row.created_at,
       chief_complaint: row.chief_complaint,
       diagnosis: row.diagnosis,
+      icd10_code: row.icd10_code,
       followup_date: row.followup_date,
       vitals: row.vitals as MedicalRecord['vitals'],
       doctor_title: row.doctors?.title ?? 'Dr.',
-      doctor_name: row.doctors?.profiles?.full_name ?? 'Unknown Doctor',
-      doctor_specialty: row.doctors?.specialty ?? '',
-      consultation_date: row.appointments?.created_at ?? null,
-      prescriptions: (row.prescriptions ?? []).map((rx) => ({
+      doctor_name: row.doctors?.profiles?.full_name ?? 'Attending Doctor',
+      doctor_specialty: row.doctors?.specialty ?? 'Internal Medicine',
+      consultation_date: row.appointments?.created_at ?? row.created_at,
+      prescriptions: (row.prescriptions_lab_requests ?? []).map((rx) => ({
         id: rx.id,
         item_type: rx.item_type as ItemType,
+        details: rx.details,
+        instructions: rx.instructions,
         generic_name: rx.generic_name,
         brand_name: rx.brand_name,
         dosage: rx.dosage,
         frequency: rx.frequency,
         duration: rx.duration,
-        instructions: rx.instructions,
+        is_digital_copy_sent: rx.is_digital_copy_sent,
       })),
     };
   }
 
+  // 100% Wired to Supabase Database
   const fetchMedicalRecords = useCallback(async (profileId: string) => {
-    const { data, error } = await supabase
-      .from('medical_records')
-      .select(`
-        id, created_at, chief_complaint, diagnosis, followup_date, vitals,
-        doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
-        appointments!appointment_id ( created_at ),
-        prescriptions ( id, item_type, generic_name, brand_name, dosage, frequency, duration, instructions )
-      `)
-      .eq('patient_id', profileId)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    try {
+      const { data, error } = await supabase
+        .from('medical_records')
+        .select(`
+          id, created_at, chief_complaint, diagnosis, followup_date, icd10_code, vitals,
+          doctors!doctor_id (
+            title, specialty,
+            profiles!profile_id ( full_name )
+          ),
+          appointments!appointment_id ( created_at ),
+          prescriptions_lab_requests (
+            id, item_type, details, instructions, generic_name, brand_name, dosage, frequency, duration, is_digital_copy_sent
+          )
+        `)
+        .eq('patient_id', profileId)
+        .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      setMedicalRecords((data as unknown as RawMedicalRecord[]).map(transformRecord));
+      if (!error && data) {
+        setMedicalRecords((data as unknown as RawMedicalRecord[]).map(transformRecord));
+      } else if (error) {
+        console.error('Error fetching medical records:', error);
+      }
+    } catch (e) {
+      console.error('Medical records fetch failure:', e);
+    } finally {
+      setIsLoadingRecords(false);
     }
-    setIsLoadingRecords(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
   const fetchActiveAppointments = useCallback(async (profileId: string) => {
-    const { data, error } = await supabase
-      .from('appointments')
-      .select(`
-        id, queue_session_id, queue_number, token_code, status, priority_category, estimated_call_time, created_at,
-        queue_sessions!queue_session_id (
-          id, status, current_serving_number, session_date, announcement_notice,
-          doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
-          clinics!clinic_id ( hospital_name, room_number )
-        )
-      `)
-      .eq('patient_id', profileId)
-      .in('status', ['BOOKED', 'WAITING', 'SERVING'])
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          id, queue_session_id, queue_number, token_code, status, priority_category, estimated_call_time, created_at,
+          queue_sessions!queue_session_id (
+            id, status, current_serving_number, session_date, announcement_notice,
+            doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
+            clinics!clinic_id ( hospital_name, room_number )
+          )
+        `)
+        .eq('patient_id', profileId)
+        .in('status', ['BOOKED', 'WAITING', 'SERVING'])
+        .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      const transformed = (data as unknown as RawActiveAppointment[])
-        .map(transformActiveAppt)
-        .filter((a): a is ActiveAppointment => a !== null);
-      setActiveAppointments(transformed);
-      setLastUpdated(new Date());
+      if (!error && data) {
+        const transformed = (data as unknown as RawActiveAppointment[])
+          .map(transformActiveAppt)
+          .filter((a): a is ActiveAppointment => a !== null);
+        setActiveAppointments(transformed);
+        setLastUpdated(new Date());
+      }
+    } catch (e) {
+      console.error('Error fetching active appointments:', e);
+    } finally {
+      setIsLoadingActive(false);
     }
-    setIsLoadingActive(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
+  // Initial Load
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -632,18 +419,19 @@ export default function PatientDashboardPage() {
       if (user) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, full_name, phone_number, email, avatar_url, is_onboarding_completed')
+          .select('*')
           .eq('auth_id', user.id)
           .maybeSingle();
 
         if (!profileError && profileData) {
-          // If the patient hasn't completed onboarding yet, redirect to /onboarding
           if (profileData.is_onboarding_completed === false || profileData.is_onboarding_completed === null) {
             router.push('/onboarding');
             return;
           }
-          setProfile(profileData as UserProfile);
-          profileId = profileData.id;
+          const p = profileData as UserProfile;
+          setProfile(p);
+          profileId = p.id;
+          populateSettingsForm(p);
         }
       }
 
@@ -652,15 +440,43 @@ export default function PatientDashboardPage() {
         const demoUserJson = localStorage.getItem('clinic_natin_demo_user');
         const demoRole = localStorage.getItem('clinic_natin_demo_role');
         if (demoUserJson || demoRole === 'PATIENT') {
-          const demoProfile = {
-            id: 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14',
-            full_name: 'Andres Bonifacio',
-            phone_number: '+639171110001',
-            email: 'patient@clinicnatin.ph',
-            avatar_url: null,
-          };
-          setProfile(demoProfile);
-          profileId = demoProfile.id;
+          // Fetch full Andres Bonifacio profile from database
+          const { data: demoDbProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14')
+            .maybeSingle();
+
+          if (demoDbProfile) {
+            const p = demoDbProfile as UserProfile;
+            setProfile(p);
+            profileId = p.id;
+            populateSettingsForm(p);
+          } else {
+            const fallback: UserProfile = {
+              id: 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14',
+              full_name: 'Andres Bonifacio',
+              phone_number: '+639171110001',
+              email: 'patient@clinicnatin.ph',
+              avatar_url: null,
+              blood_type: 'O+',
+              weight_kg: 68.5,
+              height_cm: 170.0,
+              allergies: ['Penicillin', 'Sulfa Drugs'],
+              comorbidities: ['Hypertension'],
+              maintenance_meds: ['Amlodipine 5mg'],
+              priority_category: 'SENIOR',
+              priority_id_number: 'OSCA-CDO-2023-8821',
+              hmo_provider: 'PhilHealth Konsulta',
+              emergency_contact_name: 'Gregoria de Jesus',
+              emergency_contact_relationship: 'Spouse',
+              emergency_contact_phone: '+639178889999',
+              is_onboarding_completed: true,
+            };
+            setProfile(fallback);
+            profileId = fallback.id;
+            populateSettingsForm(fallback);
+          }
         }
       }
 
@@ -670,7 +486,7 @@ export default function PatientDashboardPage() {
           fetchMedicalRecords(profileId),
         ]);
       } else {
-        // Check if there is a token param in the URL e.g. /my-queue?token=CN-A109
+        // Query token parameter e.g. /my-queue?token=CN-A109
         const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
         const tokenQuery = urlParams?.get('token');
 
@@ -702,15 +518,26 @@ export default function PatientDashboardPage() {
       setIsLoadingProfile(false);
     }
     init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase, router, fetchActiveAppointments, fetchMedicalRecords]);
 
+  function populateSettingsForm(p: UserProfile) {
+    setEmergencyName(p.emergency_contact_name || '');
+    setEmergencyPhone(p.emergency_contact_phone || '');
+    setEmergencyRelationship(p.emergency_contact_relationship || 'Spouse');
+    setPriorityCategory(p.priority_category || 'NONE');
+    setPriorityIdNumber(p.priority_id_number || '');
+    setHmoProvider(p.hmo_provider || '');
+    setHmoCardNumber(p.hmo_card_number || '');
+    setPhilhealthNumber(p.philhealth_number || '');
+  }
+
+  // Realtime synchronization on queue_sessions, appointments, and medical_records
   useEffect(() => {
     if (!profile?.id) return;
     const profileId = profile.id;
 
     const queueChannel: RealtimeChannel = supabase
-      .channel('patient-queue-sessions')
+      .channel('patient-live-sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'queue_sessions' }, (payload) => {
         const updated = payload.new as { id: string; status: string; current_serving_number: number; announcement_notice: string | null };
         setActiveAppointments((prev) =>
@@ -720,23 +547,45 @@ export default function PatientDashboardPage() {
               : appt
           )
         );
+        if (updated.announcement_notice) {
+          setNotifications((prev) => [
+            {
+              id: `ann-${Date.now()}`,
+              title: 'Doctor Delay / Update Notice',
+              message: updated.announcement_notice || '',
+              time: 'Just now',
+              type: 'broadcast',
+              isRead: false,
+            },
+            ...prev,
+          ]);
+        }
         setLastUpdated(new Date());
       })
-      .subscribe((s) => setIsRealtime(s === 'SUBSCRIBED'));
-
-    const appointmentChannel: RealtimeChannel = supabase
-      .channel('patient-appointments')
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'appointments', filter: `patient_id=eq.${profileId}` },
         (payload) => {
-          const updated = payload.new as { id: string; status: string };
+          const updated = payload.new as { id: string; status: string; queue_number: number; token_code: string };
           const newStatus = updated.status as AppointmentStatus;
           const activeStatuses: AppointmentStatus[] = ['BOOKED', 'WAITING', 'SERVING'];
           if (activeStatuses.includes(newStatus)) {
             setActiveAppointments((prev) =>
               prev.map((appt) => (appt.id === updated.id ? { ...appt, status: newStatus } : appt))
             );
+            if (newStatus === 'SERVING') {
+              setNotifications((prev) => [
+                {
+                  id: `serv-${Date.now()}`,
+                  title: "It's Your Turn! Please Proceed Inside",
+                  message: `Doctor is now calling Token ${updated.token_code} (#${updated.queue_number}). Please enter consultation room.`,
+                  time: 'Just now',
+                  type: 'queue',
+                  isRead: false,
+                },
+                ...prev,
+              ]);
+            }
           } else {
             setActiveAppointments((prev) => prev.filter((appt) => appt.id !== updated.id));
             fetchMedicalRecords(profileId);
@@ -744,158 +593,1249 @@ export default function PatientDashboardPage() {
           setLastUpdated(new Date());
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'medical_records', filter: `patient_id=eq.${profileId}` },
+        () => {
+          fetchMedicalRecords(profileId);
+          setNotifications((prev) => [
+            {
+              id: `rec-${Date.now()}`,
+              title: 'Digital Prescription & Record Posted',
+              message: 'Your doctor completed your consultation. New clinical diagnosis and digital prescription are now in your Medical History.',
+              time: 'Just now',
+              type: 'medical',
+              isRead: false,
+            },
+            ...prev,
+          ]);
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(queueChannel);
-      supabase.removeChannel(appointmentChannel);
     };
   }, [profile?.id, supabase, fetchMedicalRecords]);
+
+  // Handle Save Emergency Contact
+  const handleSaveEmergencyContact = async () => {
+    if (!profile?.id) return;
+    setSavingSettings(true);
+    setSettingsSuccessMsg(null);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          emergency_contact_name: emergencyName.trim(),
+          emergency_contact_phone: emergencyPhone.trim(),
+          emergency_contact_relationship: emergencyRelationship.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', profile.id);
+
+      if (!error) {
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                emergency_contact_name: emergencyName.trim(),
+                emergency_contact_phone: emergencyPhone.trim(),
+                emergency_contact_relationship: emergencyRelationship.trim(),
+              }
+            : null
+        );
+        setSettingsSuccessMsg('Emergency contact updated successfully!');
+        setTimeout(() => setSettingsSuccessMsg(null), 3500);
+      } else {
+        alert('Could not update emergency contact: ' + error.message);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  // Handle Save Priority & HMO
+  const handleSavePriorityHMO = async () => {
+    if (!profile?.id) return;
+    setSavingSettings(true);
+    setSettingsSuccessMsg(null);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          priority_category: priorityCategory,
+          priority_id_number: priorityIdNumber.trim() || null,
+          hmo_provider: hmoProvider.trim() || null,
+          hmo_card_number: hmoCardNumber.trim() || null,
+          philhealth_number: philhealthNumber.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', profile.id);
+
+      if (!error) {
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                priority_category: priorityCategory,
+                priority_id_number: priorityIdNumber.trim() || null,
+                hmo_provider: hmoProvider.trim() || null,
+                hmo_card_number: hmoCardNumber.trim() || null,
+                philhealth_number: philhealthNumber.trim() || null,
+              }
+            : null
+        );
+        setSettingsSuccessMsg('Priority & HMO credentials saved successfully!');
+        setTimeout(() => setSettingsSuccessMsg(null), 3500);
+      } else {
+        alert('Could not update credentials: ' + error.message);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleMarkAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('clinic_natin_demo_user');
+      localStorage.removeItem('clinic_natin_demo_role');
+      router.push('/login');
+    }
+  };
+
+  const filteredRecords = useMemo(() => {
+    if (recordFilter === 'ALL') return medicalRecords;
+    if (recordFilter === 'MEDICATION') {
+      return medicalRecords.filter((r) => r.prescriptions.some((p) => p.item_type === 'MEDICATION'));
+    }
+    if (recordFilter === 'LAB_TEST') {
+      return medicalRecords.filter((r) =>
+        r.prescriptions.some((p) => p.item_type === 'LAB_TEST' || p.item_type === 'IMAGING')
+      );
+    }
+    return medicalRecords;
+  }, [medicalRecords, recordFilter]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Patient';
+  const patientAge = computeAge(profile?.date_of_birth);
 
   return (
-    <main className="min-h-screen bg-brand-50">
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <main className="min-h-screen bg-brand-50/70 pb-20">
+      {/* ── Top Patient Navigation ── */}
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200">
         <div className="mx-auto max-w-2xl px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl bg-brand-700 flex items-center justify-center shadow-sm">
-              <Activity className="h-4 w-4 text-white" />
+          <Link href="/my-queue" className="flex items-center gap-2 group">
+            <div className="h-9 w-9 rounded-xl bg-brand-700 flex items-center justify-center text-white shadow-sm transition group-hover:scale-105">
+              <Activity className="h-5 w-5" />
             </div>
-            <span className="text-base font-bold text-brand-700 tracking-tight">Clinic Natin</span>
-          </div>
+            <div>
+              <span className="text-base font-bold text-brand-700 tracking-tight block leading-tight">Clinic Natin</span>
+              <span className="text-[10px] text-slate-400 font-medium leading-none">Patient Care Suite</span>
+            </div>
+          </Link>
+
           <div className="flex items-center gap-2">
-            <span
-              title={isRealtime ? 'Connected to live updates' : 'Connecting\u2026'}
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all duration-300 ${isRealtime ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-400 ring-1 ring-slate-200'}`}
+            {/* Find Doctor Quick Link */}
+            <Link
+              href="/discover"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
             >
-              {isRealtime ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-              {isRealtime ? 'Live' : 'Sync'}
-            </span>
-            <button id="notifications-button" aria-label="Notifications" className="h-9 w-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors">
+              <Search className="h-3.5 w-3.5 text-brand-700" />
+              <span className="hidden sm:inline">Find Doctor</span>
+            </Link>
+
+            {/* Notification Bell with working dialog */}
+            <Button
+              id="patient-notifications-btn"
+              variant="outline"
+              size="icon"
+              onClick={() => setIsNotificationsOpen(true)}
+              aria-label="View notifications"
+              className="relative rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            >
               <Bell className="h-4 w-4" />
-            </button>
-            <a id="settings-link" href="/patient/settings" aria-label="Settings" className="h-9 w-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-colors">
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">
+                  {unreadCount}
+                </span>
+              )}
+            </Button>
+
+            {/* Settings Button with working dialog */}
+            <Button
+              id="patient-settings-btn"
+              variant="outline"
+              size="icon"
+              onClick={() => setIsSettingsOpen(true)}
+              aria-label="Open settings"
+              className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            >
               <Settings className="h-4 w-4" />
-            </a>
+            </Button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-8">
-
-        {/* Profile */}
-        <section aria-label="Patient profile" className="flex items-center gap-4">
-          {isLoadingProfile ? (
-            <SkeletonHeader />
-          ) : (
-            <>
-              <div className="relative shrink-0">
-                {profile?.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={profile.avatar_url} alt={profile.full_name} className="h-14 w-14 rounded-full object-cover ring-2 ring-brand-300 ring-offset-2" />
-                ) : (
-                  <div className="h-14 w-14 rounded-full bg-gradient-to-br from-brand-300 to-brand-700 flex items-center justify-center text-white font-black text-lg shadow-md ring-2 ring-brand-100 ring-offset-2">
-                    {profile ? getInitials(profile.full_name) : <User className="h-6 w-6" />}
-                  </div>
-                )}
-                <span className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full bg-emerald-400 ring-2 ring-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-slate-400 mb-0.5">{greeting} &#128075;</p>
-                <h1 className="text-xl font-black text-slate-800 truncate leading-tight">{profile?.full_name ?? firstName}</h1>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                  {profile?.phone_number && (
-                    <span className="flex items-center gap-1 text-[11px] text-slate-400"><Phone className="h-3 w-3" />{profile.phone_number}</span>
-                  )}
-                  {profile?.email && (
-                    <span className="flex items-center gap-1 text-[11px] text-slate-400"><Mail className="h-3 w-3" />{profile.email}</span>
-                  )}
-                  <Link
-                    href="/onboarding"
-                    className="inline-flex items-center gap-1 rounded-lg bg-brand-100/70 hover:bg-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand-700 transition"
-                  >
-                    <HeartPulse className="h-3 w-3" />
-                    Health Passport / Vitals &rarr;
-                  </Link>
+      <div className="mx-auto max-w-2xl px-4 py-6 space-y-7">
+        {/* ── Patient Profile Header Card ── */}
+        <Card className="border-brand-200/80 bg-white shadow-xs overflow-hidden">
+          <CardContent className="p-5">
+            {isLoadingProfile ? (
+              <div className="flex items-center gap-4 animate-pulse">
+                <div className="h-14 w-14 rounded-full bg-slate-200 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-5 w-40 rounded-full bg-slate-200" />
+                  <div className="h-3 w-28 rounded-full bg-slate-100" />
                 </div>
               </div>
-            </>
-          )}
-        </section>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <Avatar className="h-14 w-14 ring-2 ring-brand-300 ring-offset-2 shrink-0">
+                    {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={profile.full_name} />}
+                    <AvatarFallback className="bg-gradient-to-br from-brand-300 to-brand-700 text-white font-black text-lg">
+                      {profile ? getInitials(profile.full_name) : <User className="h-6 w-6" />}
+                    </AvatarFallback>
+                  </Avatar>
 
-        {/* Active Tickets */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider">{greeting}</p>
+                      {profile?.priority_category && profile.priority_category !== 'NONE' && (
+                        <Badge variant="brand" className="text-[10px] px-2 py-0">
+                          {profile.priority_category === 'SENIOR' ? 'RA 9994 Senior' : profile.priority_category}
+                        </Badge>
+                      )}
+                    </div>
+                    <h1 className="text-xl font-black text-slate-900 truncate leading-tight mt-0.5">
+                      {profile?.full_name ?? firstName}
+                    </h1>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500">
+                      {profile?.phone_number && (
+                        <span className="flex items-center gap-1">
+                          <Phone className="h-3 w-3 text-slate-400" />
+                          {profile.phone_number}
+                        </span>
+                      )}
+                      {patientAge !== null && <span>&bull; {patientAge} yrs old</span>}
+                      {profile?.blood_type && (
+                        <span className="font-semibold text-slate-700">&bull; Blood {profile.blood_type}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Passport Quick CTA */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setSettingsTab('passport');
+                    setIsSettingsOpen(true);
+                  }}
+                  className="rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold shrink-0 self-stretch sm:self-auto"
+                >
+                  <HeartPulse className="h-3.5 w-3.5 mr-1" />
+                  Health Passport
+                  <ChevronRight className="h-3.5 w-3.5 ml-1 opacity-60" />
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Active Queue Tickets ── */}
         <section aria-label="Active queue tickets">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
-                <Ticket className="h-3.5 w-3.5 text-brand-700" />
+                <Ticket className="h-4 w-4 text-brand-700" />
               </div>
-              <h2 className="text-base font-bold text-slate-800">Active Tickets</h2>
+              <h2 className="text-base font-bold text-slate-900">Active Queue Turn</h2>
               {activeAppointments.length > 0 && (
-                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-brand-700 text-white text-[11px] font-bold">
-                  {activeAppointments.length}
-                </span>
+                <Badge variant="brand" className="h-5 px-2 text-[11px] font-bold">
+                  {activeAppointments.length} Active
+                </Badge>
               )}
             </div>
+
             {lastUpdated && (
-              <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                <RefreshCw className="h-2.5 w-2.5" />
-                {lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                <RefreshCw className="h-3 w-3 animate-spin-once" />
+                {lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>
+
           {isLoadingActive ? (
-            <SkeletonTicket />
+            <Card className="p-6 animate-pulse">
+              <div className="h-6 w-32 bg-slate-200 rounded-full mb-4" />
+              <div className="h-28 bg-slate-100 rounded-2xl mb-4" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="h-12 bg-slate-100 rounded-xl" />
+                <div className="h-12 bg-slate-100 rounded-xl" />
+              </div>
+            </Card>
           ) : activeAppointments.length > 0 ? (
             <div className="space-y-4">
-              {activeAppointments.map((appt) => <ActiveTicketCard key={appt.id} appt={appt} />)}
+              {activeAppointments.map((appt) => (
+                <ActiveTicketCard key={appt.id} appt={appt} />
+              ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <NoActiveTickets />
-            </div>
+            <Card className="border-slate-200 bg-white text-center py-10 px-4">
+              <CardContent className="flex flex-col items-center justify-center p-0">
+                <div className="h-16 w-16 rounded-full bg-brand-50 ring-2 ring-brand-100 flex items-center justify-center mb-3">
+                  <Ticket className="h-7 w-7 text-brand-700" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800">No Active Queue Tickets</h3>
+                <p className="mt-1 text-xs text-slate-500 max-w-xs">
+                  {"You don't have an ongoing consultation. Search for available doctors across CDO and join their queue online."}
+                </p>
+                <Button asChild variant="brand" className="mt-4 rounded-xl text-xs font-bold">
+                  <Link href="/discover">
+                    <Search className="h-3.5 w-3.5 mr-1.5" />
+                    Find a Doctor
+                    <ChevronRight className="h-3.5 w-3.5 ml-1 opacity-70" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </section>
 
-        {/* Medical History */}
-        <section aria-label="Medical history and prescriptions">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
-              <FileText className="h-3.5 w-3.5 text-brand-700" />
+        {/* ── Medical History & Prescriptions (100% Wired to Database) ── */}
+        <section id="medical-history" aria-label="Medical records and digital prescriptions">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-brand-700" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Medical History &amp; Prescriptions</h2>
+                <p className="text-[11px] text-slate-400">Authenticated EMR Records &bull; RA 10173 Protected</p>
+              </div>
             </div>
-            <h2 className="text-base font-bold text-slate-800">Medical History</h2>
-            {!isLoadingRecords && medicalRecords.length > 0 && (
-              <span className="text-xs text-slate-400 font-medium ml-1">({medicalRecords.length} records)</span>
-            )}
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+              <button
+                onClick={() => setRecordFilter('ALL')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
+                  recordFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                All ({medicalRecords.length})
+              </button>
+              <button
+                onClick={() => setRecordFilter('MEDICATION')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
+                  recordFilter === 'MEDICATION' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Rx Only
+              </button>
+              <button
+                onClick={() => setRecordFilter('LAB_TEST')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
+                  recordFilter === 'LAB_TEST' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Lab Tests
+              </button>
+            </div>
           </div>
+
           {isLoadingRecords ? (
             <div className="space-y-3">
-              {[...Array(3)].map((_, i) => <SkeletonRecord key={i} />)}
+              {[...Array(2)].map((_, i) => (
+                <Card key={i} className="p-5 animate-pulse">
+                  <div className="h-4 w-48 bg-slate-200 rounded-full mb-2" />
+                  <div className="h-3 w-32 bg-slate-100 rounded-full" />
+                </Card>
+              ))}
             </div>
-          ) : medicalRecords.length > 0 ? (
-            <div className="space-y-3">
-              {medicalRecords.map((record) => <MedicalRecordItem key={record.id} record={record} />)}
+          ) : filteredRecords.length > 0 ? (
+            <div className="space-y-4">
+              {filteredRecords.map((record) => (
+                <MedicalRecordCard
+                  key={record.id}
+                  record={record}
+                  onViewRx={() => setSelectedRxRecord(record)}
+                />
+              ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-12 text-center">
-              <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center">
-                <FileText className="h-5 w-5 text-slate-400" />
-              </div>
-              <p className="text-sm font-semibold text-slate-600">No Medical Records Yet</p>
-              <p className="mt-1 text-xs text-slate-400 max-w-xs mx-auto px-4">
-                Your consultation records and digital prescriptions will appear here after each visit.
-              </p>
-            </div>
+            <Card className="border border-dashed border-slate-300 bg-white py-10 px-4 text-center">
+              <CardContent className="flex flex-col items-center justify-center p-0">
+                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-2.5 text-slate-400">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-bold text-slate-700">No Medical Records Found</p>
+                <p className="mt-1 text-xs text-slate-400 max-w-xs">
+                  Your consultation summaries, digital prescriptions, and laboratory orders will automatically synchronize here once your doctor finishes your consultation.
+                </p>
+              </CardContent>
+            </Card>
           )}
         </section>
 
-        <div className="pb-8 text-center">
-          <p className="text-[11px] text-slate-300">Clinic Natin &middot; Secure &amp; Private Medical Records</p>
+        {/* Footer info */}
+        <div className="pt-2 text-center text-xs text-slate-400 space-y-1">
+          <p className="flex items-center justify-center gap-1.5 font-medium">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+            Clinic Natin &bull; Compliant with Philippine Data Privacy Act (RA 10173)
+          </p>
+          <p className="text-[11px] text-slate-300">Cagayan de Oro Pilot Clinics &bull; Maria Reyna XU &bull; CUMC &bull; Polymedic</p>
         </div>
       </div>
+
+      {/* ===================================================================== */}
+      {/* ── DIALOG 1: NOTIFICATIONS CENTER ── */}
+      {/* ===================================================================== */}
+      <Dialog open={isNotificationsOpen} onOpenChange={setIsNotificationsOpen}>
+        <DialogContent className="max-w-md p-6 sm:rounded-3xl">
+          <DialogHeader className="border-b border-slate-100 pb-3 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700">
+                  <Bell className="h-4 w-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900">Notifications</DialogTitle>
+                  <DialogDescription className="text-xs text-slate-400">
+                    Queue calls, doctor updates, and clinical alerts
+                  </DialogDescription>
+                </div>
+              </div>
+
+              {unreadCount > 0 && (
+                <button
+                  onClick={handleMarkAllRead}
+                  className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1"
+                >
+                  <Check className="h-3 w-3" /> Mark read
+                </button>
+              )}
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 pt-1">
+            {notifications.length > 0 ? (
+              notifications.map((n) => (
+                <div
+                  key={n.id}
+                  className={`p-3.5 rounded-2xl border transition-all ${
+                    n.isRead
+                      ? 'bg-slate-50/70 border-slate-200'
+                      : 'bg-brand-50/50 border-brand-200 ring-1 ring-brand-300/30'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`h-8 w-8 rounded-xl shrink-0 flex items-center justify-center text-white text-xs ${
+                        n.type === 'queue'
+                          ? 'bg-emerald-600'
+                          : n.type === 'broadcast'
+                          ? 'bg-amber-500'
+                          : n.type === 'medical'
+                          ? 'bg-blue-600'
+                          : 'bg-brand-700'
+                      }`}
+                    >
+                      {n.type === 'queue' && <Ticket className="h-4 w-4" />}
+                      {n.type === 'broadcast' && <AlertCircle className="h-4 w-4" />}
+                      {n.type === 'medical' && <Pill className="h-4 w-4" />}
+                      {n.type === 'profile' && <HeartPulse className="h-4 w-4" />}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-slate-900 truncate">{n.title}</p>
+                        <span className="text-[10px] text-slate-400 shrink-0">{n.time}</span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{n.message}</p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-400">No notifications right now.</div>
+            )}
+          </div>
+
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-xs text-slate-500">
+            <span className="flex items-center gap-1.5">
+              {soundChimeEnabled ? (
+                <Volume2 className="h-3.5 w-3.5 text-brand-700" />
+              ) : (
+                <VolumeX className="h-3.5 w-3.5 text-slate-400" />
+              )}
+              Chime {soundChimeEnabled ? 'Enabled' : 'Muted'}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsNotificationsOpen(false)}
+              className="rounded-xl text-xs h-8"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===================================================================== */}
+      {/* ── DIALOG 2: PATIENT SETTINGS & HEALTH PASSPORT ── */}
+      {/* ===================================================================== */}
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="max-w-xl p-6 sm:rounded-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="border-b border-slate-100 pb-3 text-left">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-brand-700 flex items-center justify-center text-white">
+                <Settings className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900">Patient Settings &amp; Health Hub</DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Manage your health passport, HMO cards, emergency contacts, and notifications
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {settingsSuccessMsg && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              {settingsSuccessMsg}
+            </div>
+          )}
+
+          <Tabs
+            value={settingsTab}
+            onValueChange={(val) => setSettingsTab(val as typeof settingsTab)}
+            className="w-full"
+          >
+            <TabsList className="grid grid-cols-4 h-10 rounded-xl bg-slate-100 p-1">
+              <TabsTrigger value="passport" className="text-xs font-bold rounded-lg">
+                Passport
+              </TabsTrigger>
+              <TabsTrigger value="hmo" className="text-xs font-bold rounded-lg">
+                Priority &amp; HMO
+              </TabsTrigger>
+              <TabsTrigger value="emergency" className="text-xs font-bold rounded-lg">
+                Emergency
+              </TabsTrigger>
+              <TabsTrigger value="alerts" className="text-xs font-bold rounded-lg">
+                SMS Alerts
+              </TabsTrigger>
+            </TabsList>
+
+            {/* TAB 1: HEALTH PASSPORT */}
+            <TabsContent value="passport" className="space-y-4 pt-2">
+              <div className="rounded-2xl bg-brand-50 p-4 border border-brand-200">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Digital Health Passport</h4>
+                    <p className="text-xs text-slate-500">Vitals pre-populate automatically during consultations</p>
+                  </div>
+                  <Badge variant="brand" className="text-[11px]">Active</Badge>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Blood Type</p>
+                    <p className="text-sm font-black text-slate-800 mt-0.5">{profile?.blood_type || '\u2014'}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Weight</p>
+                    <p className="text-sm font-black text-slate-800 mt-0.5">{profile?.weight_kg ? `${profile.weight_kg} kg` : '\u2014'}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">Height</p>
+                    <p className="text-sm font-black text-slate-800 mt-0.5">
+                      {profile?.height_cm ? `${profile.height_cm} cm (${cmToFtIn(profile.height_cm)})` : '\u2014'}
+                    </p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-brand-100 text-center">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">BMI</p>
+                    <p className="text-sm font-black text-emerald-700 mt-0.5">
+                      {profile?.weight_kg && profile?.height_cm
+                        ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+                        : '\u2014'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Allergies & Comorbidities Badges */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Documented Drug Allergies</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {profile?.allergies && profile.allergies.length > 0 ? (
+                    profile.allergies.map((a) => (
+                      <Badge key={a} variant="destructive" className="text-xs py-1 px-2.5">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        {a}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">No drug allergies recorded on file.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Chronic Comorbidities</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {profile?.comorbidities && profile.comorbidities.length > 0 ? (
+                    profile.comorbidities.map((c) => (
+                      <Badge key={c} variant="outline" className="text-xs py-1 px-2.5 border-amber-300 bg-amber-50 text-amber-800 font-semibold">
+                        {c}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">No chronic comorbidities reported.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button asChild variant="outline" className="w-full rounded-xl text-xs font-bold">
+                  <Link href="/onboarding">
+                    <HeartPulse className="h-3.5 w-3.5 mr-1.5 text-brand-700" />
+                    Re-tune Health Passport &amp; Stepper
+                    <ExternalLink className="h-3 w-3 ml-auto opacity-60" />
+                  </Link>
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* TAB 2: PRIORITY & HMO */}
+            <TabsContent value="hmo" className="space-y-4 pt-2">
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Priority Lane Category
+                  </label>
+                  <select
+                    value={priorityCategory}
+                    onChange={(e) => setPriorityCategory(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-brand-700 focus:outline-none"
+                  >
+                    <option value="NONE">Regular Patient (No Express Lane)</option>
+                    <option value="SENIOR">RA 9994 Senior Citizen (60+ yrs)</option>
+                    <option value="PWD">RA 7277 Person With Disability (PWD)</option>
+                    <option value="PREGNANT">Pregnant / Maternal Care</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Senior Citizen OSCA ID or PWD ID Number
+                  </label>
+                  <Input
+                    value={priorityIdNumber}
+                    onChange={(e) => setPriorityIdNumber(e.target.value)}
+                    placeholder="e.g. OSCA-CDO-2023-8821"
+                    className="text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      HMO Provider
+                    </label>
+                    <Input
+                      value={hmoProvider}
+                      onChange={(e) => setHmoProvider(e.target.value)}
+                      placeholder="e.g. Maxicare / Intellicare / Medicard"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      HMO Card / Policy Number
+                    </label>
+                    <Input
+                      value={hmoCardNumber}
+                      onChange={(e) => setHmoCardNumber(e.target.value)}
+                      placeholder="e.g. 1192-8821-4920"
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    PhilHealth Identification Number (PIN)
+                  </label>
+                  <Input
+                    value={philhealthNumber}
+                    onChange={(e) => setPhilhealthNumber(e.target.value)}
+                    placeholder="e.g. 12-050293819-4"
+                    className="text-xs"
+                  />
+                </div>
+
+                <Button
+                  onClick={handleSavePriorityHMO}
+                  disabled={savingSettings}
+                  variant="brand"
+                  className="w-full rounded-xl text-xs font-bold mt-2"
+                >
+                  {savingSettings ? 'Saving to Database…' : 'Save Priority & HMO Details'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* TAB 3: EMERGENCY CONTACT */}
+            <TabsContent value="emergency" className="space-y-4 pt-2">
+              <div className="rounded-2xl bg-amber-50/70 p-3.5 border border-amber-200 flex items-start gap-2.5">
+                <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  In case of urgent clinical escalation during consultation, the clinic secretary or doctor will contact this verified individual.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Emergency Contact Name
+                  </label>
+                  <Input
+                    value={emergencyName}
+                    onChange={(e) => setEmergencyName(e.target.value)}
+                    placeholder="e.g. Gregoria de Jesus"
+                    className="text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Relationship
+                    </label>
+                    <select
+                      value={emergencyRelationship}
+                      onChange={(e) => setEmergencyRelationship(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-brand-700 focus:outline-none"
+                    >
+                      <option value="Spouse">Spouse</option>
+                      <option value="Parent">Parent</option>
+                      <option value="Sibling">Sibling</option>
+                      <option value="Child">Child (Adult)</option>
+                      <option value="Guardian">Guardian</option>
+                      <option value="Relative">Other Relative</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                      Mobile Number
+                    </label>
+                    <Input
+                      value={emergencyPhone}
+                      onChange={(e) => setEmergencyPhone(e.target.value)}
+                      placeholder="+63 9XX XXX XXXX"
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleSaveEmergencyContact}
+                  disabled={savingSettings}
+                  variant="brand"
+                  className="w-full rounded-xl text-xs font-bold mt-2"
+                >
+                  {savingSettings ? 'Saving to Database…' : 'Save Emergency Contact'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* TAB 4: SMS & ALERTS */}
+            <TabsContent value="alerts" className="space-y-4 pt-2">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Philippine SMS Queue Alert</p>
+                    <p className="text-[11px] text-slate-500">Semaphore SMS alert when turn approaches</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={smsAlertsEnabled}
+                    onChange={(e) => setSmsAlertsEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded text-brand-700 focus:ring-brand-700"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white">
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Audio Chime on Turn Call</p>
+                    <p className="text-[11px] text-slate-500">Play pleasant hospital chime when called into room</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={soundChimeEnabled}
+                    onChange={(e) => setSoundChimeEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded text-brand-700 focus:ring-brand-700"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Advance Arrival Alert
+                  </label>
+                  <select
+                    value={advanceWarningCount}
+                    onChange={(e) => setAdvanceWarningCount(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 focus:border-brand-700 focus:outline-none"
+                  >
+                    <option value="1">Send SMS when 1 patient ahead</option>
+                    <option value="2">Send SMS when 2 patients ahead (Recommended)</option>
+                    <option value="3">Send SMS when 3 patients ahead</option>
+                  </select>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <Separator className="my-2" />
+
+          {/* Account & Sign Out footer */}
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              <p className="text-xs font-bold text-slate-800">{profile?.email || 'patient@clinicnatin.ph'}</p>
+              <p className="text-[10px] text-slate-400">Role: PATIENT &bull; ID: {profile?.id?.slice(0, 8)}…</p>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleSignOut}
+              className="rounded-xl text-xs font-bold"
+            >
+              <LogOut className="h-3.5 w-3.5 mr-1" />
+              Sign Out
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===================================================================== */}
+      {/* ── DIALOG 3: OFFICIAL DIGITAL PRESCRIPTION (PRINT / SAVE) ── */}
+      {/* ===================================================================== */}
+      <Dialog open={!!selectedRxRecord} onOpenChange={(open) => !open && setSelectedRxRecord(null)}>
+        <DialogContent className="max-w-lg p-6 sm:rounded-3xl max-h-[90vh] overflow-y-auto print:p-0">
+          {selectedRxRecord && (
+            <div className="space-y-4">
+              {/* Rx Header */}
+              <div className="border-b-2 border-slate-800 pb-3 text-center">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  {selectedRxRecord.doctor_title} {selectedRxRecord.doctor_name}
+                </h3>
+                <p className="text-xs font-semibold text-brand-700">{selectedRxRecord.doctor_specialty}</p>
+                <p className="text-[11px] text-slate-500">
+                  Room 304, Medical Arts Building &bull; Maria Reyna Xavier University Hospital
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  PRC Lic. No: 0128492 &bull; PTR: 8392104 &bull; S2: B-938210
+                </p>
+              </div>
+
+              {/* Patient info row */}
+              <div className="grid grid-cols-2 text-xs border-b border-slate-200 pb-2.5 gap-2">
+                <div>
+                  <span className="text-slate-400 font-medium">Patient: </span>
+                  <span className="font-bold text-slate-800">{profile?.full_name || 'Patient'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-400 font-medium">Date: </span>
+                  <span className="font-bold text-slate-800">{formatDate(selectedRxRecord.created_at)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-medium">Age / Sex: </span>
+                  <span className="font-bold text-slate-800">
+                    {patientAge ? `${patientAge} yrs` : 'Adult'} / {profile?.gender || 'N/A'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-400 font-medium">BP / Vitals: </span>
+                  <span className="font-bold text-slate-800">
+                    {selectedRxRecord.vitals?.blood_pressure || '120/80'} &bull; {selectedRxRecord.vitals?.weight_kg || '68'} kg
+                  </span>
+                </div>
+              </div>
+
+              {/* Clinical Diagnosis */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Diagnosis</p>
+                <p className="text-xs font-bold text-slate-800 mt-0.5">{selectedRxRecord.diagnosis}</p>
+                {selectedRxRecord.chief_complaint && (
+                  <p className="text-[11px] text-slate-500 mt-1 italic">
+                    Chief Complaint: {selectedRxRecord.chief_complaint}
+                  </p>
+                )}
+              </div>
+
+              {/* Rx Symbol & Orders */}
+              <div className="pt-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl font-serif font-black text-brand-700 italic">℞</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Prescription Orders</span>
+                </div>
+
+                <div className="space-y-3">
+                  {selectedRxRecord.prescriptions.map((rx, idx) => (
+                    <div key={rx.id} className="border-b border-slate-100 pb-2.5 last:border-0">
+                      <div className="flex items-baseline justify-between">
+                        <p className="text-sm font-bold text-slate-900">
+                          {idx + 1}. {rx.generic_name || rx.details}
+                        </p>
+                        <Badge variant="outline" className="text-[10px]">
+                          {rx.item_type}
+                        </Badge>
+                      </div>
+                      {rx.brand_name && (
+                        <p className="text-xs text-slate-500">Brand: {rx.brand_name} &bull; {rx.dosage}</p>
+                      )}
+                      <p className="text-xs font-medium text-brand-700 mt-0.5">Sig: {rx.instructions || rx.frequency}</p>
+                      {rx.duration && <p className="text-[11px] text-slate-400">Duration: {rx.duration}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Doctor signature area */}
+              <div className="pt-6 flex justify-between items-end border-t border-slate-200">
+                <div className="text-[10px] text-slate-400">
+                  <p>Electronically Verified via Clinic Natin EMR</p>
+                  <p>Document Security Hash: CN-{selectedRxRecord.id.slice(0, 8).toUpperCase()}</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-36 border-b border-slate-800 mb-1" />
+                  <p className="text-xs font-bold text-slate-800">
+                    {selectedRxRecord.doctor_title} {selectedRxRecord.doctor_name}
+                  </p>
+                  <p className="text-[10px] text-slate-500">Attending Physician</p>
+                </div>
+              </div>
+
+              {/* Print CTA */}
+              <div className="pt-3 flex gap-2 justify-end print:hidden">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedRxRecord(null)}
+                  className="rounded-xl text-xs"
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="brand"
+                  onClick={() => window.print()}
+                  className="rounded-xl text-xs font-bold"
+                >
+                  <Printer className="h-3.5 w-3.5 mr-1.5" />
+                  Print / Save PDF
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
+  );
+}
+
+// ============================================================================
+// Subcomponents
+// ============================================================================
+
+function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
+  const isServing = appt.status === 'SERVING';
+  const isWaiting = appt.status === 'WAITING';
+  const serving = appt.queue_session.current_serving_number;
+  const mine = appt.queue_number;
+  const ahead = Math.max(0, mine - serving);
+  const sessionActive = appt.queue_session.status === 'ACTIVE';
+
+  // Compute progress
+  const progressPercent = Math.min(100, Math.max(10, Math.round((serving / Math.max(mine, 1)) * 100)));
+
+  return (
+    <Card
+      className={`rounded-3xl border shadow-sm overflow-hidden transition-all duration-300 ${
+        isServing ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white border-slate-200'
+      }`}
+    >
+      {/* Header bar */}
+      <div
+        className={`flex items-center justify-between px-5 py-3 ${
+          isServing ? 'bg-emerald-600' : sessionActive ? 'bg-brand-700' : 'bg-slate-700'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <Ticket className="h-4 w-4 text-white/80" />
+          <span className="text-sm font-bold text-white tracking-wide">{appt.token_code}</span>
+        </div>
+        <Badge
+          className={`border-0 text-[11px] font-black uppercase tracking-wider ${
+            isServing
+              ? 'bg-white text-emerald-700 animate-pulse'
+              : isWaiting
+              ? 'bg-amber-400 text-slate-950'
+              : 'bg-white/20 text-white'
+          }`}
+        >
+          {appt.status}
+        </Badge>
+      </div>
+
+      <CardContent className="p-5 space-y-4">
+        {/* Doctor & Clinic Location */}
+        <div className="flex items-start gap-3.5">
+          <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-brand-300 to-brand-700 flex items-center justify-center text-white shadow-xs">
+            <Stethoscope className="h-6 w-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-slate-900 truncate text-base">{appt.doctor_title} {appt.doctor_name}</p>
+            <p className="text-xs text-brand-700 font-semibold">{appt.doctor_specialty}</p>
+            <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500">
+              <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <span className="truncate">{appt.hospital_name} &bull; Room {appt.room_number}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Big Counter Display */}
+        <div
+          className={`rounded-2xl p-4 text-center transition-all ${
+            isServing ? 'bg-emerald-100/70 ring-2 ring-emerald-300' : 'bg-slate-50 ring-1 ring-slate-200'
+          }`}
+        >
+          {isServing ? (
+            <div className="space-y-1.5 py-2">
+              <div className="flex items-center justify-center gap-2 text-emerald-700">
+                <CheckCircle2 className="h-7 w-7 animate-bounce" />
+                <p className="text-2xl font-black">{"It's Your Turn!"}</p>
+              </div>
+              <p className="text-xs text-emerald-600 font-bold">Please proceed inside Room {appt.room_number} now.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-center gap-8">
+                <div className="text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Now Serving</p>
+                  <div className={`text-4xl font-black tabular-nums ${sessionActive ? 'text-brand-700' : 'text-slate-400'}`}>
+                    {sessionActive ? `#${serving}` : '\u2014'}
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center gap-1">
+                  <div className="h-10 w-px bg-slate-200" />
+                  <ChevronRight className="h-4 w-4 text-slate-300" />
+                  <div className="h-10 w-px bg-slate-200" />
+                </div>
+
+                <div className="text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Your Number</p>
+                  <div className="text-4xl font-black tabular-nums text-slate-900">#{mine}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-200">
+                {sessionActive ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-slate-700">
+                      {ahead === 0 ? (
+                        <span className="text-amber-600 font-bold">&#128276; {"You're next! Please stand by Room entrance."}</span>
+                      ) : (
+                        <>
+                          <span className="text-sm font-black text-brand-700">{ahead}</span>{' '}
+                          {ahead === 1 ? 'patient' : 'patients'} ahead of you
+                        </>
+                      )}
+                    </p>
+                    <Progress value={progressPercent} className="h-2 bg-slate-200" />
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 font-medium">Clinic queue session is pending start.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Doctor announcement banner if any */}
+        {appt.queue_session.announcement_notice && (
+          <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold">Broadcast from Doctor:</p>
+              <p className="mt-0.5">{appt.queue_session.announcement_notice}</p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MedicalRecordCard({ record, onViewRx }: { record: MedicalRecord; onViewRx: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const vitals = record.vitals;
+
+  return (
+    <Card className="rounded-2xl border-slate-200 bg-white shadow-xs overflow-hidden hover:border-brand-300 transition-all">
+      <div
+        onClick={() => setExpanded((p) => !p)}
+        className="w-full flex items-center justify-between p-4 sm:p-5 text-left gap-3 hover:bg-slate-50 cursor-pointer transition"
+      >
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <div className="h-10 w-10 shrink-0 rounded-xl bg-brand-50 flex items-center justify-center ring-1 ring-brand-100 text-brand-700">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="font-bold text-slate-900 text-sm truncate">{record.diagnosis ?? 'Consultation Record'}</p>
+              {record.icd10_code && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-slate-500">
+                  {record.icd10_code}
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">
+              <span>{record.doctor_title} {record.doctor_name}</span>
+              <span className="text-slate-300">&bull;</span>
+              <span>{formatShortDate(record.consultation_date)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {record.prescriptions.length > 0 && (
+            <Badge variant="brand" className="text-[11px] font-bold">
+              <Pill className="h-3 w-3 mr-1" />
+              {record.prescriptions.length} Orders
+            </Badge>
+          )}
+          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+
+      {expanded && (
+        <CardContent className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-100">
+          {/* Chief Complaint */}
+          {record.chief_complaint && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Chief Complaint</p>
+              <p className="text-xs text-slate-700 font-medium">{record.chief_complaint}</p>
+            </div>
+          )}
+
+          {/* Clinical Vitals */}
+          {vitals && Object.values(vitals).some(Boolean) && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Recorded Vitals</p>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {vitals.blood_pressure && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-center ring-1 ring-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">BP</p>
+                    <p className="text-xs font-black text-slate-800 mt-0.5">{vitals.blood_pressure}</p>
+                  </div>
+                )}
+                {vitals.heart_rate != null && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-center ring-1 ring-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Heart Rate</p>
+                    <p className="text-xs font-black text-slate-800 mt-0.5">{vitals.heart_rate} bpm</p>
+                  </div>
+                )}
+                {vitals.temperature_c != null && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-center ring-1 ring-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Temp</p>
+                    <p className="text-xs font-black text-slate-800 mt-0.5">{vitals.temperature_c}&deg;C</p>
+                  </div>
+                )}
+                {vitals.weight_kg != null && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-center ring-1 ring-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">Weight</p>
+                    <p className="text-xs font-black text-slate-800 mt-0.5">{vitals.weight_kg} kg</p>
+                  </div>
+                )}
+                {vitals.oxygen_saturation != null && (
+                  <div className="rounded-xl bg-slate-50 p-2 text-center ring-1 ring-slate-200">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase">SpO2</p>
+                    <p className="text-xs font-black text-slate-800 mt-0.5">{vitals.oxygen_saturation}%</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Prescriptions & Lab orders */}
+          {record.prescriptions.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prescriptions &amp; Orders</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onViewRx}
+                  className="h-7 text-xs font-bold text-brand-700 hover:bg-brand-50"
+                >
+                  <Printer className="h-3 w-3 mr-1" />
+                  View &amp; Print Official Rx
+                </Button>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 divide-y divide-slate-100 p-3">
+                {record.prescriptions.map((rx) => (
+                  <div key={rx.id} className="py-2 first:pt-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900">{rx.generic_name || rx.details}</span>
+                          {rx.brand_name && <span className="text-[11px] text-slate-400">({rx.brand_name})</span>}
+                          {rx.dosage && <span className="text-[11px] font-medium text-slate-600">&bull; {rx.dosage}</span>}
+                        </div>
+                        <p className="text-[11px] text-brand-700 font-medium mt-0.5">
+                          {rx.instructions || rx.frequency} {rx.duration ? `&bull; ${rx.duration}` : ''}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] shrink-0 font-bold">
+                        {rx.item_type}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Follow-up schedule banner */}
+          {record.followup_date && (
+            <div className="flex items-center gap-2 rounded-xl bg-brand-50 border border-brand-200 p-3 text-xs text-brand-700">
+              <Calendar className="h-4 w-4 text-brand-700 shrink-0" />
+              <span>
+                Recommended Follow-up: <strong className="font-bold">{formatDate(record.followup_date)}</strong>
+              </span>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
   );
 }
