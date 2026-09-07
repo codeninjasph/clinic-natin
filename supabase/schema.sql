@@ -280,8 +280,8 @@ CREATE TABLE IF NOT EXISTS appointments (
     hmo_approval_code TEXT,
     is_paid_to_clinic BOOLEAN DEFAULT FALSE,
     
-    -- Platform reservation (₱40 fee)
-    platform_fee DECIMAL(10, 2) DEFAULT 40.00,
+    -- Platform reservation (₱50 fee)
+    platform_fee DECIMAL(10, 2) DEFAULT 50.00,
     platform_payment_status platform_payment_status NOT NULL DEFAULT 'PENDING',
     
     -- Timestamps & progression
