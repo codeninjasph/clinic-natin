@@ -30,7 +30,8 @@ DO $$ BEGIN
         'WAITING',             -- Patient has checked in / is in waiting area
         'SERVING',             -- Inside consultation room with doctor
         'COMPLETED',           -- Consultation finished
-        'SKIPPED',             -- Patient called but not present (can be recalled)
+        'SKIPPED',             -- Patient called but not present
+        'BUFFERED',            -- In Buffer Lane (45-min Grace Period to retain slot)
         'CANCELLED_NO_SHOW'    -- Forfeited or cancelled
     );
 EXCEPTION
@@ -56,7 +57,7 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE payment_channel AS ENUM ('GCASH', 'MAYA', 'CARD', 'GRABPAY', 'BILLEASE', 'CASH_OVER_COUNTER');
+    CREATE TYPE payment_channel AS ENUM ('GCASH', 'MAYA', 'QRPH', 'CARD', 'GRABPAY', 'BILLEASE', 'CASH_OVER_COUNTER');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     emergency_contact_phone TEXT,
     emergency_contact_relationship TEXT,
     is_onboarding_completed BOOLEAN DEFAULT FALSE,
+    confidentiality_agreed_at TIMESTAMP WITH TIME ZONE, -- RA 10173 consent & medical confidentiality
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -166,6 +168,8 @@ CREATE TABLE IF NOT EXISTS doctors (
     bio TEXT,
     consultation_fee_default DECIMAL(10, 2) DEFAULT 600.00,
     hmo_accreditations TEXT[] DEFAULT ARRAY['Maxicare', 'Intellicare', 'Medicard', 'PhilHealth']::TEXT[],
+    subscription_tier VARCHAR(20) NOT NULL DEFAULT 'free' CHECK (subscription_tier IN ('free', 'pro')),
+    subscription_expires_at TIMESTAMP WITH TIME ZONE,
     pro_tier_active BOOLEAN DEFAULT FALSE,
     is_verified BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -266,12 +270,18 @@ CREATE TABLE IF NOT EXISTS appointments (
     patient_id UUID REFERENCES profiles(id) ON DELETE SET NULL, -- Null if walk-in
     walk_in_name TEXT,
     walk_in_phone TEXT,
-    queue_number INTEGER NOT NULL,
-    token_code TEXT NOT NULL, -- e.g., 'CN-A101' for quick verification
+    booking_channel VARCHAR(20) NOT NULL DEFAULT 'ONLINE' CHECK (booking_channel IN ('ONLINE', 'WALK_IN')),
+    queue_number INTEGER NOT NULL, -- Interleaved: ODD for ONLINE, EVEN for WALK_IN
+    token_code TEXT NOT NULL, -- e.g., 'CN-ON001' (Online) or 'CN-WK002' (Walk-in)
     status appointment_status NOT NULL DEFAULT 'BOOKED',
     priority_category priority_category NOT NULL DEFAULT 'NONE',
     priority_notes TEXT,
     skip_count INTEGER DEFAULT 0,
+    
+    -- Buffer Lane / Grace Period tracking
+    buffered_at TIMESTAMP WITH TIME ZONE,
+    restored_at TIMESTAMP WITH TIME ZONE,
+    grace_period_deadline TIMESTAMP WITH TIME ZONE,
     
     -- Consultation details
     consultation_fee DECIMAL(10, 2) DEFAULT 0.00,
@@ -295,6 +305,7 @@ CREATE TABLE IF NOT EXISTS appointments (
 );
 CREATE INDEX IF NOT EXISTS idx_appointments_queue_status ON appointments(queue_session_id, status);
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id);
+CREATE INDEX IF NOT EXISTS idx_appointments_booking_channel ON appointments(booking_channel);
 CREATE INDEX IF NOT EXISTS idx_appointments_created ON appointments(created_at);
 
 -- ============================================================================
@@ -304,10 +315,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
     patient_id UUID REFERENCES profiles(id),
-    amount DECIMAL(10, 2) NOT NULL DEFAULT 40.00,
+    amount DECIMAL(10, 2) NOT NULL DEFAULT 50.00, -- ₱50.00 Online Convenience Fee
     currency TEXT NOT NULL DEFAULT 'PHP',
-    payment_channel payment_channel NOT NULL DEFAULT 'GCASH',
-    gateway_reference TEXT, -- e.g., PayMongo / GCash checkout ID
+    payment_channel payment_channel NOT NULL DEFAULT 'QRPH',
+    gateway_reference TEXT, -- PayMongo Payment Intent or Checkout ID
+    paymongo_payment_intent_id TEXT,
+    paymongo_client_key TEXT,
     status transaction_status NOT NULL DEFAULT 'PENDING',
     metadata JSONB DEFAULT '{}'::JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -472,24 +485,60 @@ AFTER INSERT OR UPDATE OR DELETE ON appointments
 FOR EACH ROW EXECUTE FUNCTION log_medical_and_queue_audit();
 
 -- ============================================================================
--- 14. HELPER TRIGGER: AUTO NEXT QUEUE NUMBER
+-- 14. HELPER TRIGGER: AUTO NEXT QUEUE NUMBER (INTERLEAVED ENGINE)
 -- ============================================================================
+-- Odd numbers (1, 3, 5, 7...) = Online Bookings
+-- Even numbers (2, 4, 6, 8...) = Walk-In Patients
 CREATE OR REPLACE FUNCTION assign_queue_number()
 RETURNS TRIGGER AS $$
 DECLARE
-    next_num INTEGER;
+    max_num INTEGER;
+    is_walkin BOOLEAN;
 BEGIN
+    -- Determine if walk-in or online booking
+    is_walkin := (NEW.walk_in_name IS NOT NULL AND NEW.walk_in_name <> '') OR NEW.booking_channel = 'WALK_IN';
+
+    IF is_walkin THEN
+        NEW.booking_channel := 'WALK_IN';
+    ELSE
+        NEW.booking_channel := 'ONLINE';
+    END IF;
+
     IF NEW.queue_number IS NULL OR NEW.queue_number = 0 THEN
-        SELECT COALESCE(MAX(queue_number), 0) + 1 
-        INTO next_num
-        FROM appointments
-        WHERE queue_session_id = NEW.queue_session_id;
-        
-        NEW.queue_number := next_num;
+        IF is_walkin THEN
+            -- Find max EVEN number in this queue session
+            SELECT COALESCE(MAX(queue_number), 0)
+            INTO max_num
+            FROM appointments
+            WHERE queue_session_id = NEW.queue_session_id AND queue_number % 2 = 0;
+            
+            IF max_num = 0 THEN
+                NEW.queue_number := 2;
+            ELSE
+                NEW.queue_number := max_num + 2;
+            END IF;
+        ELSE
+            -- Find max ODD number in this queue session
+            SELECT COALESCE(MAX(queue_number), -1)
+            INTO max_num
+            FROM appointments
+            WHERE queue_session_id = NEW.queue_session_id AND queue_number % 2 = 1;
+            
+            IF max_num < 0 THEN
+                NEW.queue_number := 1;
+            ELSE
+                NEW.queue_number := max_num + 2;
+            END IF;
+        END IF;
     END IF;
     
+    -- Format Token Code: CN-ON001 for online, CN-WK002 for walk-in
     IF NEW.token_code IS NULL OR NEW.token_code = '' THEN
-        NEW.token_code := 'CN-' || LPAD(NEW.queue_number::TEXT, 3, '0');
+        IF is_walkin THEN
+            NEW.token_code := 'CN-WK' || LPAD(NEW.queue_number::TEXT, 3, '0');
+        ELSE
+            NEW.token_code := 'CN-ON' || LPAD(NEW.queue_number::TEXT, 3, '0');
+        END IF;
     END IF;
     
     RETURN NEW;
@@ -579,6 +628,22 @@ USING (patient_id IN (SELECT id FROM profiles WHERE auth_id = auth.uid()));
 CREATE POLICY "Doctors can manage medical records for their patients"
 ON medical_records FOR ALL
 USING (doctor_id IN (SELECT d.id FROM doctors d JOIN profiles p ON p.id = d.profile_id WHERE p.auth_id = auth.uid()));
+
+-- RA 10173 Restricted Secretary Triage Access: Only read triage vitals for patients in today's active session
+CREATE POLICY "Secretaries can view triage vitals for active queue patients"
+ON medical_records FOR SELECT
+USING (
+    EXISTS (
+        SELECT 1 FROM appointments a
+        JOIN queue_sessions qs ON qs.id = a.queue_session_id
+        JOIN doctors d ON d.id = qs.doctor_id
+        JOIN secretaries s ON s.doctor_id = d.id
+        JOIN profiles sp ON sp.id = s.profile_id
+        WHERE a.id = medical_records.appointment_id
+          AND qs.session_date = CURRENT_DATE
+          AND sp.auth_id = auth.uid()
+    )
+);
 
 CREATE POLICY "Doctors can manage prescriptions"
 ON prescriptions FOR ALL
