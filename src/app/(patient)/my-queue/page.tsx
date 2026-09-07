@@ -30,9 +30,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
-import { 
-  DigitalHealthPassportCard, 
-  DigitalHealthPassportData 
+import {
+  DigitalHealthPassportCard,
+  DigitalHealthPassportData
 } from '@/components/patient/DigitalHealthPassportCard';
 import { DigitalHealthPassportDialog } from '@/components/patient/DigitalHealthPassportDialog';
 
@@ -754,11 +754,11 @@ export default function PatientDashboardPage() {
         setProfile((prev) =>
           prev
             ? {
-                ...prev,
-                emergency_contact_name: emergencyName.trim(),
-                emergency_contact_phone: emergencyPhone.trim(),
-                emergency_contact_relationship: emergencyRelationship.trim(),
-              }
+              ...prev,
+              emergency_contact_name: emergencyName.trim(),
+              emergency_contact_phone: emergencyPhone.trim(),
+              emergency_contact_relationship: emergencyRelationship.trim(),
+            }
             : null
         );
         setSettingsSuccessMsg('Emergency contact updated successfully!');
@@ -795,13 +795,13 @@ export default function PatientDashboardPage() {
         setProfile((prev) =>
           prev
             ? {
-                ...prev,
-                priority_category: priorityCategory,
-                priority_id_number: priorityIdNumber.trim() || null,
-                hmo_provider: hmoProvider.trim() || null,
-                hmo_card_number: hmoCardNumber.trim() || null,
-                philhealth_number: philhealthNumber.trim() || null,
-              }
+              ...prev,
+              priority_category: priorityCategory,
+              priority_id_number: priorityIdNumber.trim() || null,
+              hmo_provider: hmoProvider.trim() || null,
+              hmo_card_number: hmoCardNumber.trim() || null,
+              philhealth_number: philhealthNumber.trim() || null,
+            }
             : null
         );
         setSettingsSuccessMsg('Priority & HMO credentials saved successfully!');
@@ -1003,14 +1003,14 @@ export default function PatientDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* ── Active Queue Tickets ── */}
-        <section aria-label="Active queue tickets">
+        {/* ── Active Queue Consultations ── */}
+        <section aria-label="Active queue consultations">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
                 <Ticket className="h-4 w-4 text-brand-700" />
               </div>
-              <h2 className="text-base font-bold text-slate-900">Active Queue Turn</h2>
+              <h2 className="text-base font-bold text-slate-900">Active Consultations</h2>
               {activeAppointments.length > 0 && (
                 <Badge variant="brand" className="h-5 px-2 text-[11px] font-bold">
                   {activeAppointments.length} Active
@@ -1047,7 +1047,7 @@ export default function PatientDashboardPage() {
                 <div className="h-16 w-16 rounded-full bg-brand-50 ring-2 ring-brand-100 flex items-center justify-center mb-3">
                   <Ticket className="h-7 w-7 text-brand-700" />
                 </div>
-                <h3 className="text-base font-bold text-slate-800">No Active Queue Tickets</h3>
+                <h3 className="text-base font-bold text-slate-800">No Active Consultations</h3>
                 <p className="mt-1 text-xs text-slate-500 max-w-xs">
                   {"You don't have an ongoing consultation. Search for available doctors across CDO and join their queue online."}
                 </p>
@@ -1080,25 +1080,22 @@ export default function PatientDashboardPage() {
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
               <button
                 onClick={() => setRecordFilter('ALL')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
-                  recordFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 All ({medicalRecords.length})
               </button>
               <button
                 onClick={() => setRecordFilter('MEDICATION')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
-                  recordFilter === 'MEDICATION' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'MEDICATION' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 Rx Only
               </button>
               <button
                 onClick={() => setRecordFilter('LAB_TEST')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${
-                  recordFilter === 'LAB_TEST' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'LAB_TEST' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 Lab Tests
               </button>
@@ -1191,23 +1188,21 @@ export default function PatientDashboardPage() {
                   onClick={() => handleNotificationClick(n)}
                   role="button"
                   tabIndex={0}
-                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                    n.isRead
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${n.isRead
                       ? 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/70'
                       : 'bg-brand-50/50 border-brand-200 ring-1 ring-brand-300/40 hover:bg-brand-50'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-start gap-3">
                     <div
-                      className={`h-8 w-8 rounded-xl shrink-0 flex items-center justify-center text-white text-xs shadow-xs ${
-                        n.type === 'queue'
+                      className={`h-8 w-8 rounded-xl shrink-0 flex items-center justify-center text-white text-xs shadow-xs ${n.type === 'queue'
                           ? 'bg-emerald-600'
                           : n.type === 'broadcast'
-                          ? 'bg-amber-500'
-                          : n.type === 'medical'
-                          ? 'bg-blue-600'
-                          : 'bg-brand-700'
-                      }`}
+                            ? 'bg-amber-500'
+                            : n.type === 'medical'
+                              ? 'bg-blue-600'
+                              : 'bg-brand-700'
+                        }`}
                     >
                       {n.type === 'queue' && <Ticket className="h-4 w-4" />}
                       {n.type === 'broadcast' && <AlertCircle className="h-4 w-4" />}
@@ -1718,28 +1713,25 @@ function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
 
   return (
     <Card
-      className={`rounded-3xl border shadow-sm overflow-hidden transition-all duration-300 ${
-        isServing ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white border-slate-200'
-      }`}
+      className={`rounded-3xl border shadow-sm overflow-hidden transition-all duration-300 ${isServing ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white border-slate-200'
+        }`}
     >
       {/* Header bar */}
       <div
-        className={`flex items-center justify-between px-5 py-3 ${
-          isServing ? 'bg-emerald-600' : sessionActive ? 'bg-brand-700' : 'bg-slate-700'
-        }`}
+        className={`flex items-center justify-between px-5 py-3 ${isServing ? 'bg-emerald-600' : sessionActive ? 'bg-brand-700' : 'bg-slate-700'
+          }`}
       >
         <div className="flex items-center gap-2">
           <Ticket className="h-4 w-4 text-white/80" />
           <span className="text-sm font-bold text-white tracking-wide">{appt.token_code}</span>
         </div>
         <Badge
-          className={`border-0 text-[11px] font-black uppercase tracking-wider ${
-            isServing
+          className={`border-0 text-[11px] font-black uppercase tracking-wider ${isServing
               ? 'bg-white text-emerald-700 animate-pulse'
               : isWaiting
-              ? 'bg-amber-400 text-slate-950'
-              : 'bg-white/20 text-white'
-          }`}
+                ? 'bg-amber-400 text-slate-950'
+                : 'bg-white/20 text-white'
+            }`}
         >
           {appt.status}
         </Badge>
@@ -1763,9 +1755,8 @@ function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
 
         {/* Big Counter Display */}
         <div
-          className={`rounded-2xl p-4 text-center transition-all ${
-            isServing ? 'bg-emerald-100/70 ring-2 ring-emerald-300' : 'bg-slate-50 ring-1 ring-slate-200'
-          }`}
+          className={`rounded-2xl p-4 text-center transition-all ${isServing ? 'bg-emerald-100/70 ring-2 ring-emerald-300' : 'bg-slate-50 ring-1 ring-slate-200'
+            }`}
         >
           {isServing ? (
             <div className="space-y-1.5 py-2">
