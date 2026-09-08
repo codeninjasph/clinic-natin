@@ -24,6 +24,9 @@ import {
   Mail,
   Check,
   X,
+  Hospital,
+  Award,
+  Stethoscope,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +61,7 @@ export interface DoctorDBRecord {
   s2_license: string | null;
   board_certification: string | null;
   consultation_fee_default: number;
+  hmo_accreditations?: string[];
   is_verified: boolean;
   verification_status: 'VERIFIED' | 'PENDING' | 'RE_UPLOAD_REQUESTED' | 'REVOKED';
   subscription_tier: 'free' | 'pro';
@@ -74,11 +78,62 @@ export interface DoctorDBRecord {
   };
 }
 
+// Master Lookup Types for Data Integrity
+export interface LookupSpecialty {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  display_order: number;
+  medical_subspecialties?: {
+    id: string;
+    code: string;
+    name: string;
+  }[];
+}
+
+export interface LookupHospital {
+  id: string;
+  code: string;
+  name: string;
+  short_name: string;
+  address: string;
+  city: string;
+}
+
+export interface LookupBoardCert {
+  id: string;
+  code: string;
+  society_name: string;
+  abbreviation: string;
+}
+
+export interface LookupHmo {
+  id: string;
+  code: string;
+  name: string;
+  short_name: string;
+}
+
 export default function DoctorCredentialingPage() {
   const [doctors, setDoctors] = React.useState<DoctorDBRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<string>('ALL');
+  const [specialtyFilter, setSpecialtyFilter] = React.useState<string>('ALL');
+
+  // Master Lookups from Database
+  const [lookups, setLookups] = React.useState<{
+    specialties: LookupSpecialty[];
+    hospitals: LookupHospital[];
+    boardCertifications: LookupBoardCert[];
+    hmoProviders: LookupHmo[];
+  }>({
+    specialties: [],
+    hospitals: [],
+    boardCertifications: [],
+    hmoProviders: [],
+  });
 
   // Success / Error Feedback Toast
   const [feedback, setFeedback] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -100,9 +155,10 @@ export default function DoctorCredentialingPage() {
     prcExpiry: '2028-12-31',
     ptrNumber: '',
     s2License: '',
-    boardCertification: '',
+    boardCertification: 'Philippine Pediatric Society',
     hospitalAffiliation: 'Maria Reyna XU Hospital',
-    roomAssignment: 'Room 304',
+    roomAssignment: 'Room 304, Medical Arts Bldg',
+    hmoAccreditations: ['Maxicare', 'Intellicare', 'Medicard', 'PhilHealth Konsulta'],
     consultationFee: 700,
     subscriptionTier: 'pro' as 'free' | 'pro',
     verificationStatus: 'VERIFIED' as const,
@@ -126,6 +182,7 @@ export default function DoctorCredentialingPage() {
     boardCertification: '',
     hospitalAffiliation: '',
     roomAssignment: '',
+    hmoAccreditations: [] as string[],
     consultationFee: 600,
     subscriptionTier: 'pro' as 'free' | 'pro',
     verificationStatus: 'VERIFIED' as 'VERIFIED' | 'PENDING' | 'RE_UPLOAD_REQUESTED' | 'REVOKED',
@@ -136,7 +193,24 @@ export default function DoctorCredentialingPage() {
     setTimeout(() => setFeedback(null), 4000);
   };
 
-  // 1. Fetch live doctors from database
+  // 1. Fetch Lookups & Doctors from database
+  const fetchLookups = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/lookups');
+      const data = await res.json();
+      if (res.ok && data) {
+        setLookups({
+          specialties: data.specialties || [],
+          hospitals: data.hospitals || [],
+          boardCertifications: data.boardCertifications || [],
+          hmoProviders: data.hmoProviders || [],
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load master lookups:', err);
+    }
+  }, []);
+
   const fetchDoctors = React.useCallback(async () => {
     try {
       setLoading(true);
@@ -154,8 +228,32 @@ export default function DoctorCredentialingPage() {
   }, []);
 
   React.useEffect(() => {
+    fetchLookups();
     fetchDoctors();
-  }, [fetchDoctors]);
+  }, [fetchLookups, fetchDoctors]);
+
+  // Group specialties by category for optgroup rendering
+  const specialtyCategories = React.useMemo(() => {
+    const map = new Map<string, LookupSpecialty[]>();
+    lookups.specialties.forEach((s) => {
+      const cat = s.category || 'General';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(s);
+    });
+    return Array.from(map.entries());
+  }, [lookups.specialties]);
+
+  // Subspecialties for currently selected specialty in Add modal
+  const addSubspecialties = React.useMemo(() => {
+    const selected = lookups.specialties.find((s) => s.name === addFormData.specialty);
+    return selected?.medical_subspecialties || [];
+  }, [lookups.specialties, addFormData.specialty]);
+
+  // Subspecialties for currently selected specialty in Edit modal
+  const editSubspecialties = React.useMemo(() => {
+    const selected = lookups.specialties.find((s) => s.name === editFormData.specialty);
+    return selected?.medical_subspecialties || [];
+  }, [lookups.specialties, editFormData.specialty]);
 
   // 2. Filter doctors
   const filteredDoctors = doctors.filter((doc) => {
@@ -167,8 +265,10 @@ export default function DoctorCredentialingPage() {
       specialty.toLowerCase().includes(searchQuery.toLowerCase()) ||
       prc.includes(searchQuery);
 
-    if (statusFilter === 'ALL') return matchesSearch;
-    return matchesSearch && doc.verification_status === statusFilter;
+    const matchesStatus = statusFilter === 'ALL' || doc.verification_status === statusFilter;
+    const matchesSpecialty = specialtyFilter === 'ALL' || doc.specialty === specialtyFilter;
+
+    return matchesSearch && matchesStatus && matchesSpecialty;
   });
 
   // 3. Administrative Status Updates (Verify, Re-upload, Revoke)
@@ -254,15 +354,16 @@ export default function DoctorCredentialingPage() {
         fullName: '',
         email: '',
         phone: '',
-        specialty: 'Pediatrics',
+        specialty: lookups.specialties[0]?.name || 'Pediatrics',
         subspecialty: '',
         prcLicense: '',
         prcExpiry: '2028-12-31',
         ptrNumber: '',
         s2License: '',
-        boardCertification: '',
-        hospitalAffiliation: 'Maria Reyna XU Hospital',
-        roomAssignment: 'Room 304',
+        boardCertification: lookups.boardCertifications[0]?.society_name || 'Philippine Pediatric Society',
+        hospitalAffiliation: lookups.hospitals[0]?.name || 'Maria Reyna XU Hospital',
+        roomAssignment: 'Room 304, Medical Arts Bldg',
+        hmoAccreditations: ['Maxicare', 'Intellicare', 'Medicard', 'PhilHealth Konsulta'],
         consultationFee: 700,
         subscriptionTier: 'pro',
         verificationStatus: 'VERIFIED',
@@ -283,15 +384,16 @@ export default function DoctorCredentialingPage() {
       fullName: doc.profiles?.full_name || '',
       email: doc.profiles?.email || '',
       phone: doc.profiles?.phone_number || '',
-      specialty: doc.specialty || '',
+      specialty: doc.specialty || (lookups.specialties[0]?.name || 'Internal Medicine'),
       subspecialty: doc.subspecialty || '',
       prcLicense: doc.prc_license || '',
       prcExpiry: doc.prc_expiry || '',
       ptrNumber: doc.ptr_number || '',
       s2License: doc.s2_license || '',
-      boardCertification: doc.board_certification || '',
-      hospitalAffiliation: doc.hospital_affiliation || 'Maria Reyna XU Hospital',
+      boardCertification: doc.board_certification || (lookups.boardCertifications[0]?.society_name || ''),
+      hospitalAffiliation: doc.hospital_affiliation || (lookups.hospitals[0]?.name || 'Maria Reyna XU Hospital'),
       roomAssignment: doc.room_assignment || 'Room 304',
+      hmoAccreditations: doc.hmo_accreditations || ['Maxicare', 'Intellicare', 'Medicard', 'PhilHealth Konsulta'],
       consultationFee: Number(doc.consultation_fee_default) || 600,
       subscriptionTier: doc.subscription_tier || 'pro',
       verificationStatus: doc.verification_status || 'PENDING',
@@ -301,86 +403,162 @@ export default function DoctorCredentialingPage() {
 
   const handleUpdateDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editFormData.id) return;
+
     try {
       setIsSubmittingEdit(true);
       const res = await fetch('/api/admin/doctors', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editFormData),
+        body: JSON.stringify({
+          id: editFormData.id,
+          profileId: editFormData.profileId,
+          fullName: editFormData.fullName,
+          email: editFormData.email,
+          phone: editFormData.phone,
+          specialty: editFormData.specialty,
+          subspecialty: editFormData.subspecialty || null,
+          prcLicense: editFormData.prcLicense,
+          prcExpiry: editFormData.prcExpiry || null,
+          ptrNumber: editFormData.ptrNumber || null,
+          s2License: editFormData.s2License || null,
+          boardCertification: editFormData.boardCertification || null,
+          hospitalAffiliation: editFormData.hospitalAffiliation,
+          roomAssignment: editFormData.roomAssignment,
+          hmoAccreditations: editFormData.hmoAccreditations,
+          consultationFee: editFormData.consultationFee,
+          subscriptionTier: editFormData.subscriptionTier,
+          verificationStatus: editFormData.verificationStatus,
+          isVerified: editFormData.verificationStatus === 'VERIFIED',
+        }),
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to save changes');
+      if (!res.ok) throw new Error(json.error || 'Failed to update doctor record');
 
-      showFeedback('success', `Saved changes for ${editFormData.fullName}!`);
+      showFeedback('success', `Successfully updated doctor record for ${editFormData.fullName}!`);
       setEditModalOpen(false);
       fetchDoctors();
     } catch (err: any) {
-      showFeedback('error', err.message || 'Update failed');
+      showFeedback('error', err.message || 'Failed to save changes');
     } finally {
       setIsSubmittingEdit(false);
     }
   };
 
-  // 7. Delete / Remove Doctor
+  // 7. Delete Doctor Record
   const handleDeleteDoctor = async (doc: DoctorDBRecord) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to permanently remove Dr. ${doc.profiles?.full_name}? This action will delete their profile and licensing records from the database.`
+    const doctorName = doc.profiles?.full_name || 'this doctor';
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently remove ${doctorName} from the database? This action deletes all licensing and profile data.`
     );
-    if (!confirmDelete) return;
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/admin/doctors?id=${doc.id}`, {
         method: 'DELETE',
       });
-
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to delete doctor');
 
+      showFeedback('success', `Removed ${doctorName} from database.`);
       setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
-      showFeedback('success', `Physician record successfully removed from database.`);
     } catch (err: any) {
-      showFeedback('error', err.message || 'Delete operation failed.');
+      showFeedback('error', err.message || 'Failed to delete doctor');
     }
   };
 
-  const pendingCount = doctors.filter((d) => d.verification_status === 'PENDING').length;
+  // Toggle HMO in Add form
+  const toggleAddHmo = (hmoShort: string) => {
+    setAddFormData((prev) => {
+      const exists = prev.hmoAccreditations.includes(hmoShort);
+      return {
+        ...prev,
+        hmoAccreditations: exists
+          ? prev.hmoAccreditations.filter((h) => h !== hmoShort)
+          : [...prev.hmoAccreditations, hmoShort],
+      };
+    });
+  };
+
+  // Toggle HMO in Edit form
+  const toggleEditHmo = (hmoShort: string) => {
+    setEditFormData((prev) => {
+      const exists = prev.hmoAccreditations.includes(hmoShort);
+      return {
+        ...prev,
+        hmoAccreditations: exists
+          ? prev.hmoAccreditations.filter((h) => h !== hmoShort)
+          : [...prev.hmoAccreditations, hmoShort],
+      };
+    });
+  };
+
+  // Metric counts
+  const totalDoctors = doctors.length;
   const verifiedCount = doctors.filter((d) => d.verification_status === 'VERIFIED').length;
-  const actionRequiredCount = doctors.filter((d) => d.verification_status === 'RE_UPLOAD_REQUESTED' || d.verification_status === 'REVOKED').length;
+  const pendingCount = doctors.filter((d) => d.verification_status === 'PENDING').length;
+  const actionRequiredCount = doctors.filter(
+    (d) => d.verification_status === 'RE_UPLOAD_REQUESTED' || d.verification_status === 'REVOKED'
+  ).length;
 
   return (
     <div className="space-y-6">
-      {/* 1. Top Header & Action Buttons */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Toast Feedback Notification */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-sm transition-all animate-in fade-in-50 ${
+            feedback.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-slate-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* 1. Header & Quick Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <UserCheck className="h-6 w-6 text-brand-700" />
+            <ShieldCheck className="h-6 w-6 text-brand-700" />
             Doctor Credentialing & Licensing Hub
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Connected live to PostgreSQL / Supabase &bull; Review PRC licenses, PDEA S2 clearances, and manage physician subscriptions.
+            Official PRC licensing verification, controlled medical specialties, CDO hospital station governance, and Pro tier management.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {/* Refresh Data */}
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchDoctors}
+            onClick={() => {
+              fetchLookups();
+              fetchDoctors();
+            }}
             disabled={loading}
-            className="h-9 text-xs font-semibold border-slate-300 gap-1.5 bg-white"
+            className="text-xs text-slate-700 gap-1.5"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Sync DB
+            Sync Database
           </Button>
 
-          {/* + Add New Doctor (CREATE CRUD) */}
           <Button
             variant="brand"
             size="sm"
             onClick={() => setAddModalOpen(true)}
-            className="h-9 text-xs font-bold gap-1.5 shadow-xs"
+            className="text-xs font-bold gap-1.5 shadow-xs"
           >
             <Plus className="h-4 w-4" />
             Add New Doctor
@@ -388,25 +566,21 @@ export default function DoctorCredentialingPage() {
         </div>
       </div>
 
-      {/* Feedback Toast Banner */}
-      {feedback && (
-        <div
-          className={`flex items-center gap-2.5 rounded-xl border p-3 text-xs font-bold shadow-xs transition-all ${
-            feedback.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-              : 'border-rose-200 bg-rose-50 text-rose-900'
-          }`}
-        >
-          {feedback.type === 'success' ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-rose-600" />}
-          <span>{feedback.message}</span>
-        </div>
-      )}
-
-      {/* 2. Verification Status Summary Pills */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* 2. Top KPI Overview Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Verified Specialists</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total In Database</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{totalDoctors}</p>
+          </div>
+          <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-xs font-bold">
+            Live Records
+          </Badge>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Verified & Active</p>
             <p className="text-xl font-bold text-slate-900 mt-0.5">{verifiedCount}</p>
           </div>
           <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-xs font-bold">
@@ -435,20 +609,44 @@ export default function DoctorCredentialingPage() {
         </div>
       </div>
 
-      {/* 3. Search & Filter Card */}
+      {/* 3. Search & Controlled Filters Card */}
       <Card className="bg-white border-slate-200 shadow-xs">
-        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              type="text"
-              placeholder="Search by physician name, specialty, or PRC License #..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 text-xs bg-white"
-            />
+        <CardContent className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                type="text"
+                placeholder="Search physician name, specialty, or PRC License #..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 text-xs bg-white"
+              />
+            </div>
+
+            {/* Controlled Database Specialty Filter */}
+            <div className="sm:w-60">
+              <select
+                value={specialtyFilter}
+                onChange={(e) => setSpecialtyFilter(e.target.value)}
+                className="w-full h-9 rounded-xl border border-slate-200 px-3 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+              >
+                <option value="ALL">All Medical Specialties ({lookups.specialties.length})</option>
+                {specialtyCategories.map(([category, specs]) => (
+                  <optgroup key={category} label={`── ${category} ──`}>
+                    {specs.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
           </div>
 
+          {/* Status Tabs */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {[
               { id: 'ALL', label: 'All Doctors' },
@@ -481,7 +679,15 @@ export default function DoctorCredentialingPage() {
         ) : filteredDoctors.length === 0 ? (
           <div className="p-12 text-center text-xs text-slate-500 space-y-3">
             <p className="font-semibold text-slate-700">No doctors match your current search or filter criteria.</p>
-            <Button size="sm" variant="outline" onClick={() => { setSearchQuery(''); setStatusFilter('ALL'); }}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('ALL');
+                setSpecialtyFilter('ALL');
+              }}
+            >
               Reset Filters
             </Button>
           </div>
@@ -492,7 +698,7 @@ export default function DoctorCredentialingPage() {
                 <TableHead>Physician & Specialty</TableHead>
                 <TableHead>PRC License & Expiry</TableHead>
                 <TableHead>PDEA S2 & PTR</TableHead>
-                <TableHead>Hospital Center</TableHead>
+                <TableHead>Hospital & Room</TableHead>
                 <TableHead>Subscription Tier</TableHead>
                 <TableHead>Verification Status</TableHead>
                 <TableHead className="text-right">Administrative Actions</TableHead>
@@ -523,7 +729,12 @@ export default function DoctorCredentialingPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-600 font-medium">{doc.specialty} {doc.subspecialty && `• ${doc.subspecialty}`}</p>
+                        <p className="text-[11px] text-brand-700 font-semibold">
+                          {doc.specialty}
+                          {doc.subspecialty && (
+                            <span className="text-slate-500 font-normal"> &bull; {doc.subspecialty}</span>
+                          )}
+                        </p>
                         <p className="text-[10px] text-slate-400">{doc.profiles?.email || 'No email registered'}</p>
                       </div>
                     </TableCell>
@@ -551,8 +762,11 @@ export default function DoctorCredentialingPage() {
                     {/* Hospital & Room Assignment */}
                     <TableCell>
                       <div className="text-xs text-slate-700">
-                        <p className="font-semibold">{doc.hospital_affiliation || 'Hospital not assigned'}</p>
-                        <p className="text-slate-500">{doc.room_assignment || 'Room not set'}</p>
+                        <p className="font-semibold flex items-center gap-1">
+                          <Hospital className="h-3 w-3 text-slate-400 shrink-0" />
+                          {doc.hospital_affiliation || 'Hospital not assigned'}
+                        </p>
+                        <p className="text-slate-500 text-[11px]">{doc.room_assignment || 'Room not set'}</p>
                       </div>
                     </TableCell>
 
@@ -598,10 +812,9 @@ export default function DoctorCredentialingPage() {
                       </Badge>
                     </TableCell>
 
-                    {/* Actions: Inspect, Edit, Delete */}
+                    {/* Action Buttons: Inspect, Edit, Delete */}
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Inspect Dossier Action */}
+                      <div className="flex items-center justify-end gap-1">
                         <Button
                           size="sm"
                           variant="outline"
@@ -609,29 +822,28 @@ export default function DoctorCredentialingPage() {
                             setSelectedDoctor(doc);
                             setInspectModalOpen(true);
                           }}
-                          className="h-7 text-xs border-slate-300 font-semibold hover:bg-slate-50"
+                          className="h-7 text-xs font-semibold px-2.5 text-slate-700 hover:text-brand-700"
+                          title="Inspect Credentials Dossier & Decision Buttons"
                         >
-                          Inspect
+                          Inspect Dossier
                         </Button>
 
-                        {/* Edit Doctor (UPDATE CRUD) */}
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => openEditModal(doc)}
-                          className="h-7 w-7 p-0 text-slate-600 hover:text-brand-700 hover:bg-slate-100"
-                          title="Edit Physician Record"
+                          className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                          title="Edit Physician Profile"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </Button>
 
-                        {/* Delete Doctor (DELETE CRUD) */}
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleDeleteDoctor(doc)}
-                          className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                          title="Delete Physician"
+                          className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                          title="Delete Doctor"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -645,7 +857,7 @@ export default function DoctorCredentialingPage() {
         )}
       </Card>
 
-      {/* ── MODAL 1: ADD NEW DOCTOR DIALOG (CREATE CRUD) ── */}
+      {/* ── MODAL 1: ADD NEW DOCTOR (CONTROLLED SELECTORS) ── */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto bg-white border border-slate-200">
           <DialogHeader>
@@ -654,12 +866,12 @@ export default function DoctorCredentialingPage() {
               Onboard New Physician to Database
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Registers the physician profile, hospital room assignment, and PRC credentials directly in Supabase.
+              Registers the physician profile, controlled medical specialty, and hospital credentials directly in Supabase.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleCreateDoctor} className="space-y-4 py-2 text-xs">
-            {/* Full Name & Specialty */}
+            {/* Full Name & Controlled Specialty */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
@@ -678,12 +890,60 @@ export default function DoctorCredentialingPage() {
                 <label className="block font-bold text-slate-700 mb-1">
                   Primary Medical Specialty <span className="text-rose-500">*</span>
                 </label>
-                <Input
+                <select
                   required
-                  placeholder="e.g. Adult Cardiology, Pediatrics"
                   value={addFormData.specialty}
-                  onChange={(e) => setAddFormData({ ...addFormData, specialty: e.target.value })}
-                  className="text-xs bg-white"
+                  onChange={(e) => {
+                    const newSpec = e.target.value;
+                    const match = lookups.specialties.find((s) => s.name === newSpec);
+                    const defaultSub = match?.medical_subspecialties?.[0]?.name || '';
+                    setAddFormData({ ...addFormData, specialty: newSpec, subspecialty: defaultSub });
+                  }}
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  {specialtyCategories.map(([category, specs]) => (
+                    <optgroup key={category} label={`── ${category} ──`}>
+                      {specs.map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Cascading Subspecialty Selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Clinical Subspecialty / Focus Area
+                </label>
+                <select
+                  value={addFormData.subspecialty}
+                  onChange={(e) => setAddFormData({ ...addFormData, subspecialty: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  <option value="">General Practice (No Subspecialty)</option>
+                  {addSubspecialties.map((sub) => (
+                    <option key={sub.id} value={sub.name}>
+                      {sub.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-0.5">Cascades dynamically from selected Primary Specialty</p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Default Consultation Fee (₱)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={addFormData.consultationFee}
+                  onChange={(e) => setAddFormData({ ...addFormData, consultationFee: Number(e.target.value) })}
+                  className="text-xs bg-white font-mono"
                 />
               </div>
             </div>
@@ -765,16 +1025,17 @@ export default function DoctorCredentialingPage() {
             {/* Hospital Center & Room Assignment */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Affiliated Hospital</label>
+                <label className="block font-bold text-slate-700 mb-1">Affiliated Hospital Center</label>
                 <select
                   value={addFormData.hospitalAffiliation}
                   onChange={(e) => setAddFormData({ ...addFormData, hospitalAffiliation: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium"
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
                 >
-                  <option value="Maria Reyna XU Hospital">Maria Reyna XU Hospital</option>
-                  <option value="Capitol University Medical Center">Capitol University Medical Center</option>
-                  <option value="Polymedic Medical Plaza">Polymedic Medical Plaza</option>
-                  <option value="Northern Mindanao Medical Center">Northern Mindanao Medical Center</option>
+                  {lookups.hospitals.map((hosp) => (
+                    <option key={hosp.id} value={hosp.name}>
+                      {hosp.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -789,16 +1050,22 @@ export default function DoctorCredentialingPage() {
               </div>
             </div>
 
-            {/* Board Diploma & Tier */}
+            {/* Controlled Board Certification & Tier */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Board Certification / Diplomate</label>
-                <Input
-                  placeholder="e.g. Philippine College of Physicians (Fellow)"
+                <label className="block font-bold text-slate-700 mb-1">PMA Specialty Board Society</label>
+                <select
                   value={addFormData.boardCertification}
                   onChange={(e) => setAddFormData({ ...addFormData, boardCertification: e.target.value })}
-                  className="text-xs bg-white"
-                />
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  <option value="">None / General Medical Licensure</option>
+                  {lookups.boardCertifications.map((b) => (
+                    <option key={b.id} value={b.society_name}>
+                      {b.society_name} ({b.abbreviation})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -811,6 +1078,33 @@ export default function DoctorCredentialingPage() {
                   <option value="pro">Clinic Natin Pro (₱1,499/mo)</option>
                   <option value="free">Free Basic Tier</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Controlled HMO Accreditations Selector */}
+            <div>
+              <label className="block font-bold text-slate-700 mb-1.5">
+                Accepted HMO & Insurance Accreditations
+              </label>
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-xl border border-slate-200 bg-slate-50">
+                {lookups.hmoProviders.map((hmo) => {
+                  const isChecked = addFormData.hmoAccreditations.includes(hmo.short_name);
+                  return (
+                    <button
+                      key={hmo.id}
+                      type="button"
+                      onClick={() => toggleAddHmo(hmo.short_name)}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
+                        isChecked
+                          ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {isChecked ? '✓ ' : '+ '}
+                      {hmo.short_name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -839,7 +1133,7 @@ export default function DoctorCredentialingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── MODAL 2: EDIT DOCTOR DETAILS (UPDATE CRUD) ── */}
+      {/* ── MODAL 2: EDIT DOCTOR DETAILS (CONTROLLED SELECTORS) ── */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto bg-white border border-slate-200">
           <DialogHeader>
@@ -848,11 +1142,12 @@ export default function DoctorCredentialingPage() {
               Edit Physician Credentials & Profile
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Updates doctor records and profile details in Supabase database.
+              Controlled selectors ensure normalized specialties, hospital centers, and board diplomas in database.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleUpdateDoctor} className="space-y-4 py-2 text-xs">
+            {/* Full Name & Controlled Specialty */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Full Name</label>
@@ -865,16 +1160,63 @@ export default function DoctorCredentialingPage() {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Specialty</label>
-                <Input
+                <label className="block font-bold text-slate-700 mb-1">Primary Medical Specialty</label>
+                <select
                   required
                   value={editFormData.specialty}
-                  onChange={(e) => setEditFormData({ ...editFormData, specialty: e.target.value })}
-                  className="text-xs bg-white"
+                  onChange={(e) => {
+                    const newSpec = e.target.value;
+                    const match = lookups.specialties.find((s) => s.name === newSpec);
+                    const defaultSub = match?.medical_subspecialties?.[0]?.name || '';
+                    setEditFormData({ ...editFormData, specialty: newSpec, subspecialty: defaultSub });
+                  }}
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  {specialtyCategories.map(([category, specs]) => (
+                    <optgroup key={category} label={`── ${category} ──`}>
+                      {specs.map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Cascading Subspecialty & Fee */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Clinical Subspecialty</label>
+                <select
+                  value={editFormData.subspecialty}
+                  onChange={(e) => setEditFormData({ ...editFormData, subspecialty: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  <option value="">General Practice (No Subspecialty)</option>
+                  {editSubspecialties.map((sub) => (
+                    <option key={sub.id} value={sub.name}>
+                      {sub.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Consultation Fee (₱)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={editFormData.consultationFee}
+                  onChange={(e) => setEditFormData({ ...editFormData, consultationFee: Number(e.target.value) })}
+                  className="text-xs bg-white font-mono"
                 />
               </div>
             </div>
 
+            {/* Email & Phone */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Email Address</label>
@@ -897,6 +1239,7 @@ export default function DoctorCredentialingPage() {
               </div>
             </div>
 
+            {/* PRC License & Expiry */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">PRC License Number</label>
@@ -919,6 +1262,7 @@ export default function DoctorCredentialingPage() {
               </div>
             </div>
 
+            {/* PDEA S2 & PTR */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">PDEA S2 License Number</label>
@@ -939,18 +1283,20 @@ export default function DoctorCredentialingPage() {
               </div>
             </div>
 
+            {/* Controlled Hospital Center & Room */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Hospital Center</label>
+                <label className="block font-bold text-slate-700 mb-1">Affiliated Hospital Center</label>
                 <select
                   value={editFormData.hospitalAffiliation}
                   onChange={(e) => setEditFormData({ ...editFormData, hospitalAffiliation: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium"
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
                 >
-                  <option value="Maria Reyna XU Hospital">Maria Reyna XU Hospital</option>
-                  <option value="Capitol University Medical Center">Capitol University Medical Center</option>
-                  <option value="Polymedic Medical Plaza">Polymedic Medical Plaza</option>
-                  <option value="Northern Mindanao Medical Center">Northern Mindanao Medical Center</option>
+                  {lookups.hospitals.map((hosp) => (
+                    <option key={hosp.id} value={hosp.name}>
+                      {hosp.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -964,7 +1310,24 @@ export default function DoctorCredentialingPage() {
               </div>
             </div>
 
+            {/* Controlled Board Certification & Status */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">PMA Specialty Board Society</label>
+                <select
+                  value={editFormData.boardCertification}
+                  onChange={(e) => setEditFormData({ ...editFormData, boardCertification: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-brand-700"
+                >
+                  <option value="">None / General Medical Licensure</option>
+                  {lookups.boardCertifications.map((b) => (
+                    <option key={b.id} value={b.society_name}>
+                      {b.society_name} ({b.abbreviation})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Verification Status</label>
                 <select
@@ -978,17 +1341,45 @@ export default function DoctorCredentialingPage() {
                   <option value="REVOKED">REVOKED</option>
                 </select>
               </div>
+            </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Subscription Tier</label>
-                <select
-                  value={editFormData.subscriptionTier}
-                  onChange={(e) => setEditFormData({ ...editFormData, subscriptionTier: e.target.value as any })}
-                  className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium"
-                >
-                  <option value="pro">Clinic Natin Pro (₱1,499/mo)</option>
-                  <option value="free">Free Basic Tier</option>
-                </select>
+            {/* Subscription Tier & Controlled HMO Accreditations */}
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Subscription Tier</label>
+              <select
+                value={editFormData.subscriptionTier}
+                onChange={(e) => setEditFormData({ ...editFormData, subscriptionTier: e.target.value as any })}
+                className="w-full rounded-xl border border-slate-200 p-2 text-xs bg-white text-slate-800 font-medium"
+              >
+                <option value="pro">Clinic Natin Pro (₱1,499/mo)</option>
+                <option value="free">Free Basic Tier</option>
+              </select>
+            </div>
+
+            {/* Controlled HMO Badges */}
+            <div>
+              <label className="block font-bold text-slate-700 mb-1.5">
+                Accepted HMO & Insurance Accreditations
+              </label>
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-xl border border-slate-200 bg-slate-50">
+                {lookups.hmoProviders.map((hmo) => {
+                  const isChecked = editFormData.hmoAccreditations.includes(hmo.short_name);
+                  return (
+                    <button
+                      key={hmo.id}
+                      type="button"
+                      onClick={() => toggleEditHmo(hmo.short_name)}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all ${
+                        isChecked
+                          ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {isChecked ? '✓ ' : '+ '}
+                      {hmo.short_name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1034,7 +1425,7 @@ export default function DoctorCredentialingPage() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="font-bold text-sm text-slate-900">{selectedDoctor.profiles?.full_name}</h3>
-                  <Badge variant="outline" className="text-[10px] font-bold bg-white">
+                  <Badge variant="outline" className="text-[10px] font-bold bg-white text-brand-700 border-brand-200">
                     {selectedDoctor.specialty}
                   </Badge>
                 </div>
@@ -1048,72 +1439,82 @@ export default function DoctorCredentialingPage() {
 
               {/* License Details Grid */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-200 p-3 bg-white">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    PRC Medical License
-                  </p>
-                  <p className="font-mono text-sm font-bold text-slate-900 mt-0.5">
-                    #{selectedDoctor.prc_license}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Expiration Date: <strong>{selectedDoctor.prc_expiry || 'Not indicated'}</strong>
-                  </p>
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">PRC Registration</span>
+                  <p className="font-mono font-bold text-slate-900 text-xs">#{selectedDoctor.prc_license}</p>
+                  <p className="text-[11px] text-slate-500">Expires: {selectedDoctor.prc_expiry || 'Not set'}</p>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 p-3 bg-white">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    PDEA Dangerous Drugs S2
-                  </p>
-                  <p className="font-mono text-sm font-bold text-slate-900 mt-0.5">
-                    {selectedDoctor.s2_license || 'None on record'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    PTR: <strong>{selectedDoctor.ptr_number || 'None'}</strong>
-                  </p>
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">PDEA Dangerous Drugs S2</span>
+                  <p className="font-mono font-bold text-slate-900 text-xs">{selectedDoctor.s2_license || 'No S2 on record'}</p>
+                  <p className="text-[11px] text-slate-500">PTR: {selectedDoctor.ptr_number || 'No PTR'}</p>
                 </div>
               </div>
 
-              {/* Regulatory Notice */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 text-[11px] leading-relaxed">
-                Approving this physician verifies their credentials and grants the public <strong>Verified Specialist</strong> and <strong>PRC-Validated</strong> badge on the patient booking directory.
+              {/* Board Society & Subspecialty */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400">Specialty Board & Focus Area</span>
+                <p className="font-semibold text-slate-900">
+                  {selectedDoctor.board_certification || 'General Medical Practice'}
+                </p>
+                {selectedDoctor.subspecialty && (
+                  <p className="text-slate-600 text-[11px]">
+                    Subspecialty: <strong>{selectedDoctor.subspecialty}</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Accepted HMOs */}
+              {selectedDoctor.hmo_accreditations && selectedDoctor.hmo_accreditations.length > 0 && (
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Accredited HMO Providers</span>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedDoctor.hmo_accreditations.map((hmo) => (
+                      <Badge key={hmo} variant="outline" className="text-[10px] bg-slate-50 text-slate-700">
+                        {hmo}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Administrative Action Decision Buttons */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="font-bold text-slate-800 text-xs">Administrative Licensing Decision:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleUpdateStatus(selectedDoctor.id, 'VERIFIED', true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-1.5 shadow-xs"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    One-Click Verify
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleUpdateStatus(selectedDoctor.id, 'RE_UPLOAD_REQUESTED', false)}
+                    className="text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100 text-xs font-semibold gap-1.5"
+                  >
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                    Request Re-upload
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleUpdateStatus(selectedDoctor.id, 'REVOKED', false)}
+                    className="text-rose-800 bg-rose-50 border-rose-200 hover:bg-rose-100 text-xs font-semibold gap-1.5"
+                  >
+                    <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                    Revoke
+                  </Button>
+                </div>
               </div>
             </div>
           )}
-
-          <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between pt-2 border-t border-slate-100">
-            {selectedDoctor && (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => handleUpdateStatus(selectedDoctor.id, 'REVOKED', false)}
-                className="text-xs"
-              >
-                Revoke License
-              </Button>
-            )}
-
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => selectedDoctor && handleUpdateStatus(selectedDoctor.id, 'RE_UPLOAD_REQUESTED', false)}
-                className="text-xs border-slate-300"
-              >
-                Request Re-upload
-              </Button>
-              <Button
-                type="button"
-                variant="brand"
-                size="sm"
-                onClick={() => selectedDoctor && handleUpdateStatus(selectedDoctor.id, 'VERIFIED', true)}
-                className="text-xs font-bold"
-              >
-                Verify & Approve Physician
-              </Button>
-            </div>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
       boardCertification,
       hospitalAffiliation,
       roomAssignment,
+      hmoAccreditations,
       consultationFee = 600,
       subscriptionTier = 'pro',
       verificationStatus = 'PENDING',
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
         board_certification: boardCertification || null,
         hospital_affiliation: hospitalAffiliation || 'Maria Reyna XU Hospital',
         room_assignment: roomAssignment || 'Room 304',
+        hmo_accreditations: hmoAccreditations || ['Maxicare', 'Intellicare', 'Medicard', 'PhilHealth Konsulta'],
         consultation_fee_default: consultationFee,
         subscription_tier: subscriptionTier,
         pro_tier_active: subscriptionTier === 'pro',
@@ -186,6 +188,7 @@ export async function PUT(req: NextRequest) {
       boardCertification,
       hospitalAffiliation,
       roomAssignment,
+      hmoAccreditations,
       consultationFee,
       subscriptionTier,
       verificationStatus,
@@ -213,6 +216,7 @@ export async function PUT(req: NextRequest) {
     if (boardCertification !== undefined) updatePayload.board_certification = boardCertification;
     if (hospitalAffiliation !== undefined) updatePayload.hospital_affiliation = hospitalAffiliation;
     if (roomAssignment !== undefined) updatePayload.room_assignment = roomAssignment;
+    if (hmoAccreditations !== undefined) updatePayload.hmo_accreditations = hmoAccreditations;
     if (consultationFee !== undefined) updatePayload.consultation_fee_default = consultationFee;
     if (subscriptionTier !== undefined) {
       updatePayload.subscription_tier = subscriptionTier;

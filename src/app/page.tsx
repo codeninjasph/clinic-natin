@@ -234,14 +234,21 @@ const DOCTORS_DATA: DoctorListing[] = [
 
 const SPECIALTY_OPTIONS = [
   'All Specializations',
+  'Family Medicine / General Practice',
   'Pediatrics',
   'Internal Medicine',
+  'Obstetrics & Gynecology',
   'Cardiology',
-  'OB-GYN',
+  'General Surgery',
+  'Orthopedic Surgery',
   'Dermatology',
-  'Orthopedics',
+  'Ophthalmology',
   'ENT - Otolaryngology',
-  'General Physician',
+  'Neurology',
+  'Pulmonology',
+  'Nephrology',
+  'Urology',
+  'Psychiatry & Behavioral Health',
 ];
 
 export default function HomePage() {
