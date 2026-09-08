@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface QueueSession {
   id: string;
@@ -86,6 +87,11 @@ export default function DoctorDashboardPage() {
   const [announcementText, setAnnouncementText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isBroadcastLoading, setIsBroadcastLoading] = useState(false);
+  const [toastNotice, setToastNotice] = useState<{
+    type: 'success' | 'destructive' | 'brand';
+    title: string;
+    message: string;
+  } | null>(null);
 
   const supabase = createClient();
 
@@ -223,11 +229,19 @@ export default function DoctorDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Broadcast failed');
       setSession((prev) => prev ? { ...prev, announcement_notice: data.announcement } : prev);
-      alert(`Broadcast sent! Alerted ${data.smsSent} patients via Semaphore SMS.`);
+      setToastNotice({
+        type: 'success',
+        title: 'Broadcast Dispatched',
+        message: `Alerted ${data.smsSent} patients via Semaphore SMS.`,
+      });
       setAnnouncementText('');
     } catch (e) {
       console.error('Error broadcasting announcement:', e);
-      alert('Could not broadcast delay.');
+      setToastNotice({
+        type: 'destructive',
+        title: 'Broadcast Error',
+        message: 'Could not broadcast delay notice to queued patients.',
+      });
     } finally {
       setIsBroadcastLoading(false);
     }
@@ -362,6 +376,27 @@ export default function DoctorDashboardPage() {
 
       {/* Main Container */}
       <main className="mx-auto max-w-7xl px-4 pt-6 sm:px-6">
+        {toastNotice && (
+          <Alert
+            variant={toastNotice.type === 'destructive' ? 'destructive' : toastNotice.type === 'brand' ? 'brand' : 'success'}
+            className="mb-6 shadow-xs"
+          >
+            <div className="flex items-start justify-between w-full">
+              <div>
+                <AlertTitle className="font-bold">{toastNotice.title}</AlertTitle>
+                <AlertDescription className="text-xs">{toastNotice.message}</AlertDescription>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToastNotice(null)}
+                className="text-xs text-slate-500 hover:text-slate-900 ml-4 font-semibold"
+              >
+                Dismiss
+              </button>
+            </div>
+          </Alert>
+        )}
+
         {/* Quick Stats Banner */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 mb-6">
           <div className="rounded-2xl border border-brand-100 bg-white p-4 shadow-sm">
@@ -802,7 +837,11 @@ export default function DoctorDashboardPage() {
                 onClick={() => {
                   setSubscriptionTier('pro');
                   setShowUpgradeModal(false);
-                  alert('Upgraded to Pro! Multi-clinic rooms and longitudinal EMR are now unlocked.');
+                  setToastNotice({
+                    type: 'brand',
+                    title: 'Upgraded to Pro',
+                    message: 'Multi-clinic rooms and longitudinal EMR are now unlocked.',
+                  });
                 }}
                 className="flex-1 rounded-xl bg-amber-600 py-2.5 text-xs font-bold text-white shadow hover:bg-amber-700 transition"
               >

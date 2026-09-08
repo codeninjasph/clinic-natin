@@ -29,6 +29,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { INITIAL_CDO_CLINICS, type CDOClinic } from '@/lib/admin/data';
 
 export default function QueueMonitorPage() {
@@ -41,6 +42,7 @@ export default function QueueMonitorPage() {
   const [overrideAction, setOverrideAction] = React.useState<'PAUSE' | 'RESCHEDULE' | 'EMERGENCY_DELAY'>('PAUSE');
   const [overrideReason, setOverrideReason] = React.useState('');
   const [delayMinutes, setDelayMinutes] = React.useState<number>(30);
+  const [overrideError, setOverrideError] = React.useState<string | null>(null);
 
   const filteredClinics = clinics.filter((c) => {
     if (selectedHospitalFilter === 'ALL') return true;
@@ -50,15 +52,17 @@ export default function QueueMonitorPage() {
   const openOverrideDialog = (clinic: CDOClinic) => {
     setSelectedClinicForOverride(clinic);
     setOverrideReason('');
+    setOverrideError(null);
     setOverrideModalOpen(true);
   };
 
   const handleApplyOverride = () => {
     if (!selectedClinicForOverride) return;
     if (!overrideReason.trim()) {
-      alert('Please specify the official administrative reason (e.g. Hospital brownout, Doctor emergency surgery).');
+      setOverrideError('Please specify the official administrative reason (e.g. Hospital brownout, Doctor emergency surgery).');
       return;
     }
+    setOverrideError(null);
 
     setClinics((prev) =>
       prev.map((c) => {
@@ -352,6 +356,13 @@ export default function QueueMonitorPage() {
                   Active Doctor: <strong>{selectedClinicForOverride.activeDoctor}</strong> ({selectedClinicForOverride.patientsWaiting} patients waiting)
                 </p>
               </div>
+
+              {overrideError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertTitle className="text-xs font-bold">Required Information</AlertTitle>
+                  <AlertDescription className="text-xs">{overrideError}</AlertDescription>
+                </Alert>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">

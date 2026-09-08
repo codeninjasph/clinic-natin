@@ -38,6 +38,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   INITIAL_FEATURE_FLAGS,
   INITIAL_ICD10,
@@ -64,6 +65,7 @@ export default function SettingsAndDictionariesPage() {
   const [newIcdCode, setNewIcdCode] = React.useState('');
   const [newIcdDesc, setNewIcdDesc] = React.useState('');
   const [newIcdCategory, setNewIcdCategory] = React.useState('General');
+  const [icdError, setIcdError] = React.useState<string | null>(null);
 
   const handleToggleFlag = (key: keyof FeatureFlags) => {
     setFlags((prev) => {
@@ -94,9 +96,10 @@ export default function SettingsAndDictionariesPage() {
 
   const handleAddIcd10 = () => {
     if (!newIcdCode.trim() || !newIcdDesc.trim()) {
-      alert('Please fill code and description.');
+      setIcdError('Please provide both an ICD-10 code and diagnostic description.');
       return;
     }
+    setIcdError(null);
     const item: ICD10Item = {
       code: newIcdCode.toUpperCase(),
       description: newIcdDesc,
@@ -528,7 +531,7 @@ export default function SettingsAndDictionariesPage() {
       )}
 
       {/* Add ICD-10 Dialog */}
-      <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
+      <Dialog open={addModalOpen} onOpenChange={(open) => { setAddModalOpen(open); if (!open) setIcdError(null); }}>
         <DialogContent className="sm:max-w-md bg-white border border-slate-200">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-900">Add ICD-10 Diagnostic Code</DialogTitle>
@@ -536,6 +539,13 @@ export default function SettingsAndDictionariesPage() {
               Expands the physician diagnosis auto-complete database.
             </DialogDescription>
           </DialogHeader>
+
+          {icdError && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTitle className="text-xs font-bold">Validation Error</AlertTitle>
+              <AlertDescription className="text-xs">{icdError}</AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-3 py-2 text-xs">
             <div>

@@ -37,6 +37,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface UserRecord {
   id: string;
@@ -130,6 +132,11 @@ export default function PatientsDirectoryPage() {
   const [dsarUser, setDsarUser] = React.useState<UserRecord | null>(null);
   const [dsarAction, setDsarAction] = React.useState<'PORTABILITY' | 'ERASURE' | null>(null);
   const [dsarExportSuccess, setDsarExportSuccess] = React.useState(false);
+  const [statusAlert, setStatusAlert] = React.useState<{
+    type: 'success' | 'destructive' | 'warning';
+    title: string;
+    message: string;
+  } | null>(null);
 
   const filteredUsers = users.filter((u) => {
     const matchesSearch =
@@ -144,9 +151,15 @@ export default function PatientsDirectoryPage() {
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === userId) {
+          const nextStatus = u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+          setStatusAlert({
+            type: nextStatus === 'SUSPENDED' ? 'warning' : 'success',
+            title: nextStatus === 'SUSPENDED' ? 'Account Suspended' : 'Account Re-activated',
+            message: `User ${u.fullName} (${u.email}) account status changed to ${nextStatus}.`,
+          });
           return {
             ...u,
-            status: u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE',
+            status: nextStatus,
           };
         }
         return u;
@@ -184,6 +197,11 @@ export default function PatientsDirectoryPage() {
     URL.revokeObjectURL(url);
 
     setDsarExportSuccess(true);
+    setStatusAlert({
+      type: 'success',
+      title: 'DSAR Export Generated',
+      message: `Standardized archive successfully downloaded for ${dsarUser.fullName}.`,
+    });
     setTimeout(() => {
       setDsarAction(null);
       setDsarExportSuccess(false);
@@ -192,7 +210,6 @@ export default function PatientsDirectoryPage() {
 
   const handleExecuteErasure = () => {
     if (!dsarUser) return;
-    if (!confirm('Execute RA 10173 Section 16 Account Erasure? Patient identity will be anonymized while preserving clinical health records under DOH 10-year mandate.')) return;
 
     setUsers((prev) =>
       prev.map((u) => {
@@ -225,6 +242,11 @@ export default function PatientsDirectoryPage() {
     });
     localStorage.setItem('clinic_natin_audit_logs', JSON.stringify(existingAudit));
 
+    setStatusAlert({
+      type: 'destructive',
+      title: 'RA 10173 Anonymization Executed',
+      message: `Identifiers for ${dsarUser.fullName} have been permanently anonymized. Encounter records preserved per DOH 10-year rule.`,
+    });
     setDsarAction(null);
   };
 
@@ -251,6 +273,26 @@ export default function PatientsDirectoryPage() {
           </Badge>
         </div>
       </div>
+
+      {/* Dynamic In-App Status Alert */}
+      {statusAlert && (
+        <Alert variant={statusAlert.type === 'destructive' ? 'destructive' : statusAlert.type === 'warning' ? 'warning' : 'success'} className="shadow-xs">
+          <div className="flex items-start justify-between w-full">
+            <div>
+              <AlertTitle className="font-bold">{statusAlert.title}</AlertTitle>
+              <AlertDescription className="text-xs">{statusAlert.message}</AlertDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStatusAlert(null)}
+              className="h-6 px-2 text-xs text-slate-500 hover:text-slate-900 ml-4"
+            >
+              Dismiss
+            </Button>
+          </div>
+        </Alert>
+      )}
 
       {/* 2. Search & Role Filter Bar */}
       <Card className="bg-white border-slate-200 shadow-xs">
@@ -467,56 +509,21 @@ export default function PatientsDirectoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 5. DSAR Erasure Modal */}
-      <Dialog open={dsarAction === 'ERASURE'} onOpenChange={() => setDsarAction(null)}>
-        <DialogContent className="sm:max-w-md bg-white border border-slate-200">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-rose-600" />
-              RA 10173 Sec 16: Right to Erasure / Blocking
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-600">
-              Account anonymization protocol with statutory DOH 10-year medical record retention protection.
-            </DialogDescription>
-          </DialogHeader>
-
-          {dsarUser && (
-            <div className="space-y-3 py-2 text-xs">
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-950">
-                <p className="font-bold">Subject: {dsarUser.fullName}</p>
-                <p className="text-[11px] text-rose-800 mt-1">
-                  Personal identifiers (Name, Email, Phone, OSCA ID) will be irrevocably anonymized.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-950 text-[11px] leading-relaxed">
-                <strong>Statutory Health Retention Notice:</strong> In accordance with Department of Health (DOH) Administrative Orders, consultation vitals and clinical encounter history must be preserved for a minimum of 10 years and will not be destroyed.
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDsarAction(null)}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              onClick={handleExecuteErasure}
-              className="text-xs font-bold"
-            >
-              Confirm Anonymization
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 5. DSAR Erasure Confirm Dialog */}
+      <ConfirmDialog
+        open={dsarAction === 'ERASURE'}
+        onOpenChange={(open) => !open && setDsarAction(null)}
+        title="Execute RA 10173 Section 16 Account Erasure?"
+        description={
+          dsarUser
+            ? `Are you sure you want to permanently anonymize ${dsarUser.fullName}? Personal identifiers (Name, Email, Phone, OSCA ID) will be irrevocably anonymized. In accordance with Department of Health (DOH) Administrative Orders, consultation vitals and clinical encounter history must be preserved for a minimum of 10 years and will not be destroyed.`
+            : 'Are you sure you want to anonymize this user record?'
+        }
+        confirmLabel="Confirm Permanent Anonymization"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={handleExecuteErasure}
+      />
     </div>
   );
 }

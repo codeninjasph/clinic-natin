@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Search,
   MapPin,
@@ -274,10 +276,12 @@ function EmptyState({ query }: { query: string }) {
 // ---------------------------------------------------------------------------
 
 export default function DiscoverPage() {
+  const router = useRouter();
   const [doctors, setDoctors] = useState<DoctorCard[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [isRealtime, setIsRealtime] = useState(false);
+  const [selectedDoctorForJoin, setSelectedDoctorForJoin] = useState<DoctorCard | null>(null);
 
   // ---- Initial fetch -------------------------------------------------------
 
@@ -402,8 +406,7 @@ export default function DiscoverPage() {
   // ---- Join handler --------------------------------------------------------
 
   function handleJoin(doctor: DoctorCard) {
-    // TODO: navigate to /patient/queue/[doctorId] or open booking modal
-    alert(`Joining queue for Dr. ${doctor.name}`);
+    setSelectedDoctorForJoin(doctor);
   }
 
   // ---- Render --------------------------------------------------------------
@@ -476,6 +479,25 @@ export default function DiscoverPage() {
 
         {!loading && filtered.length === 0 && <EmptyState query={query} />}
       </div>
+
+      {/* In-app Join Queue Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!selectedDoctorForJoin}
+        onOpenChange={(open) => !open && setSelectedDoctorForJoin(null)}
+        title={`Join Live Queue for Dr. ${selectedDoctorForJoin?.name}?`}
+        description={
+          selectedDoctorForJoin
+            ? `You are reserving a queue token for ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${selectedDoctorForJoin.schedules[0]?.clinic.name || 'CDO Medical Arts'}. You will receive SMS alerts when 2 patients are ahead of your turn.`
+            : ''
+        }
+        confirmLabel="Confirm & Join Queue"
+        cancelLabel="Cancel"
+        variant="brand"
+        onConfirm={() => {
+          setSelectedDoctorForJoin(null);
+          router.push('/my-queue');
+        }}
+      />
     </main>
   );
 }

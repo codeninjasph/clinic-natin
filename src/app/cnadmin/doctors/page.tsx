@@ -48,6 +48,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export interface DoctorDBRecord {
   id: string;
@@ -183,10 +185,19 @@ export default function DoctorCredentialingPage() {
     hospitalAffiliation: '',
     roomAssignment: '',
     hmoAccreditations: [] as string[],
-    consultationFee: 600,
+    consultationFee: 700,
     subscriptionTier: 'pro' as 'free' | 'pro',
     verificationStatus: 'VERIFIED' as 'VERIFIED' | 'PENDING' | 'RE_UPLOAD_REQUESTED' | 'REVOKED',
   });
+
+  // Delete Confirmation Dialog State
+  const [doctorToDelete, setDoctorToDelete] = React.useState<DoctorDBRecord | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
+  // In-modal errors
+  const [addModalError, setAddModalError] = React.useState<string | null>(null);
+  const [editModalError, setEditModalError] = React.useState<string | null>(null);
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -331,8 +342,9 @@ export default function DoctorCredentialingPage() {
   // 5. Create / Onboard New Doctor
   const handleCreateDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAddModalError(null);
     if (!addFormData.fullName.trim() || !addFormData.specialty.trim() || !addFormData.prcLicense.trim()) {
-      alert('Please fill all required fields (Name, Specialty, PRC License #).');
+      setAddModalError('Please fill all required fields: Physician Full Name, Primary Specialty, and PRC License #.');
       return;
     }
 
@@ -370,7 +382,7 @@ export default function DoctorCredentialingPage() {
       });
       fetchDoctors();
     } catch (err: any) {
-      showFeedback('error', err.message || 'Failed to create doctor');
+      setAddModalError(err.message || 'Failed to create doctor');
     } finally {
       setIsSubmittingAdd(false);
     }
@@ -378,6 +390,7 @@ export default function DoctorCredentialingPage() {
 
   // 6. Edit Doctor Record
   const openEditModal = (doc: DoctorDBRecord) => {
+    setEditModalError(null);
     setEditFormData({
       id: doc.id,
       profileId: doc.profile_id,
@@ -404,6 +417,7 @@ export default function DoctorCredentialingPage() {
   const handleUpdateDoctor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editFormData.id) return;
+    setEditModalError(null);
 
     try {
       setIsSubmittingEdit(true);
@@ -440,31 +454,37 @@ export default function DoctorCredentialingPage() {
       setEditModalOpen(false);
       fetchDoctors();
     } catch (err: any) {
-      showFeedback('error', err.message || 'Failed to save changes');
+      setEditModalError(err.message || 'Failed to save changes');
     } finally {
       setIsSubmittingEdit(false);
     }
   };
 
-  // 7. Delete Doctor Record
-  const handleDeleteDoctor = async (doc: DoctorDBRecord) => {
-    const doctorName = doc.profiles?.full_name || 'this doctor';
-    const confirmed = window.confirm(
-      `Are you sure you want to permanently remove ${doctorName} from the database? This action deletes all licensing and profile data.`
-    );
-    if (!confirmed) return;
+  // 7. Delete Doctor Record via In-App ConfirmDialog
+  const requestDeleteDoctor = (doc: DoctorDBRecord) => {
+    setDoctorToDelete(doc);
+    setDeleteConfirmOpen(true);
+  };
 
+  const confirmDeleteDoctor = async () => {
+    if (!doctorToDelete) return;
+    const doctorName = doctorToDelete.profiles?.full_name || 'this physician';
     try {
-      const res = await fetch(`/api/admin/doctors?id=${doc.id}`, {
+      setIsDeleting(true);
+      const res = await fetch(`/api/admin/doctors?id=${doctorToDelete.id}`, {
         method: 'DELETE',
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to delete doctor');
 
-      showFeedback('success', `Removed ${doctorName} from database.`);
-      setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
+      showFeedback('success', `Permanently removed ${doctorName} from database.`);
+      setDoctors((prev) => prev.filter((d) => d.id !== doctorToDelete.id));
+      setDeleteConfirmOpen(false);
+      setDoctorToDelete(null);
     } catch (err: any) {
       showFeedback('error', err.message || 'Failed to delete doctor');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -841,7 +861,7 @@ export default function DoctorCredentialingPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleDeleteDoctor(doc)}
+                          onClick={() => requestDeleteDoctor(doc)}
                           className="h-7 w-7 p-0 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
                           title="Delete Doctor"
                         >
@@ -871,6 +891,12 @@ export default function DoctorCredentialingPage() {
           </DialogHeader>
 
           <form onSubmit={handleCreateDoctor} className="space-y-4 py-2 text-xs">
+            {addModalError && (
+              <Alert variant="destructive" className="py-2.5">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{addModalError}</AlertDescription>
+              </Alert>
+            )}
             {/* Full Name & Controlled Specialty */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1147,6 +1173,12 @@ export default function DoctorCredentialingPage() {
           </DialogHeader>
 
           <form onSubmit={handleUpdateDoctor} className="space-y-4 py-2 text-xs">
+            {editModalError && (
+              <Alert variant="destructive" className="py-2.5">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{editModalError}</AlertDescription>
+              </Alert>
+            )}
             {/* Full Name & Controlled Specialty */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1517,6 +1549,21 @@ export default function DoctorCredentialingPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Alert Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Confirm Physician Record Removal"
+        description={`Are you sure you want to permanently remove ${
+          doctorToDelete?.profiles?.full_name || 'this physician'
+        } from the database? This action deletes all licensing credentials, consultation schedule links, and associated user accounts. This action is irreversible.`}
+        confirmLabel="Permanently Delete Physician"
+        cancelLabel="Cancel"
+        variant="destructive"
+        isLoading={isDeleting}
+        onConfirm={confirmDeleteDoctor}
+      />
     </div>
   );
 }

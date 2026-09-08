@@ -37,6 +37,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { INITIAL_FINOPS_TRANSACTIONS, type FinOpsTransaction } from '@/lib/admin/data';
 
 interface CashierSummary {
@@ -96,6 +97,7 @@ export default function FinOpsPage() {
   const [refundModalOpen, setRefundModalOpen] = React.useState(false);
   const [selectedTxForRefund, setSelectedTxForRefund] = React.useState<FinOpsTransaction | null>(null);
   const [refundReason, setRefundReason] = React.useState('');
+  const [refundError, setRefundError] = React.useState<string | null>(null);
 
   const filteredTransactions = transactions.filter((tx) => {
     if (channelFilter === 'ALL') return true;
@@ -109,9 +111,10 @@ export default function FinOpsPage() {
   const handleTriggerRefund = () => {
     if (!selectedTxForRefund) return;
     if (!refundReason.trim()) {
-      alert('Please specify the refund reason for accounting reconciliation.');
+      setRefundError('Please specify the refund reason for accounting reconciliation.');
       return;
     }
+    setRefundError(null);
 
     setTransactions((prev) =>
       prev.map((t) => {
@@ -414,7 +417,7 @@ export default function FinOpsPage() {
       )}
 
       {/* 4. Manual Refund Modal (shadcn UI Dialog) */}
-      <Dialog open={refundModalOpen} onOpenChange={setRefundModalOpen}>
+      <Dialog open={refundModalOpen} onOpenChange={(open) => { setRefundModalOpen(open); if (!open) setRefundError(null); }}>
         <DialogContent className="sm:max-w-md bg-white border border-slate-200">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -425,6 +428,13 @@ export default function FinOpsPage() {
               Reconciles with PayMongo gateway to return booking convenience fee.
             </DialogDescription>
           </DialogHeader>
+
+          {refundError && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTitle className="text-xs font-bold">Validation Error</AlertTitle>
+              <AlertDescription className="text-xs">{refundError}</AlertDescription>
+            </Alert>
+          )}
 
           {selectedTxForRefund && (
             <div className="space-y-3 py-2 text-xs">

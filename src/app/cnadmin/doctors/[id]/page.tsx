@@ -29,6 +29,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface DoctorDetail {
   id: string;
@@ -70,6 +72,7 @@ export default function DoctorDetailPage() {
   const [actionLoading, setActionLoading] = React.useState<boolean>(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState<boolean>(false);
 
   const fetchDoctor = React.useCallback(async () => {
     try {
@@ -155,12 +158,12 @@ export default function DoctorDetailPage() {
     }
   };
 
-  const handleDeleteDoctor = async () => {
+  const requestDeleteDoctor = () => {
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteDoctor = async () => {
     if (!doctor) return;
-    const confirmed = window.confirm(
-      `Are you sure you want to permanently delete ${doctor.profiles?.full_name || 'this doctor'}? This action deletes credentials and cannot be undone.`
-    );
-    if (!confirmed) return;
 
     try {
       setActionLoading(true);
@@ -229,7 +232,7 @@ export default function DoctorDetailPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleDeleteDoctor}
+            onClick={requestDeleteDoctor}
             disabled={actionLoading}
             className="text-xs text-rose-700 border-rose-200 hover:bg-rose-50 hover:text-rose-800 gap-1.5"
           >
@@ -240,17 +243,17 @@ export default function DoctorDetailPage() {
       </div>
 
       {successMsg && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 font-medium">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
+        <Alert variant="success" className="py-2.5">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertDescription>{successMsg}</AlertDescription>
+        </Alert>
       )}
 
       {errorMsg && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2 font-medium">
-          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
+        <Alert variant="destructive" className="py-2.5">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{errorMsg}</AlertDescription>
+        </Alert>
       )}
 
       {/* 1. Header Profile Banner */}
@@ -499,6 +502,21 @@ export default function DoctorDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Alert Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Confirm Physician Removal"
+        description={`Are you sure you want to permanently delete ${
+          doctor.profiles?.full_name || 'this physician'
+        }? This action will permanently remove all medical licensing, room schedules, and associated profile accounts. This action cannot be reversed.`}
+        confirmLabel="Permanently Delete Physician"
+        cancelLabel="Cancel"
+        variant="destructive"
+        isLoading={actionLoading}
+        onConfirm={confirmDeleteDoctor}
+      />
     </div>
   );
 }

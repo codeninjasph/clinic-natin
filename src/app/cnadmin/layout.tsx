@@ -36,6 +36,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 const NAVIGATION_ITEMS = [
   { href: '/cnadmin', label: 'Operations Cockpit', icon: LayoutDashboard },
@@ -56,6 +57,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Impersonation state
   const [impersonatedUser, setImpersonatedUser] = React.useState<string | null>(null);
   const [ticketRef, setTicketRef] = React.useState<string>('');
+  const [ticketError, setTicketError] = React.useState<string | null>(null);
   const [isImpersonationModalOpen, setIsImpersonationModalOpen] = React.useState(false);
   const [selectedRole, setSelectedRole] = React.useState<'DOCTOR' | 'PATIENT'>('DOCTOR');
   const [targetUser, setTargetUser] = React.useState('Dr. Maria Santos, MD');
@@ -72,9 +74,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleStartImpersonation = () => {
     if (!ticketRef.trim()) {
-      alert('Support Ticket Reference # is required for RA 10173 compliance logging.');
+      setTicketError('Support Ticket Reference # is required for RA 10173 compliance logging.');
       return;
     }
+    setTicketError(null);
     const sessionLabel = `${targetUser} (${selectedRole})`;
     localStorage.setItem('clinic_natin_impersonation_active', sessionLabel);
     localStorage.setItem('clinic_natin_impersonation_ticket', ticketRef);
@@ -301,7 +304,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       {/* Support Impersonation Modal (RA 10173 Audited) */}
-      <Dialog open={isImpersonationModalOpen} onOpenChange={setIsImpersonationModalOpen}>
+      <Dialog open={isImpersonationModalOpen} onOpenChange={(open) => { setIsImpersonationModalOpen(open); if (!open) setTicketError(null); }}>
         <DialogContent className="sm:max-w-md bg-white border border-slate-200">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -312,6 +315,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               Strictly governed under RA 10173 Section 12. Every session requires an authorized support ticket reference number and logs to the immutable audit trail.
             </DialogDescription>
           </DialogHeader>
+
+          {ticketError && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTitle className="text-xs font-bold">Ticket Required</AlertTitle>
+              <AlertDescription className="text-xs">{ticketError}</AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-4 py-3">
             <div>

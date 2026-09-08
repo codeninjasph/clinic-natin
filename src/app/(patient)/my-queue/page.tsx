@@ -30,6 +30,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   DigitalHealthPassportCard,
   DigitalHealthPassportData
@@ -271,6 +272,7 @@ export default function PatientDashboardPage() {
   const [settingsTab, setSettingsTab] = useState<'passport' | 'hmo' | 'emergency' | 'alerts' | 'account'>('passport');
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState<string | null>(null);
+  const [settingsErrorMsg, setSettingsErrorMsg] = useState<string | null>(null);
 
   // Standardized Digital Health Passport data
   const passportData: DigitalHealthPassportData = useMemo(() => {
@@ -764,10 +766,11 @@ export default function PatientDashboardPage() {
         setSettingsSuccessMsg('Emergency contact updated successfully!');
         setTimeout(() => setSettingsSuccessMsg(null), 3500);
       } else {
-        alert('Could not update emergency contact: ' + error.message);
+        setSettingsErrorMsg('Could not update emergency contact: ' + error.message);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setSettingsErrorMsg(e?.message || 'An unexpected error occurred saving emergency contact.');
     } finally {
       setSavingSettings(false);
     }
@@ -778,6 +781,7 @@ export default function PatientDashboardPage() {
     if (!profile?.id) return;
     setSavingSettings(true);
     setSettingsSuccessMsg(null);
+    setSettingsErrorMsg(null);
     try {
       const { error } = await supabase
         .from('profiles')
@@ -807,10 +811,11 @@ export default function PatientDashboardPage() {
         setSettingsSuccessMsg('Priority & HMO credentials saved successfully!');
         setTimeout(() => setSettingsSuccessMsg(null), 3500);
       } else {
-        alert('Could not update credentials: ' + error.message);
+        setSettingsErrorMsg('Could not update credentials: ' + error.message);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setSettingsErrorMsg(e?.message || 'An unexpected error occurred saving credentials.');
     } finally {
       setSavingSettings(false);
     }
@@ -1275,6 +1280,13 @@ export default function PatientDashboardPage() {
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               {settingsSuccessMsg}
             </div>
+          )}
+
+          {settingsErrorMsg && (
+            <Alert variant="destructive" className="py-2.5">
+              <AlertTitle className="text-xs font-bold">Update Failed</AlertTitle>
+              <AlertDescription className="text-xs">{settingsErrorMsg}</AlertDescription>
+            </Alert>
           )}
 
           <Tabs

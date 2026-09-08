@@ -27,6 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { INITIAL_CDO_CLINICS, type CDOClinic } from '@/lib/admin/data';
 
 export default function ClinicQRCheckInPage() {
@@ -48,6 +49,8 @@ export default function ClinicQRCheckInPage() {
   const [walkinPhone, setWalkinPhone] = React.useState('');
   const [priorityCategory, setPriorityCategory] = React.useState<'NONE' | 'SENIOR' | 'PWD' | 'PREGNANT'>('NONE');
   const [isRegistering, setIsRegistering] = React.useState(false);
+  const [checkinError, setCheckinError] = React.useState<string | null>(null);
+  const [walkinError, setWalkinError] = React.useState<string | null>(null);
   const [generatedWalkinToken, setGeneratedWalkinToken] = React.useState<{
     tokenCode: string;
     queueNumber: number;
@@ -59,9 +62,10 @@ export default function ClinicQRCheckInPage() {
   const handleConfirmOnlineArrival = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tokenInput.trim()) {
-      alert('Please enter your Token Code (e.g. CN-ON001) or Mobile Number.');
+      setCheckinError('Please enter your Token Code (e.g. CN-ON001) or Mobile Number.');
       return;
     }
+    setCheckinError(null);
 
     setIsCheckingIn(true);
     setTimeout(() => {
@@ -75,13 +79,14 @@ export default function ClinicQRCheckInPage() {
   const handleRegisterWalkIn = (e: React.FormEvent) => {
     e.preventDefault();
     if (!walkinName.trim()) {
-      alert('Please enter your full name.');
+      setWalkinError('Please enter your full name.');
       return;
     }
     if (!walkinPhone.trim()) {
-      alert('Please enter your mobile phone number to receive turn alerts.');
+      setWalkinError('Please enter your mobile phone number to receive turn alerts.');
       return;
     }
+    setWalkinError(null);
 
     setIsRegistering(true);
     setTimeout(() => {
@@ -241,6 +246,11 @@ export default function ClinicQRCheckInPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 pt-2">
+              {checkinError && (
+                <Alert variant="destructive" className="py-2 mb-3">
+                  <AlertDescription className="text-xs">{checkinError}</AlertDescription>
+                </Alert>
+              )}
               <form onSubmit={handleConfirmOnlineArrival} className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -261,7 +271,7 @@ export default function ClinicQRCheckInPage() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setMode('MENU')}
+                    onClick={() => { setMode('MENU'); setCheckinError(null); }}
                     className="w-1/3 text-xs"
                   >
                     Back
@@ -294,6 +304,11 @@ export default function ClinicQRCheckInPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 pt-2">
+              {walkinError && (
+                <Alert variant="destructive" className="py-2 mb-3">
+                  <AlertDescription className="text-xs">{walkinError}</AlertDescription>
+                </Alert>
+              )}
               <form onSubmit={handleRegisterWalkIn} className="space-y-3 text-xs">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">

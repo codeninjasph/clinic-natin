@@ -33,6 +33,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { INITIAL_SMS_LOGS, type SMSLogEntry } from '@/lib/admin/data';
 
@@ -54,12 +56,19 @@ export default function CommunicationsPage() {
     nowServing: 'Clinic Natin: NOW SERVING Token {{token_code}}. Please enter consultation room with {{doctor_name}}.',
   });
 
-  const handleSendHospitalBroadcast = () => {
+  const [broadcastError, setBroadcastError] = React.useState<string | null>(null);
+  const [confirmBroadcastOpen, setConfirmBroadcastOpen] = React.useState(false);
+
+  const handleInitiateBroadcast = () => {
     if (!broadcastMessage.trim()) {
-      alert('Please enter a valid emergency announcement message.');
+      setBroadcastError('Please enter a valid emergency announcement message before transmitting.');
       return;
     }
+    setBroadcastError(null);
+    setConfirmBroadcastOpen(true);
+  };
 
+  const executeSendHospitalBroadcast = () => {
     setIsDispatching(true);
 
     setTimeout(() => {
@@ -164,6 +173,13 @@ export default function CommunicationsPage() {
             </div>
           </div>
 
+          {broadcastError && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTitle className="text-xs font-bold">Validation Error</AlertTitle>
+              <AlertDescription className="text-xs">{broadcastError}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
             <span className="text-[11px] text-slate-500">
               Estimated reach: <strong>86 active patient tokens</strong> queued across {targetHospital}.
@@ -173,7 +189,7 @@ export default function CommunicationsPage() {
               variant="brand"
               size="sm"
               disabled={isDispatching}
-              onClick={handleSendHospitalBroadcast}
+              onClick={handleInitiateBroadcast}
               className="text-xs font-bold gap-1.5 shadow-xs"
             >
               <Send className="h-3.5 w-3.5" />
@@ -182,13 +198,28 @@ export default function CommunicationsPage() {
           </div>
 
           {dispatchSuccess && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-emerald-900 font-semibold flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-              Emergency Broadcast successfully dispatched through Semaphore SMS Gateway.
-            </div>
+            <Alert variant="success" className="py-2">
+              <AlertTitle className="text-xs font-bold">Broadcast Dispatched</AlertTitle>
+              <AlertDescription className="text-xs">
+                Emergency Broadcast successfully dispatched through Semaphore SMS Gateway.
+              </AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>
+
+      {/* Broadcast Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmBroadcastOpen}
+        onOpenChange={setConfirmBroadcastOpen}
+        title="Confirm Emergency Hospital Broadcast"
+        description={`You are about to transmit this emergency SMS broadcast to all 86 active patient tokens in "${targetHospital}". This action will dispatch live SMS notifications immediately.`}
+        confirmLabel="Confirm & Transmit Broadcast"
+        cancelLabel="Cancel"
+        variant="brand"
+        isLoading={isDispatching}
+        onConfirm={executeSendHospitalBroadcast}
+      />
 
       {/* 3. Turn Notice SMS Templates */}
       <div className="space-y-3">
