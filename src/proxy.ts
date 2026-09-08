@@ -10,6 +10,12 @@ export default async function proxy(request: NextRequest) {
   // Helper to determine effective role
   let role = roleCookie;
 
+  // 0. Auto-redirect /admin to /cnadmin
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    const subpath = pathname.replace(/^\/admin/, '') || '';
+    return NextResponse.redirect(new URL(`/cnadmin${subpath}`, request.url));
+  }
+
   // 1. Intercept /dashboard (Smart Gateway)
   if (pathname === '/dashboard') {
     if (!role && !authSessionCookie) {
@@ -19,7 +25,11 @@ export default async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (role === 'SECRETARY' || role === 'ADMIN') {
+    if (role === 'ADMIN') {
+      return NextResponse.redirect(new URL('/cnadmin', request.url));
+    }
+
+    if (role === 'SECRETARY') {
       return NextResponse.redirect(new URL('/secretary/dashboard', request.url));
     }
 
@@ -41,7 +51,6 @@ export default async function proxy(request: NextRequest) {
     }
 
     if (role === 'PATIENT') {
-      // Patient trying to access secretary portal -> redirect to patient queue
       return NextResponse.redirect(new URL('/my-queue', request.url));
     }
   }
@@ -65,6 +74,8 @@ export default async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/admin',
+    '/admin/:path*',
     '/dashboard',
     '/secretary/:path*',
     '/doctor/:path*',

@@ -35,7 +35,7 @@ function LoginFormContent() {
 
   // Quick Demo Login Handler
   const handleQuickPersonaLogin = (
-    role: 'SECRETARY' | 'DOCTOR' | 'PATIENT',
+    role: 'SECRETARY' | 'DOCTOR' | 'PATIENT' | 'ADMIN',
     name: string,
     demoEmail: string
   ) => {
@@ -50,7 +50,9 @@ function LoginFormContent() {
     setSuccessMessage(`Signed in as ${name} (${role})`);
 
     setTimeout(() => {
-      if (role === 'SECRETARY') {
+      if (role === 'ADMIN') {
+        router.push('/cnadmin');
+      } else if (role === 'SECRETARY') {
         router.push('/secretary/dashboard');
       } else if (role === 'DOCTOR') {
         router.push('/doctor/dashboard');
@@ -89,7 +91,9 @@ function LoginFormContent() {
         document.cookie = `clinic_natin_role=${role}; path=/; max-age=86400; SameSite=Lax`;
         localStorage.setItem('clinic_natin_demo_role', role);
 
-        if (role === 'SECRETARY' || role === 'ADMIN') {
+        if (role === 'ADMIN') {
+          destination = '/cnadmin';
+        } else if (role === 'SECRETARY') {
           destination = '/secretary/dashboard';
         } else if (role === 'DOCTOR') {
           destination = '/doctor/dashboard';
@@ -214,6 +218,23 @@ function LoginFormContent() {
                   </div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-blue-600 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickPersonaLogin('ADMIN', 'Atty. Rafael Ramos (Admin Ops)', 'admin@clinicnatin.ph')}
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-100/80 p-3 text-left hover:bg-slate-200/70 transition group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                    <ShieldCheck className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 group-hover:text-slate-950">Super Admin Console (/cnadmin)</p>
+                    <p className="text-[11px] text-slate-500">CDO Ops Command Center &bull; Live Telemetry</p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-slate-700 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition" />
               </button>
             </div>
           </div>
