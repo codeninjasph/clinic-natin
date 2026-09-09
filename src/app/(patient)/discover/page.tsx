@@ -78,15 +78,20 @@ type RawRow = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+// Helpers & Timezone Utilities
+// ---------------------------------------------------------------------------
 
-const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DAY_FULL_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+import {
+  getManilaNow,
+  getClinicSessionState,
+  DAY_NAMES,
+  DAY_FULL_NAMES,
+  formatTimeDisplay,
+  type ManilaTimeInfo,
+} from '@/lib/date-utils';
 
 function formatTime(time: string): string {
-  const [h, m] = time.split(':').map(Number);
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const hour = h % 12 || 12;
-  return `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
+  return formatTimeDisplay(time);
 }
 
 /** Pull the first ACTIVE session across all schedules for a doctor */
@@ -177,11 +182,11 @@ function QueueBadge({ session }: { session: ActiveQueueSession | null }) {
 
 function DoctorCardItem({
   doctor,
-  currentIsoDay,
+  manilaNow,
   onJoin,
 }: {
   doctor: DoctorCard;
-  currentIsoDay: number;
+  manilaNow: ManilaTimeInfo;
   onJoin: (doctor: DoctorCard) => void;
 }) {
   const initials = doctor.name
@@ -191,8 +196,8 @@ function DoctorCardItem({
     .join('')
     .toUpperCase();
 
-  const todaySchedule = doctor.schedules.find((s) => s.day_of_week === currentIsoDay);
-  const isOpenToday = !!todaySchedule;
+  const todaySchedule = doctor.schedules.find((s) => s.day_of_week === manilaNow.isoDay);
+  const session = getClinicSessionState(todaySchedule, manilaNow);
   const primarySchedule = todaySchedule || doctor.schedules[0];
 
   return (
@@ -207,13 +212,22 @@ function DoctorCardItem({
               <h2 className="truncate text-base font-semibold text-slate-800">
                 Dr. {doctor.name}
               </h2>
-              {isOpenToday ? (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+              {session.state === 'IN_SESSION' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                  In Clinic Today
+                  In Clinic Now
+                </span>
+              ) : session.state === 'BEFORE_SESSION' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-300">
+                  <Clock className="h-3 w-3 text-sky-600" />
+                  Opens at {session.startTimeDisplay}
+                </span>
+              ) : session.state === 'AFTER_SESSION' ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-300">
+                  Session Ended ({session.endTimeDisplay})
                 </span>
               ) : (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
                   Closed Today
                 </span>
               )}
@@ -241,7 +255,7 @@ function DoctorCardItem({
 
           <div className="flex flex-wrap gap-1.5 pt-1">
             {doctor.schedules.map((s) => {
-              const isToday = s.day_of_week === currentIsoDay;
+              const isToday = s.day_of_week === manilaNow.isoDay;
               return (
                 <span
                   key={s.id}
@@ -269,16 +283,28 @@ function DoctorCardItem({
         id={`join-queue-${doctor.doctorId}`}
         onClick={() => onJoin(doctor)}
         className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.98] ${
-          isOpenToday
+          session.state === 'IN_SESSION'
             ? 'bg-brand-700 hover:bg-brand-800 text-white shadow-sm'
+            : session.state === 'BEFORE_SESSION'
+            ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300'
             : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
         }`}
       >
-        {isOpenToday ? (
+        {session.state === 'IN_SESSION' ? (
           <>
             <Users className="h-4 w-4" />
             Join Today&apos;s Queue
             <ChevronRight className="h-4 w-4 opacity-70" />
+          </>
+        ) : session.state === 'BEFORE_SESSION' ? (
+          <>
+            <Clock className="h-4 w-4 text-sky-600" />
+            Opens at {session.startTimeDisplay} &bull; View Schedule
+          </>
+        ) : session.state === 'AFTER_SESSION' ? (
+          <>
+            <Clock className="h-4 w-4 text-slate-500" />
+            Session Ended &bull; View Schedule
           </>
         ) : (
           <>
@@ -451,10 +477,7 @@ export default function DiscoverPage() {
 
   // ---- Render --------------------------------------------------------------
 
-  const currentIsoDay = (() => {
-    const d = new Date().getDay();
-    return d === 0 ? 7 : d;
-  })();
+  const manilaNow = getManilaNow();
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -465,7 +488,7 @@ export default function DiscoverPage() {
             <div>
               <h1 className="text-lg font-bold text-slate-900">Find a Doctor</h1>
               <p className="text-xs text-slate-500">
-                Live queue status · updated in real time
+                Live queue status · updated in real time (PHT)
               </p>
             </div>
             <Link
@@ -516,7 +539,7 @@ export default function DiscoverPage() {
               <DoctorCardItem
                 key={doctor.doctorId}
                 doctor={doctor}
-                currentIsoDay={currentIsoDay}
+                manilaNow={manilaNow}
                 onJoin={handleJoin}
               />
             ))}
@@ -529,33 +552,51 @@ export default function DiscoverPage() {
       {/* In-app Join Queue / Schedule Guard Dialog */}
       {selectedDoctorForJoin && (() => {
         const todaySched = selectedDoctorForJoin.schedules.find(
-          (s) => s.day_of_week === currentIsoDay
+          (s) => s.day_of_week === manilaNow.isoDay
         );
-        const isOpenToday = !!todaySched;
+        const session = getClinicSessionState(todaySched, manilaNow);
 
         const scheduleSummary = selectedDoctorForJoin.schedules
           .map((s) => `${DAY_NAMES[s.day_of_week]} ${formatTime(s.start_time)}–${formatTime(s.end_time)} (${s.clinic.name})`)
           .join(', ');
 
+        let title = '';
+        let description = '';
+        let confirmLabel = 'Understood';
+        let cancelLabel = 'Close';
+        let variant: 'brand' | 'default' = 'default';
+        let canJoin = false;
+
+        if (session.state === 'IN_SESSION' && todaySched) {
+          title = `Join Today's Queue for Dr. ${selectedDoctorForJoin.name}?`;
+          description = `You are reserving a queue token for Dr. ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${todaySched.clinic.name}. You will receive SMS alerts when 2 patients are ahead of your turn.`;
+          confirmLabel = 'Confirm & Join Queue';
+          cancelLabel = 'Cancel';
+          variant = 'brand';
+          canJoin = true;
+        } else if (session.state === 'BEFORE_SESSION' && todaySched) {
+          title = `Queue Opens at ${session.startTimeDisplay} Today`;
+          description = `Dr. ${selectedDoctorForJoin.name} is scheduled today (${DAY_FULL_NAMES[manilaNow.isoDay]}) from ${session.startTimeDisplay} to ${session.endTimeDisplay} at ${todaySched.clinic.name}. The live queue opens 15 minutes before consultations begin.`;
+        } else if (session.state === 'AFTER_SESSION' && todaySched) {
+          title = `Consultations Ended for Today`;
+          description = `Dr. ${selectedDoctorForJoin.name}'s clinic session at ${todaySched.clinic.name} concluded at ${session.endTimeDisplay} today (${DAY_FULL_NAMES[manilaNow.isoDay]}). Live queue tokens can only be issued during active clinic hours.`;
+        } else {
+          // CLOSED_TODAY
+          title = `Dr. ${selectedDoctorForJoin.name} is Closed Today`;
+          description = `Dr. ${selectedDoctorForJoin.name} does not hold consultations today (${DAY_FULL_NAMES[manilaNow.isoDay]}). Active consultation schedule: ${scheduleSummary}. Live queue tokens can only be issued during active clinic days.`;
+        }
+
         return (
           <ConfirmDialog
             open={!!selectedDoctorForJoin}
             onOpenChange={(open) => !open && setSelectedDoctorForJoin(null)}
-            title={
-              isOpenToday
-                ? `Join Today's Queue for Dr. ${selectedDoctorForJoin.name}?`
-                : `Dr. ${selectedDoctorForJoin.name} is Closed Today`
-            }
-            description={
-              isOpenToday
-                ? `You are reserving a queue token for Dr. ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${todaySched.clinic.name}. You will receive SMS alerts when 2 patients are ahead of your turn.`
-                : `Dr. ${selectedDoctorForJoin.name} does not hold consultations today (${DAY_FULL_NAMES[currentIsoDay]}). Active consultation schedule: ${scheduleSummary}. Live queue tokens can only be issued during active clinic days.`
-            }
-            confirmLabel={isOpenToday ? 'Confirm & Join Queue' : 'Understood'}
-            cancelLabel={isOpenToday ? 'Cancel' : 'Close'}
-            variant={isOpenToday ? 'brand' : 'default'}
+            title={title}
+            description={description}
+            confirmLabel={confirmLabel}
+            cancelLabel={cancelLabel}
+            variant={variant}
             onConfirm={() => {
-              if (isOpenToday) {
+              if (canJoin) {
                 setSelectedDoctorForJoin(null);
                 router.push('/my-queue');
               } else {

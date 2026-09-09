@@ -29,6 +29,14 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { INITIAL_CDO_CLINICS, type CDOClinic } from '@/lib/admin/data';
+import {
+  getManilaNow,
+  getClinicSessionState,
+  DAY_NAMES,
+  DAY_FULL_NAMES,
+  formatTimeDisplay,
+  type ClinicSessionState,
+} from '@/lib/date-utils';
 
 export default function ClinicQRCheckInPage() {
   const params = useParams();
@@ -42,46 +50,36 @@ export default function ClinicQRCheckInPage() {
   const [schedules, setSchedules] = React.useState<any[]>([]);
   const [alternateClinicToday, setAlternateClinicToday] = React.useState<any | null>(null);
 
-  // ISO day: 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat, 7 = Sun
-  const currentIsoDay = React.useMemo(() => {
-    const d = new Date().getDay();
-    return d === 0 ? 7 : d;
-  }, []);
+  // Anchor strictly to Philippine Standard Time (Asia/Manila, UTC+8)
+  const manilaNow = React.useMemo(() => getManilaNow(), []);
 
-  const DAY_NAMES: Record<number, string> = {
-    1: 'Monday',
-    2: 'Tuesday',
-    3: 'Wednesday',
-    4: 'Thursday',
-    5: 'Friday',
-    6: 'Saturday',
-    7: 'Sunday',
-  };
+  // Find today's schedule for this room in Manila time
+  const todaySchedule = React.useMemo(() => {
+    return schedules.find((s) => s.day_of_week === manilaNow.isoDay && s.is_active !== false);
+  }, [schedules, manilaNow.isoDay]);
 
-  const todayDayName = DAY_NAMES[currentIsoDay] || 'Today';
+  // Session state: 'CLOSED_TODAY' | 'BEFORE_SESSION' | 'IN_SESSION' | 'AFTER_SESSION'
+  const session = React.useMemo(() => {
+    return getClinicSessionState(todaySchedule, manilaNow);
+  }, [todaySchedule, manilaNow]);
 
-  // Check if this room has active consultation hours today
-  const isOpenToday = React.useMemo(() => {
-    if (!schedules || schedules.length === 0) {
-      return clinic.status === 'OPTIMAL';
-    }
-    return schedules.some((s) => s.day_of_week === currentIsoDay && s.is_active !== false);
-  }, [schedules, currentIsoDay, clinic.status]);
+  const isOpenToday = session.state !== 'CLOSED_TODAY';
+  const isQueueActiveNow = session.state === 'IN_SESSION';
 
   // Compute next available session in this room
   const nextSessionText = React.useMemo(() => {
     if (!schedules || schedules.length === 0) return null;
     const sorted = [...schedules].sort((a, b) => a.day_of_week - b.day_of_week);
-    let nextSched = sorted.find((s) => s.day_of_week > currentIsoDay && s.is_active !== false);
+    let nextSched = sorted.find((s) => s.day_of_week > manilaNow.isoDay && s.is_active !== false);
     if (!nextSched) {
       nextSched = sorted.find((s) => s.is_active !== false) || sorted[0];
     }
     if (!nextSched) return null;
-    const dayLabel = DAY_NAMES[nextSched.day_of_week];
-    const isTomorrow = ((currentIsoDay % 7) + 1) === nextSched.day_of_week;
-    const startTimeFormatted = nextSched.start_time ? nextSched.start_time.slice(0, 5) : '08:30';
+    const dayLabel = DAY_FULL_NAMES[nextSched.day_of_week] || `Day ${nextSched.day_of_week}`;
+    const isTomorrow = ((manilaNow.isoDay % 7) + 1) === nextSched.day_of_week;
+    const startTimeFormatted = formatTimeDisplay(nextSched.start_time) || '8:30 AM';
     return `${isTomorrow ? 'Tomorrow (' + dayLabel + ')' : dayLabel} at ${startTimeFormatted}`;
-  }, [schedules, currentIsoDay]);
+  }, [schedules, manilaNow.isoDay]);
 
   // Attempt to fetch live clinic data from database if available
   React.useEffect(() => {
@@ -107,12 +105,10 @@ export default function ClinicQRCheckInPage() {
 
             const activeSession = row.queue_sessions?.[0];
 
-            // Check if doctor has an alternate clinic session on today's day of week
+            // Check if doctor has an alternate clinic session on today's Manila day
             const allDoctorSchedules = doctor?.doctor_clinic_schedules || [];
-            const jsDay = new Date().getDay();
-            const currentDay = jsDay === 0 ? 7 : jsDay;
             const altToday = allDoctorSchedules.find(
-              (s: any) => s.clinic_id !== row.id && s.day_of_week === currentDay && s.is_active !== false
+              (s: any) => s.clinic_id !== row.id && s.day_of_week === manilaNow.isoDay && s.is_active !== false
             );
             setAlternateClinicToday(altToday || null);
 
@@ -171,6 +167,21 @@ export default function ClinicQRCheckInPage() {
 
   const handleConfirmOnlineArrival = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (session.state === 'CLOSED_TODAY') {
+      setCheckinError(
+        `Arrival check-in is unavailable today. ${clinic.activeDoctor} does not hold clinic hours in ${clinic.room} on ${manilaNow.dayName}s. Next session: ${nextSessionText || clinic.operatingHours}.`
+      );
+      return;
+    }
+
+    if (session.state === 'AFTER_SESSION') {
+      setCheckinError(
+        `Today's consultation hours concluded at ${session.endTimeDisplay}. Arrival check-in is closed for today.`
+      );
+      return;
+    }
+
     if (!tokenInput.trim()) {
       setCheckinError('Please enter your Token Code (e.g. CN-ON001) or Mobile Number.');
       return;
@@ -189,8 +200,20 @@ export default function ClinicQRCheckInPage() {
   const handleRegisterWalkIn = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isOpenToday) {
-      setWalkinError(`Registration is closed today. ${clinic.activeDoctor} is scheduled in this room on ${clinic.operatingHours}.`);
+    if (session.state !== 'IN_SESSION') {
+      if (session.state === 'CLOSED_TODAY') {
+        setWalkinError(
+          `Registration is closed today. ${clinic.activeDoctor} is scheduled in this room on ${clinic.operatingHours}.`
+        );
+      } else if (session.state === 'BEFORE_SESSION') {
+        setWalkinError(
+          `Registration has not opened yet. Today's consultation session starts at ${session.startTimeDisplay} (${manilaNow.dayName}).`
+        );
+      } else if (session.state === 'AFTER_SESSION') {
+        setWalkinError(
+          `Registration is closed for today. Today's consultation hours ended at ${session.endTimeDisplay}.`
+        );
+      }
       return;
     }
 
@@ -243,10 +266,20 @@ export default function ClinicQRCheckInPage() {
             </div>
           </div>
 
-          {isOpenToday ? (
+          {session.state === 'IN_SESSION' ? (
             <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200 font-bold flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
               Live Clinic Queue
+            </Badge>
+          ) : session.state === 'BEFORE_SESSION' ? (
+            <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-800 border-sky-300 font-bold flex items-center gap-1">
+              <Clock className="h-3 w-3 text-sky-600" />
+              Opens at {session.startTimeDisplay}
+            </Badge>
+          ) : session.state === 'AFTER_SESSION' ? (
+            <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-700 border-slate-300 font-bold flex items-center gap-1">
+              <Clock className="h-3 w-3 text-slate-500" />
+              Session Ended ({session.endTimeDisplay})
             </Badge>
           ) : (
             <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 font-bold flex items-center gap-1">
@@ -299,8 +332,8 @@ export default function ClinicQRCheckInPage() {
           </CardContent>
         </Card>
 
-        {/* Off-Day Clinical Alert Banner */}
-        {!isOpenToday && (
+        {/* ── TEMPORAL CLINICAL ALERTS ── */}
+        {session.state === 'CLOSED_TODAY' && (
           <div className="space-y-3">
             <Alert variant="destructive" className="bg-amber-50/80 border-amber-300 text-amber-950 p-4">
               <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
@@ -310,7 +343,7 @@ export default function ClinicQRCheckInPage() {
                 </AlertTitle>
                 <AlertDescription className="text-xs mt-1 space-y-1.5 text-amber-800">
                   <p>
-                    <strong>{clinic.activeDoctor}</strong> does not hold clinic hours in {clinic.room} ({clinic.hospital}) on <strong>{todayDayName}s</strong>.
+                    <strong>{clinic.activeDoctor}</strong> does not hold clinic hours in {clinic.room} ({clinic.hospital}) on <strong>{manilaNow.dayName}s</strong>.
                   </p>
                   <p className="font-semibold text-amber-900">
                     Official consultation schedule in this room: {clinic.operatingHours}
@@ -335,7 +368,7 @@ export default function ClinicQRCheckInPage() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-700 leading-relaxed">
-                  <strong>{clinic.activeDoctor}</strong> is holding clinic consultations today ({todayDayName}) at:
+                  <strong>{clinic.activeDoctor}</strong> is holding clinic consultations today ({manilaNow.dayName}) at:
                 </p>
                 <div className="bg-white rounded-xl p-3.5 border border-brand-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
@@ -346,7 +379,7 @@ export default function ClinicQRCheckInPage() {
                       {alternateClinicToday.clinics?.room_number || 'Consultation Suite'} &bull; {alternateClinicToday.clinics?.name || 'Clinic'}
                     </p>
                     <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                      Consultation Hours: {alternateClinicToday.start_time?.slice(0, 5)} – {alternateClinicToday.end_time?.slice(0, 5)}
+                      Consultation Hours: {formatTimeDisplay(alternateClinicToday.start_time)} – {formatTimeDisplay(alternateClinicToday.end_time)}
                     </p>
                   </div>
                   {alternateClinicToday.clinics?.id && (
@@ -363,6 +396,46 @@ export default function ClinicQRCheckInPage() {
           </div>
         )}
 
+        {session.state === 'BEFORE_SESSION' && (
+          <Alert className="bg-sky-50/90 border-sky-300 text-sky-950 p-4">
+            <Clock className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
+            <div>
+              <AlertTitle className="text-xs font-bold uppercase tracking-wider text-sky-900">
+                Clinic Opens at {session.startTimeDisplay} Today
+              </AlertTitle>
+              <AlertDescription className="text-xs mt-1 space-y-1 text-sky-800">
+                <p>
+                  <strong>{clinic.activeDoctor}</strong> will begin consultations in {clinic.room} at <strong>{session.startTimeDisplay}</strong> today ({manilaNow.dayName}).
+                </p>
+                <p className="text-[11px] text-sky-700">
+                  Walk-in queue tokens and patient check-in will open when the session starts. Please take a seat in the waiting lounge.
+                </p>
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
+        {session.state === 'AFTER_SESSION' && (
+          <Alert className="bg-slate-100 border-slate-300 text-slate-800 p-4">
+            <Clock className="h-5 w-5 text-slate-500 shrink-0 mt-0.5" />
+            <div>
+              <AlertTitle className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                Consultations Ended for Today
+              </AlertTitle>
+              <AlertDescription className="text-xs mt-1 space-y-1.5 text-slate-600">
+                <p>
+                  Consultation hours in {clinic.room} concluded at <strong>{session.endTimeDisplay}</strong> today ({manilaNow.dayName}). The live queue is closed for the day.
+                </p>
+                {nextSessionText && (
+                  <div className="text-[11px] text-slate-700 bg-white p-2 rounded-lg font-medium border border-slate-200">
+                    Next Session in this room: <strong>{nextSessionText}</strong>
+                  </div>
+                )}
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
         {/* ── STATE 1: MENU SELECTION ── */}
         {mode === 'MENU' && (
           <div className="space-y-3">
@@ -370,14 +443,35 @@ export default function ClinicQRCheckInPage() {
               Please choose an option:
             </p>
 
-            {/* Option A: Online Booking Arrival */}
+            {/* Option A: Online Booking Arrival (Guarded) */}
             <button
               type="button"
-              onClick={() => setMode('ONLINE_CHECKIN')}
-              className="w-full text-left rounded-2xl border border-brand-200 bg-white p-4 shadow-xs hover:border-brand-700 hover:shadow-md transition active:scale-[0.99] group"
+              onClick={() => {
+                if (session.state === 'CLOSED_TODAY') {
+                  setCheckinError(
+                    `Arrival check-in is unavailable today. ${clinic.activeDoctor} does not consult in this room on ${manilaNow.dayName}s.`
+                  );
+                } else if (session.state === 'AFTER_SESSION') {
+                  setCheckinError(
+                    `Today's consultation hours concluded at ${session.endTimeDisplay}. Please coordinate with the secretary desk.`
+                  );
+                } else {
+                  setCheckinError(null);
+                }
+                setMode('ONLINE_CHECKIN');
+              }}
+              className={`w-full text-left rounded-2xl border p-4 transition ${
+                session.state === 'CLOSED_TODAY'
+                  ? 'border-slate-200 bg-slate-50 opacity-80'
+                  : 'border-brand-200 bg-white shadow-xs hover:border-brand-700 hover:shadow-md active:scale-[0.99] group'
+              }`}
             >
               <div className="flex items-start gap-3.5">
-                <div className="h-10 w-10 rounded-xl bg-brand-50 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0 border border-brand-200 group-hover:bg-brand-700 group-hover:text-white transition">
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 border transition ${
+                  session.state === 'CLOSED_TODAY'
+                    ? 'bg-slate-100 text-slate-400 border-slate-200'
+                    : 'bg-brand-50 text-brand-700 border-brand-200 group-hover:bg-brand-700 group-hover:text-white'
+                }`}>
                   <Ticket className="h-5 w-5" />
                 </div>
                 <div className="flex-1">
@@ -385,22 +479,36 @@ export default function ClinicQRCheckInPage() {
                     <p className="text-sm font-bold text-slate-900 group-hover:text-brand-700 transition">
                       I have an Online Booking
                     </p>
-                    <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-brand-700 group-hover:translate-x-0.5 transition" />
+                    {session.state === 'CLOSED_TODAY' ? (
+                      <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold">
+                        Closed Today
+                      </Badge>
+                    ) : session.state === 'AFTER_SESSION' ? (
+                      <Badge variant="outline" className="text-[9px] bg-slate-200 text-slate-600 border-slate-300 font-bold">
+                        Session Ended
+                      </Badge>
+                    ) : (
+                      <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-brand-700 group-hover:translate-x-0.5 transition" />
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Confirm you have arrived at the hospital so the doctor knows you are waiting.
+                    {session.state === 'CLOSED_TODAY'
+                      ? `Arrival check-in is unavailable because ${clinic.activeDoctor} does not hold consultations here on ${manilaNow.dayName}s.`
+                      : session.state === 'AFTER_SESSION'
+                      ? `Consultations ended at ${session.endTimeDisplay}. Check with secretary desk.`
+                      : 'Confirm you have arrived at the hospital so the doctor knows you are waiting.'}
                   </p>
                 </div>
               </div>
             </button>
 
-            {/* Option B: Walk-In Registration */}
+            {/* Option B: Walk-In Registration (Strictly Guarded to IN_SESSION) */}
             <button
               type="button"
-              disabled={!isOpenToday}
-              onClick={() => isOpenToday && setMode('WALKIN_REGISTER')}
+              disabled={session.state !== 'IN_SESSION'}
+              onClick={() => session.state === 'IN_SESSION' && setMode('WALKIN_REGISTER')}
               className={`w-full text-left rounded-2xl border p-4 transition ${
-                isOpenToday
+                session.state === 'IN_SESSION'
                   ? 'border-blue-200 bg-white shadow-xs hover:border-blue-600 hover:shadow-md active:scale-[0.99] group'
                   : 'border-slate-200 bg-slate-100/80 cursor-not-allowed opacity-75'
               }`}
@@ -408,7 +516,7 @@ export default function ClinicQRCheckInPage() {
               <div className="flex items-start gap-3.5">
                 <div
                   className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 border transition ${
-                    isOpenToday
+                    session.state === 'IN_SESSION'
                       ? 'bg-blue-50 text-blue-700 border-blue-200 group-hover:bg-blue-600 group-hover:text-white'
                       : 'bg-slate-200 text-slate-400 border-slate-300'
                   }`}
@@ -419,15 +527,23 @@ export default function ClinicQRCheckInPage() {
                   <div className="flex items-center justify-between">
                     <p
                       className={`text-sm font-bold ${
-                        isOpenToday
+                        session.state === 'IN_SESSION'
                           ? 'text-slate-900 group-hover:text-blue-700'
                           : 'text-slate-500'
                       }`}
                     >
                       I am a Walk-In Patient
                     </p>
-                    {isOpenToday ? (
+                    {session.state === 'IN_SESSION' ? (
                       <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-blue-700 group-hover:translate-x-0.5 transition" />
+                    ) : session.state === 'BEFORE_SESSION' ? (
+                      <Badge variant="outline" className="text-[9px] bg-sky-50 text-sky-700 border-sky-300 font-bold">
+                        Opens at {session.startTimeDisplay}
+                      </Badge>
+                    ) : session.state === 'AFTER_SESSION' ? (
+                      <Badge variant="outline" className="text-[9px] bg-slate-200 text-slate-600 border-slate-300 font-bold">
+                        Session Ended
+                      </Badge>
                     ) : (
                       <Badge variant="outline" className="text-[9px] bg-rose-50 text-rose-700 border-rose-200 font-bold">
                         Closed Today
@@ -435,9 +551,13 @@ export default function ClinicQRCheckInPage() {
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {isOpenToday
+                    {session.state === 'IN_SESSION'
                       ? 'Get your live digital queue number on your phone. No physical line needed.'
-                      : `Walk-in registration is unavailable today because ${clinic.activeDoctor} does not hold clinic hours here on ${todayDayName}s.`}
+                      : session.state === 'BEFORE_SESSION'
+                      ? `Walk-in registration opens at ${session.startTimeDisplay} today (${manilaNow.dayName}).`
+                      : session.state === 'AFTER_SESSION'
+                      ? `Walk-in registration closed at ${session.endTimeDisplay}. Consultations have ended for today.`
+                      : `Walk-in registration is unavailable today because ${clinic.activeDoctor} does not hold clinic hours here on ${manilaNow.dayName}s.`}
                   </p>
                 </div>
               </div>
