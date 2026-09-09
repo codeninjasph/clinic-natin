@@ -12,6 +12,7 @@ import {
   Clock,
   ChevronRight,
   Ticket,
+  Building2,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -35,6 +36,8 @@ interface ClinicSchedule {
   clinic: {
     id: string;
     name: string;
+    hospital_name: string;
+    room_number: string;
     address: string;
   };
 }
@@ -65,7 +68,13 @@ type RawRow = {
     day_of_week: number;
     start_time: string;
     end_time: string;
-    clinics: { id: string; name: string; address: string } | null;
+    clinics: {
+      id: string;
+      name: string;
+      hospital_name: string | null;
+      room_number: string | null;
+      address: string;
+    } | null;
     queue_sessions: Array<{
       id: string;
       status: string;
@@ -119,17 +128,21 @@ function transformRows(rows: RawRow[]): DoctorCard[] {
     doctorId: row.id,
     name: row.profiles?.full_name ?? 'Unknown Doctor',
     specialty: row.specialty,
-    schedules: row.doctor_clinic_schedules.map((s) => ({
-      id: s.id,
-      day_of_week: s.day_of_week,
-      start_time: s.start_time,
-      end_time: s.end_time,
-      clinic: {
-        id: s.clinics?.id ?? '',
-        name: s.clinics?.name ?? 'Unknown Clinic',
-        address: s.clinics?.address ?? '',
-      },
-    })),
+    schedules: row.doctor_clinic_schedules
+      .filter((s) => s.clinics !== null)
+      .map((s) => ({
+        id: s.id,
+        day_of_week: s.day_of_week,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        clinic: {
+          id: s.clinics?.id ?? '',
+          name: s.clinics?.name ?? 'Consultation Suite',
+          hospital_name: s.clinics?.hospital_name || 'Hospital / Medical Center',
+          room_number: s.clinics?.room_number || '',
+          address: s.clinics?.address ?? '',
+        },
+      })),
     activeSession: extractActiveSession(row.doctor_clinic_schedules),
   }));
 }
@@ -198,10 +211,22 @@ function DoctorCardItem({
 
   const todaySchedule = doctor.schedules.find((s) => s.day_of_week === manilaNow.isoDay);
   const session = getClinicSessionState(todaySchedule, manilaNow);
-  const primarySchedule = todaySchedule || doctor.schedules[0];
+
+  // Group schedules by clinic / hospital
+  const hospitalGroups = Array.from(
+    doctor.schedules.reduce((acc, sched) => {
+      const key = sched.clinic.id;
+      if (!acc.has(key)) {
+        acc.set(key, { clinic: sched.clinic, schedules: [] });
+      }
+      acc.get(key)!.schedules.push(sched);
+      return acc;
+    }, new Map<string, { clinic: ClinicSchedule['clinic']; schedules: ClinicSchedule[] }>()).values()
+  );
 
   return (
     <article className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5">
+      {/* ── Top Row: Doctor Info & Active Status ── */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white shadow-inner">
@@ -241,48 +266,151 @@ function DoctorCardItem({
         <QueueBadge session={doctor.activeSession} />
       </div>
 
-      {primarySchedule && (
-        <div className="mt-4 space-y-1.5">
-          <div className="flex items-start gap-2 text-sm text-slate-500">
-            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <div className="min-w-0">
-              <p className="font-medium text-slate-700 truncate">
-                {primarySchedule.clinic.name}
-              </p>
-              <p className="truncate text-xs">{primarySchedule.clinic.address}</p>
+      {/* ── Spotlight: Today's Active Hospital & Room ── */}
+      {todaySchedule ? (
+        <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-200/80 px-2 py-0.5 rounded-full">
+                    Today&apos;s Hospital ({manilaNow.dayName})
+                  </span>
+                  {todaySchedule.clinic.room_number && (
+                    <span className="rounded-md bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">
+                      {todaySchedule.clinic.room_number}
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-sm font-bold text-slate-900 mt-1 truncate">
+                  {todaySchedule.clinic.hospital_name}
+                </h3>
+                <p className="text-xs text-slate-700 font-medium truncate">
+                  {todaySchedule.clinic.name}
+                </p>
+                <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1">
+                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                  <span className="truncate">{todaySchedule.clinic.address}</span>
+                </div>
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <span className="inline-block rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-emerald-950 shadow-xs border border-emerald-200">
+                {formatTime(todaySchedule.start_time)}&ndash;{formatTime(todaySchedule.end_time)}
+              </span>
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs text-slate-600 flex items-center gap-2">
+          <Building2 className="h-4 w-4 shrink-0 text-slate-400" />
+          <div>
+            <span className="font-semibold text-slate-800">Not in Clinic Today ({manilaNow.dayName}).</span>{' '}
+            <span className="text-slate-500">
+              Consults at {hospitalGroups.length} hospital{hospitalGroups.length !== 1 ? 's' : ''} in Cagayan de Oro (see schedule below).
+            </span>
+          </div>
+        </div>
+      )}
 
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {doctor.schedules.map((s) => {
-              const isToday = s.day_of_week === manilaNow.isoDay;
+      {/* ── Consultation Schedules Grouped by Hospital & Room ── */}
+      {hospitalGroups.length > 0 && (
+        <div className="mt-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Hospital Consultation Schedule:
+            </p>
+            {hospitalGroups.length > 1 && (
+              <span className="text-[10px] text-slate-500 font-medium">
+                Rotates across {hospitalGroups.length} hospitals in CDO
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {hospitalGroups.map((group) => {
+              const isTodayHospital = todaySchedule?.clinic.id === group.clinic.id;
               return (
-                <span
-                  key={s.id}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] transition ${
-                    isToday
-                      ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300 font-bold'
-                      : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
+                <div
+                  key={group.clinic.id}
+                  className={`rounded-xl border p-3 transition ${
+                    isTodayHospital
+                      ? 'border-emerald-300 bg-emerald-50/30 ring-1 ring-emerald-200/60 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/50'
                   }`}
                 >
-                  <span className={isToday ? 'font-black text-emerald-900' : 'font-medium text-slate-600'}>
-                    {DAY_NAMES[s.day_of_week]}
-                  </span>
-                  <span>{formatTime(s.start_time)}&ndash;{formatTime(s.end_time)}</span>
-                  {isToday && (
-                    <span className="text-[9px] bg-emerald-600 text-white px-1 rounded font-bold">TODAY</span>
-                  )}
-                </span>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Building2
+                          className={`h-3.5 w-3.5 shrink-0 ${
+                            isTodayHospital ? 'text-emerald-700' : 'text-slate-500'
+                          }`}
+                        />
+                        <span className="text-xs font-bold text-slate-900">
+                          {group.clinic.hospital_name}
+                        </span>
+                        {group.clinic.room_number && (
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                              isTodayHospital
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-200/80 text-slate-700'
+                            }`}
+                          >
+                            {group.clinic.room_number}
+                          </span>
+                        )}
+                        {isTodayHospital && (
+                          <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white px-1.5 py-0.5 rounded">
+                            In Clinic Today
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        {group.clinic.name} &bull; {group.clinic.address}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {group.schedules.map((s) => {
+                      const isToday = s.day_of_week === manilaNow.isoDay;
+                      return (
+                        <span
+                          key={s.id}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] transition ${
+                            isToday
+                              ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                              : 'bg-white text-slate-600 ring-1 ring-slate-200 font-medium'
+                          }`}
+                        >
+                          <span>{DAY_NAMES[s.day_of_week]}</span>
+                          <span>{formatTime(s.start_time)}&ndash;{formatTime(s.end_time)}</span>
+                          {isToday && (
+                            <span className="text-[9px] bg-white/25 text-white px-1 rounded font-black">
+                              TODAY
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>
         </div>
       )}
 
+      {/* ── Action Button with Exact Hospital Context ── */}
       <button
         id={`join-queue-${doctor.doctorId}`}
         onClick={() => onJoin(doctor)}
-        className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.98] ${
+        className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.98] ${
           session.state === 'IN_SESSION'
             ? 'bg-brand-700 hover:bg-brand-800 text-white shadow-sm'
             : session.state === 'BEFORE_SESSION'
@@ -290,26 +418,26 @@ function DoctorCardItem({
             : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
         }`}
       >
-        {session.state === 'IN_SESSION' ? (
+        {session.state === 'IN_SESSION' && todaySchedule ? (
           <>
             <Users className="h-4 w-4" />
-            Join Today&apos;s Queue
+            Join Today&apos;s Queue at {todaySchedule.clinic.hospital_name.replace(' - Xavier University Hospital', '').replace(' Medical Plaza', '')} ({todaySchedule.clinic.room_number})
             <ChevronRight className="h-4 w-4 opacity-70" />
           </>
-        ) : session.state === 'BEFORE_SESSION' ? (
+        ) : session.state === 'BEFORE_SESSION' && todaySchedule ? (
           <>
             <Clock className="h-4 w-4 text-sky-600" />
-            Opens at {session.startTimeDisplay} &bull; View Schedule
+            Opens at {session.startTimeDisplay} at {todaySchedule.clinic.hospital_name.replace(' - Xavier University Hospital', '').replace(' Medical Plaza', '')} &bull; View Details
           </>
-        ) : session.state === 'AFTER_SESSION' ? (
+        ) : session.state === 'AFTER_SESSION' && todaySchedule ? (
           <>
             <Clock className="h-4 w-4 text-slate-500" />
-            Session Ended &bull; View Schedule
+            Session Ended at {todaySchedule.clinic.hospital_name.replace(' - Xavier University Hospital', '').replace(' Medical Plaza', '')} &bull; View Schedule
           </>
         ) : (
           <>
             <Clock className="h-4 w-4 text-slate-500" />
-            Closed Today &bull; View Schedule
+            Closed Today &bull; View Hospital Schedules
           </>
         )}
       </button>
@@ -371,6 +499,8 @@ export default function DiscoverPage() {
           clinics!clinic_id (
             id,
             name,
+            hospital_name,
+            room_number,
             address
           ),
           queue_sessions (
@@ -464,6 +594,8 @@ export default function DiscoverPage() {
       doc.schedules.some(
         (s) =>
           s.clinic.name.toLowerCase().includes(q) ||
+          s.clinic.hospital_name.toLowerCase().includes(q) ||
+          s.clinic.room_number.toLowerCase().includes(q) ||
           s.clinic.address.toLowerCase().includes(q)
       )
     );
@@ -488,7 +620,7 @@ export default function DiscoverPage() {
             <div>
               <h1 className="text-lg font-bold text-slate-900">Find a Doctor</h1>
               <p className="text-xs text-slate-500">
-                Live queue status · updated in real time (PHT)
+                Live queue status &bull; updated in real time (PHT)
               </p>
             </div>
             <Link
@@ -506,7 +638,7 @@ export default function DiscoverPage() {
             <input
               id="doctor-search"
               type="search"
-              placeholder="Search by name, specialty, or clinic…"
+              placeholder="Search by doctor, specialty, hospital (e.g. Maria Reyna, Polymedic), or room…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
@@ -557,8 +689,8 @@ export default function DiscoverPage() {
         const session = getClinicSessionState(todaySched, manilaNow);
 
         const scheduleSummary = selectedDoctorForJoin.schedules
-          .map((s) => `${DAY_NAMES[s.day_of_week]} ${formatTime(s.start_time)}–${formatTime(s.end_time)} (${s.clinic.name})`)
-          .join(', ');
+          .map((s) => `${s.clinic.hospital_name} (${s.clinic.room_number}): ${DAY_NAMES[s.day_of_week]} ${formatTime(s.start_time)}–${formatTime(s.end_time)}`)
+          .join('; ');
 
         let title = '';
         let description = '';
@@ -569,21 +701,21 @@ export default function DiscoverPage() {
 
         if (session.state === 'IN_SESSION' && todaySched) {
           title = `Join Today's Queue for Dr. ${selectedDoctorForJoin.name}?`;
-          description = `You are reserving a queue token for Dr. ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${todaySched.clinic.name}. You will receive SMS alerts when 2 patients are ahead of your turn.`;
+          description = `You are joining the live queue at ${todaySched.clinic.hospital_name} in ${todaySched.clinic.room_number ? todaySched.clinic.room_number + ' (' + todaySched.clinic.name + ')' : todaySched.clinic.name}.\n\nLocation: ${todaySched.clinic.address}.\nToday's Consultation Hours: ${formatTime(todaySched.start_time)} to ${formatTime(todaySched.end_time)}.\n\nYou will receive SMS turn alerts when 2 patients are ahead of you.`;
           confirmLabel = 'Confirm & Join Queue';
           cancelLabel = 'Cancel';
           variant = 'brand';
           canJoin = true;
         } else if (session.state === 'BEFORE_SESSION' && todaySched) {
           title = `Queue Opens at ${session.startTimeDisplay} Today`;
-          description = `Dr. ${selectedDoctorForJoin.name} is scheduled today (${DAY_FULL_NAMES[manilaNow.isoDay]}) from ${session.startTimeDisplay} to ${session.endTimeDisplay} at ${todaySched.clinic.name}. The live queue opens 15 minutes before consultations begin.`;
+          description = `Dr. ${selectedDoctorForJoin.name} is scheduled today (${DAY_FULL_NAMES[manilaNow.isoDay]}) from ${session.startTimeDisplay} to ${session.endTimeDisplay} at ${todaySched.clinic.hospital_name} (${todaySched.clinic.room_number}).\nAddress: ${todaySched.clinic.address}.\n\nThe live queue will open 15 minutes before consultations start.`;
         } else if (session.state === 'AFTER_SESSION' && todaySched) {
           title = `Consultations Ended for Today`;
-          description = `Dr. ${selectedDoctorForJoin.name}'s clinic session at ${todaySched.clinic.name} concluded at ${session.endTimeDisplay} today (${DAY_FULL_NAMES[manilaNow.isoDay]}). Live queue tokens can only be issued during active clinic hours.`;
+          description = `Dr. ${selectedDoctorForJoin.name}'s clinic session at ${todaySched.clinic.hospital_name} (${todaySched.clinic.room_number}) concluded at ${session.endTimeDisplay} today (${DAY_FULL_NAMES[manilaNow.isoDay]}). Live queue tokens can only be issued during active clinic hours.`;
         } else {
           // CLOSED_TODAY
           title = `Dr. ${selectedDoctorForJoin.name} is Closed Today`;
-          description = `Dr. ${selectedDoctorForJoin.name} does not hold consultations today (${DAY_FULL_NAMES[manilaNow.isoDay]}). Active consultation schedule: ${scheduleSummary}. Live queue tokens can only be issued during active clinic days.`;
+          description = `Dr. ${selectedDoctorForJoin.name} does not hold consultations today (${DAY_FULL_NAMES[manilaNow.isoDay]}).\n\nOfficial Weekly Hospital Schedules:\n${scheduleSummary}\n\nLive queue tokens can only be issued during active clinic days.`;
         }
 
         return (
