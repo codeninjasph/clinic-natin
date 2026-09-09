@@ -182,7 +182,7 @@ export default function ClinicsAndRoomsPage() {
     operatingHours: 'Mon–Fri 8:00 AM – 5:00 PM',
     status: 'ACTIVE' as 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE',
     assignedDoctorId: '',
-    scheduleDay: 1,
+    scheduleDays: [2, 4, 6] as number[],
     startTime: '08:30:00',
     endTime: '13:30:00',
   });
@@ -206,7 +206,7 @@ export default function ClinicsAndRoomsPage() {
     operatingHours: '',
     status: 'ACTIVE' as 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE',
     assignedDoctorId: '',
-    scheduleDay: 1,
+    scheduleDays: [2, 4, 6] as number[],
     startTime: '08:30:00',
     endTime: '13:30:00',
   });
@@ -334,7 +334,7 @@ export default function ClinicsAndRoomsPage() {
       operatingHours: 'Mon–Fri 8:00 AM – 5:00 PM',
       status: 'ACTIVE',
       assignedDoctorId: '',
-      scheduleDay: 1,
+      scheduleDays: [2, 4, 6],
       startTime: '08:30:00',
       endTime: '13:30:00',
     });
@@ -397,8 +397,12 @@ export default function ClinicsAndRoomsPage() {
 
   // Open Edit Clinic Modal
   const handleOpenEditModal = (clinic: ClinicRecord) => {
-    const primarySchedule = clinic.doctor_clinic_schedules?.[0];
+    const schedules = clinic.doctor_clinic_schedules || [];
+    const primarySchedule = schedules[0];
     const assignedDocId = primarySchedule?.doctor_id || '';
+    const existingDays = schedules.length > 0
+      ? schedules.map((s) => s.day_of_week)
+      : [2, 4, 6];
 
     setEditForm({
       id: clinic.id,
@@ -415,7 +419,7 @@ export default function ClinicsAndRoomsPage() {
       operatingHours: clinic.operating_hours || 'Mon–Fri 8:00 AM – 5:00 PM',
       status: clinic.status || 'ACTIVE',
       assignedDoctorId: assignedDocId,
-      scheduleDay: primarySchedule?.day_of_week || 1,
+      scheduleDays: existingDays,
       startTime: primarySchedule?.start_time ? primarySchedule.start_time.slice(0, 5) : '08:30',
       endTime: primarySchedule?.end_time ? primarySchedule.end_time.slice(0, 5) : '13:30',
     });
@@ -861,14 +865,21 @@ export default function ClinicsAndRoomsPage() {
                           </div>
                         </div>
 
-                        {/* If multiple doctor schedules exist on shared suite */}
-                        {clinic.doctor_clinic_schedules && clinic.doctor_clinic_schedules.length > 1 && (
-                          <div className="pl-9 flex flex-wrap gap-1">
-                            {clinic.doctor_clinic_schedules.slice(1).map((s, idx) => (
-                              <Badge key={s.id || idx} variant="outline" className="text-[9px] font-semibold bg-slate-50 text-slate-600 border-slate-200">
-                                + {s.doctors?.profiles?.full_name || 'Physician'} ({s.doctors?.specialty})
-                              </Badge>
-                            ))}
+                        {/* Weekly Schedule Days Badges */}
+                        {clinic.doctor_clinic_schedules && clinic.doctor_clinic_schedules.length > 0 && (
+                          <div className="pl-9 flex flex-wrap gap-1 mt-1">
+                            {clinic.doctor_clinic_schedules.map((s) => {
+                              const dayObj = DAYS_OF_WEEK.find((d) => d.value === s.day_of_week);
+                              const dayLabel = dayObj ? dayObj.label.slice(0, 3) : `Day ${s.day_of_week}`;
+                              return (
+                                <span
+                                  key={s.id}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-brand-50 text-brand-700 border border-brand-200"
+                                >
+                                  {dayLabel} {s.start_time ? s.start_time.slice(0, 5) : ''}–{s.end_time ? s.end_time.slice(0, 5) : ''}
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1092,38 +1103,62 @@ export default function ClinicsAndRoomsPage() {
               </div>
 
               {addForm.assignedDoctorId && (
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="space-y-3 pt-1">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Day of Week</label>
-                    <select
-                      value={addForm.scheduleDay}
-                      onChange={(e) => setAddForm({ ...addForm, scheduleDay: Number(e.target.value) })}
-                      className="w-full rounded-lg border border-slate-200 bg-white p-1.5 text-xs text-slate-800"
-                    >
-                      {DAYS_OF_WEEK.map((d) => (
-                        <option key={d.value} value={d.value}>{d.label}</option>
-                      ))}
-                    </select>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                      Consultation Days (Select All That Apply)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DAYS_OF_WEEK.map((d) => {
+                        const isSelected = addForm.scheduleDays.includes(d.value);
+                        return (
+                          <button
+                            key={d.value}
+                            type="button"
+                            onClick={() => {
+                              const newDays = isSelected
+                                ? addForm.scheduleDays.filter((val) => val !== d.value)
+                                : [...addForm.scheduleDays, d.value].sort();
+                              setAddForm({ ...addForm, scheduleDays: newDays });
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                              isSelected
+                                ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {d.label.slice(0, 3)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {addForm.scheduleDays.length === 0 && (
+                      <p className="text-[10px] text-rose-600 mt-1 font-semibold">
+                        Please select at least one consultation day.
+                      </p>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
-                    <Input
-                      type="time"
-                      value={addForm.startTime}
-                      onChange={(e) => setAddForm({ ...addForm, startTime: e.target.value })}
-                      className="text-xs bg-white"
-                    />
-                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
+                      <Input
+                        type="time"
+                        value={addForm.startTime}
+                        onChange={(e) => setAddForm({ ...addForm, startTime: e.target.value })}
+                        className="text-xs bg-white"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
-                    <Input
-                      type="time"
-                      value={addForm.endTime}
-                      onChange={(e) => setAddForm({ ...addForm, endTime: e.target.value })}
-                      className="text-xs bg-white"
-                    />
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
+                      <Input
+                        type="time"
+                        value={addForm.endTime}
+                        onChange={(e) => setAddForm({ ...addForm, endTime: e.target.value })}
+                        className="text-xs bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1293,38 +1328,62 @@ export default function ClinicsAndRoomsPage() {
               </div>
 
               {editForm.assignedDoctorId && (
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="space-y-3 pt-1">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Day of Week</label>
-                    <select
-                      value={editForm.scheduleDay}
-                      onChange={(e) => setEditForm({ ...editForm, scheduleDay: Number(e.target.value) })}
-                      className="w-full rounded-lg border border-slate-200 bg-white p-1.5 text-xs text-slate-800"
-                    >
-                      {DAYS_OF_WEEK.map((d) => (
-                        <option key={d.value} value={d.value}>{d.label}</option>
-                      ))}
-                    </select>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                      Consultation Days (Select All That Apply)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {DAYS_OF_WEEK.map((d) => {
+                        const isSelected = editForm.scheduleDays.includes(d.value);
+                        return (
+                          <button
+                            key={d.value}
+                            type="button"
+                            onClick={() => {
+                              const newDays = isSelected
+                                ? editForm.scheduleDays.filter((val) => val !== d.value)
+                                : [...editForm.scheduleDays, d.value].sort();
+                              setEditForm({ ...editForm, scheduleDays: newDays });
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                              isSelected
+                                ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {d.label.slice(0, 3)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {editForm.scheduleDays.length === 0 && (
+                      <p className="text-[10px] text-rose-600 mt-1 font-semibold">
+                        Please select at least one consultation day.
+                      </p>
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
-                    <Input
-                      type="time"
-                      value={editForm.startTime}
-                      onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
-                      className="text-xs bg-white"
-                    />
-                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
+                      <Input
+                        type="time"
+                        value={editForm.startTime}
+                        onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                        className="text-xs bg-white"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
-                    <Input
-                      type="time"
-                      value={editForm.endTime}
-                      onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
-                      className="text-xs bg-white"
-                    />
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
+                      <Input
+                        type="time"
+                        value={editForm.endTime}
+                        onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                        className="text-xs bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

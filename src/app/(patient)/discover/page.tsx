@@ -80,6 +80,7 @@ type RawRow = {
 // ---------------------------------------------------------------------------
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_FULL_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 function formatTime(time: string): string {
   const [h, m] = time.split(':').map(Number);
@@ -176,9 +177,11 @@ function QueueBadge({ session }: { session: ActiveQueueSession | null }) {
 
 function DoctorCardItem({
   doctor,
+  currentIsoDay,
   onJoin,
 }: {
   doctor: DoctorCard;
+  currentIsoDay: number;
   onJoin: (doctor: DoctorCard) => void;
 }) {
   const initials = doctor.name
@@ -188,7 +191,9 @@ function DoctorCardItem({
     .join('')
     .toUpperCase();
 
-  const primarySchedule = doctor.schedules[0];
+  const todaySchedule = doctor.schedules.find((s) => s.day_of_week === currentIsoDay);
+  const isOpenToday = !!todaySchedule;
+  const primarySchedule = todaySchedule || doctor.schedules[0];
 
   return (
     <article className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:border-blue-200 hover:shadow-md hover:-translate-y-0.5">
@@ -198,9 +203,21 @@ function DoctorCardItem({
             {initials}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-slate-800">
-              Dr. {doctor.name}
-            </h2>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h2 className="truncate text-base font-semibold text-slate-800">
+                Dr. {doctor.name}
+              </h2>
+              {isOpenToday ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                  In Clinic Today
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                  Closed Today
+                </span>
+              )}
+            </div>
             <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-blue-100">
               <Stethoscope className="h-2.5 w-2.5" />
               {doctor.specialty}
@@ -223,17 +240,27 @@ function DoctorCardItem({
           </div>
 
           <div className="flex flex-wrap gap-1.5 pt-1">
-            {doctor.schedules.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200"
-              >
-                <span className="font-medium text-slate-600">
-                  {DAY_NAMES[s.day_of_week]}
+            {doctor.schedules.map((s) => {
+              const isToday = s.day_of_week === currentIsoDay;
+              return (
+                <span
+                  key={s.id}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] transition ${
+                    isToday
+                      ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300 font-bold'
+                      : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'
+                  }`}
+                >
+                  <span className={isToday ? 'font-black text-emerald-900' : 'font-medium text-slate-600'}>
+                    {DAY_NAMES[s.day_of_week]}
+                  </span>
+                  <span>{formatTime(s.start_time)}&ndash;{formatTime(s.end_time)}</span>
+                  {isToday && (
+                    <span className="text-[9px] bg-emerald-600 text-white px-1 rounded font-bold">TODAY</span>
+                  )}
                 </span>
-                {formatTime(s.start_time)}&ndash;{formatTime(s.end_time)}
-              </span>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -241,11 +268,24 @@ function DoctorCardItem({
       <button
         id={`join-queue-${doctor.doctorId}`}
         onClick={() => onJoin(doctor)}
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-blue-700 active:scale-[0.98]"
+        className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.98] ${
+          isOpenToday
+            ? 'bg-brand-700 hover:bg-brand-800 text-white shadow-sm'
+            : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+        }`}
       >
-        <Users className="h-4 w-4" />
-        Join Queue
-        <ChevronRight className="h-4 w-4 opacity-70" />
+        {isOpenToday ? (
+          <>
+            <Users className="h-4 w-4" />
+            Join Today&apos;s Queue
+            <ChevronRight className="h-4 w-4 opacity-70" />
+          </>
+        ) : (
+          <>
+            <Clock className="h-4 w-4 text-slate-500" />
+            Closed Today &bull; View Schedule
+          </>
+        )}
       </button>
     </article>
   );
@@ -411,6 +451,11 @@ export default function DiscoverPage() {
 
   // ---- Render --------------------------------------------------------------
 
+  const currentIsoDay = (() => {
+    const d = new Date().getDay();
+    return d === 0 ? 7 : d;
+  })();
+
   return (
     <main className="min-h-screen bg-slate-50">
       {/* ── Sticky Header ── */}
@@ -471,6 +516,7 @@ export default function DiscoverPage() {
               <DoctorCardItem
                 key={doctor.doctorId}
                 doctor={doctor}
+                currentIsoDay={currentIsoDay}
                 onJoin={handleJoin}
               />
             ))}
@@ -480,24 +526,45 @@ export default function DiscoverPage() {
         {!loading && filtered.length === 0 && <EmptyState query={query} />}
       </div>
 
-      {/* In-app Join Queue Confirmation Dialog */}
-      <ConfirmDialog
-        open={!!selectedDoctorForJoin}
-        onOpenChange={(open) => !open && setSelectedDoctorForJoin(null)}
-        title={`Join Live Queue for Dr. ${selectedDoctorForJoin?.name}?`}
-        description={
-          selectedDoctorForJoin
-            ? `You are reserving a queue token for ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${selectedDoctorForJoin.schedules[0]?.clinic.name || 'CDO Medical Arts'}. You will receive SMS alerts when 2 patients are ahead of your turn.`
-            : ''
-        }
-        confirmLabel="Confirm & Join Queue"
-        cancelLabel="Cancel"
-        variant="brand"
-        onConfirm={() => {
-          setSelectedDoctorForJoin(null);
-          router.push('/my-queue');
-        }}
-      />
+      {/* In-app Join Queue / Schedule Guard Dialog */}
+      {selectedDoctorForJoin && (() => {
+        const todaySched = selectedDoctorForJoin.schedules.find(
+          (s) => s.day_of_week === currentIsoDay
+        );
+        const isOpenToday = !!todaySched;
+
+        const scheduleSummary = selectedDoctorForJoin.schedules
+          .map((s) => `${DAY_NAMES[s.day_of_week]} ${formatTime(s.start_time)}–${formatTime(s.end_time)} (${s.clinic.name})`)
+          .join(', ');
+
+        return (
+          <ConfirmDialog
+            open={!!selectedDoctorForJoin}
+            onOpenChange={(open) => !open && setSelectedDoctorForJoin(null)}
+            title={
+              isOpenToday
+                ? `Join Today's Queue for Dr. ${selectedDoctorForJoin.name}?`
+                : `Dr. ${selectedDoctorForJoin.name} is Closed Today`
+            }
+            description={
+              isOpenToday
+                ? `You are reserving a queue token for Dr. ${selectedDoctorForJoin.name} (${selectedDoctorForJoin.specialty}) at ${todaySched.clinic.name}. You will receive SMS alerts when 2 patients are ahead of your turn.`
+                : `Dr. ${selectedDoctorForJoin.name} does not hold consultations today (${DAY_FULL_NAMES[currentIsoDay]}). Active consultation schedule: ${scheduleSummary}. Live queue tokens can only be issued during active clinic days.`
+            }
+            confirmLabel={isOpenToday ? 'Confirm & Join Queue' : 'Understood'}
+            cancelLabel={isOpenToday ? 'Cancel' : 'Close'}
+            variant={isOpenToday ? 'brand' : 'default'}
+            onConfirm={() => {
+              if (isOpenToday) {
+                setSelectedDoctorForJoin(null);
+                router.push('/my-queue');
+              } else {
+                setSelectedDoctorForJoin(null);
+              }
+            }}
+          />
+        );
+      })()}
     </main>
   );
 }

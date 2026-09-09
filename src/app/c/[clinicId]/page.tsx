@@ -39,6 +39,49 @@ export default function ClinicQRCheckInPage() {
 
   const [clinic, setClinic] = React.useState<CDOClinic>(defaultClinic);
   const [isLoadingClinic, setIsLoadingClinic] = React.useState(false);
+  const [schedules, setSchedules] = React.useState<any[]>([]);
+  const [alternateClinicToday, setAlternateClinicToday] = React.useState<any | null>(null);
+
+  // ISO day: 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat, 7 = Sun
+  const currentIsoDay = React.useMemo(() => {
+    const d = new Date().getDay();
+    return d === 0 ? 7 : d;
+  }, []);
+
+  const DAY_NAMES: Record<number, string> = {
+    1: 'Monday',
+    2: 'Tuesday',
+    3: 'Wednesday',
+    4: 'Thursday',
+    5: 'Friday',
+    6: 'Saturday',
+    7: 'Sunday',
+  };
+
+  const todayDayName = DAY_NAMES[currentIsoDay] || 'Today';
+
+  // Check if this room has active consultation hours today
+  const isOpenToday = React.useMemo(() => {
+    if (!schedules || schedules.length === 0) {
+      return clinic.status === 'OPTIMAL';
+    }
+    return schedules.some((s) => s.day_of_week === currentIsoDay && s.is_active !== false);
+  }, [schedules, currentIsoDay, clinic.status]);
+
+  // Compute next available session in this room
+  const nextSessionText = React.useMemo(() => {
+    if (!schedules || schedules.length === 0) return null;
+    const sorted = [...schedules].sort((a, b) => a.day_of_week - b.day_of_week);
+    let nextSched = sorted.find((s) => s.day_of_week > currentIsoDay && s.is_active !== false);
+    if (!nextSched) {
+      nextSched = sorted.find((s) => s.is_active !== false) || sorted[0];
+    }
+    if (!nextSched) return null;
+    const dayLabel = DAY_NAMES[nextSched.day_of_week];
+    const isTomorrow = ((currentIsoDay % 7) + 1) === nextSched.day_of_week;
+    const startTimeFormatted = nextSched.start_time ? nextSched.start_time.slice(0, 5) : '08:30';
+    return `${isTomorrow ? 'Tomorrow (' + dayLabel + ')' : dayLabel} at ${startTimeFormatted}`;
+  }, [schedules, currentIsoDay]);
 
   // Attempt to fetch live clinic data from database if available
   React.useEffect(() => {
@@ -52,7 +95,10 @@ export default function ClinicQRCheckInPage() {
           const json = await res.json();
           const row = json.clinic || json.data;
           if (row && isMounted) {
-            const primarySchedule = row.doctor_clinic_schedules?.[0];
+            const docSchedules = row.doctor_clinic_schedules || [];
+            setSchedules(docSchedules);
+
+            const primarySchedule = docSchedules[0];
             const doctor = primarySchedule?.doctors;
             const profile = doctor?.profiles;
             const doctorName = profile?.full_name
@@ -60,6 +106,15 @@ export default function ClinicQRCheckInPage() {
               : defaultClinic.activeDoctor;
 
             const activeSession = row.queue_sessions?.[0];
+
+            // Check if doctor has an alternate clinic session on today's day of week
+            const allDoctorSchedules = doctor?.doctor_clinic_schedules || [];
+            const jsDay = new Date().getDay();
+            const currentDay = jsDay === 0 ? 7 : jsDay;
+            const altToday = allDoctorSchedules.find(
+              (s: any) => s.clinic_id !== row.id && s.day_of_week === currentDay && s.is_active !== false
+            );
+            setAlternateClinicToday(altToday || null);
 
             setClinic({
               ...defaultClinic,
@@ -133,6 +188,12 @@ export default function ClinicQRCheckInPage() {
 
   const handleRegisterWalkIn = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isOpenToday) {
+      setWalkinError(`Registration is closed today. ${clinic.activeDoctor} is scheduled in this room on ${clinic.operatingHours}.`);
+      return;
+    }
+
     if (!walkinName.trim()) {
       setWalkinError('Please enter your full name.');
       return;
@@ -182,10 +243,17 @@ export default function ClinicQRCheckInPage() {
             </div>
           </div>
 
-          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200 font-bold flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
-            Live Clinic Queue
-          </Badge>
+          {isOpenToday ? (
+            <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200 font-bold flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
+              Live Clinic Queue
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-300 font-bold flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Clinic Closed Today
+            </Badge>
+          )}
         </div>
       </header>
 
@@ -231,6 +299,70 @@ export default function ClinicQRCheckInPage() {
           </CardContent>
         </Card>
 
+        {/* Off-Day Clinical Alert Banner */}
+        {!isOpenToday && (
+          <div className="space-y-3">
+            <Alert variant="destructive" className="bg-amber-50/80 border-amber-300 text-amber-950 p-4">
+              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <AlertTitle className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                  No Consultations Today in {clinic.room}
+                </AlertTitle>
+                <AlertDescription className="text-xs mt-1 space-y-1.5 text-amber-800">
+                  <p>
+                    <strong>{clinic.activeDoctor}</strong> does not hold clinic hours in {clinic.room} ({clinic.hospital}) on <strong>{todayDayName}s</strong>.
+                  </p>
+                  <p className="font-semibold text-amber-900">
+                    Official consultation schedule in this room: {clinic.operatingHours}
+                  </p>
+                  {nextSessionText && (
+                    <div className="text-[11px] text-amber-900 bg-amber-100/80 p-2 rounded-lg font-medium flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                      <span>Next Session in this room: <strong>{nextSessionText}</strong></span>
+                    </div>
+                  )}
+                </AlertDescription>
+              </div>
+            </Alert>
+
+            {/* Cross-Hospital Alternate Location Recommendation */}
+            {alternateClinicToday && (
+              <div className="rounded-2xl border-2 border-brand-300 bg-brand-50/70 p-4 shadow-xs space-y-2.5">
+                <div className="flex items-center gap-2 text-brand-900">
+                  <Sparkles className="h-4 w-4 text-brand-700 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    Physician Active at Alternate Hospital Today
+                  </span>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  <strong>{clinic.activeDoctor}</strong> is holding clinic consultations today ({todayDayName}) at:
+                </p>
+                <div className="bg-white rounded-xl p-3.5 border border-brand-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <Badge variant="outline" className="text-[9px] bg-brand-50 text-brand-800 border-brand-200 font-bold mb-0.5">
+                      {alternateClinicToday.clinics?.hospital_name || 'Partner Hospital'}
+                    </Badge>
+                    <p className="text-xs font-black text-slate-900">
+                      {alternateClinicToday.clinics?.room_number || 'Consultation Suite'} &bull; {alternateClinicToday.clinics?.name || 'Clinic'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                      Consultation Hours: {alternateClinicToday.start_time?.slice(0, 5)} – {alternateClinicToday.end_time?.slice(0, 5)}
+                    </p>
+                  </div>
+                  {alternateClinicToday.clinics?.id && (
+                    <Link
+                      href={`/c/${alternateClinicToday.clinics.id}`}
+                      className="inline-flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-2 rounded-xl transition shadow-xs shrink-0"
+                    >
+                      Check In There <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── STATE 1: MENU SELECTION ── */}
         {mode === 'MENU' && (
           <div className="space-y-3">
@@ -265,22 +397,47 @@ export default function ClinicQRCheckInPage() {
             {/* Option B: Walk-In Registration */}
             <button
               type="button"
-              onClick={() => setMode('WALKIN_REGISTER')}
-              className="w-full text-left rounded-2xl border border-blue-200 bg-white p-4 shadow-xs hover:border-blue-600 hover:shadow-md transition active:scale-[0.99] group"
+              disabled={!isOpenToday}
+              onClick={() => isOpenToday && setMode('WALKIN_REGISTER')}
+              className={`w-full text-left rounded-2xl border p-4 transition ${
+                isOpenToday
+                  ? 'border-blue-200 bg-white shadow-xs hover:border-blue-600 hover:shadow-md active:scale-[0.99] group'
+                  : 'border-slate-200 bg-slate-100/80 cursor-not-allowed opacity-75'
+              }`}
             >
               <div className="flex items-start gap-3.5">
-                <div className="h-10 w-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm shrink-0 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition">
+                <div
+                  className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 border transition ${
+                    isOpenToday
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 group-hover:bg-blue-600 group-hover:text-white'
+                      : 'bg-slate-200 text-slate-400 border-slate-300'
+                  }`}
+                >
                   <UserPlus className="h-5 w-5" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition">
+                    <p
+                      className={`text-sm font-bold ${
+                        isOpenToday
+                          ? 'text-slate-900 group-hover:text-blue-700'
+                          : 'text-slate-500'
+                      }`}
+                    >
                       I am a Walk-In Patient
                     </p>
-                    <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-blue-700 group-hover:translate-x-0.5 transition" />
+                    {isOpenToday ? (
+                      <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-blue-700 group-hover:translate-x-0.5 transition" />
+                    ) : (
+                      <Badge variant="outline" className="text-[9px] bg-rose-50 text-rose-700 border-rose-200 font-bold">
+                        Closed Today
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Get your live digital queue number on your phone. No physical line needed.
+                    {isOpenToday
+                      ? 'Get your live digital queue number on your phone. No physical line needed.'
+                      : `Walk-in registration is unavailable today because ${clinic.activeDoctor} does not hold clinic hours here on ${todayDayName}s.`}
                   </p>
                 </div>
               </div>

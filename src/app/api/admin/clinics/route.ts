@@ -52,6 +52,19 @@ export async function GET(req: NextRequest) {
             email,
             phone_number,
             avatar_url
+          ),
+          doctor_clinic_schedules (
+            id,
+            clinic_id,
+            day_of_week,
+            start_time,
+            end_time,
+            clinics (
+              id,
+              name,
+              hospital_name,
+              room_number
+            )
           )
         )
       ),
@@ -147,6 +160,7 @@ export async function POST(req: NextRequest) {
       status = 'ACTIVE',
       isVerified = true,
       assignedDoctorId,
+      scheduleDays,
       scheduleDay = 1,
       startTime = '08:00:00',
       endTime = '17:00:00',
@@ -207,19 +221,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: clinicErr.message }, { status: 500 });
     }
 
-    // Optional: link assigned doctor schedule
+    // Optional: link assigned doctor schedules (multi-day support)
     if (assignedDoctorId && newClinic?.id) {
-      await supabase
-        .from('doctor_clinic_schedules')
-        .insert({
-          doctor_id: assignedDoctorId,
-          clinic_id: newClinic.id,
-          day_of_week: Number(scheduleDay) || 1,
-          start_time: startTime,
-          end_time: endTime,
-          max_patients: Number(maxPatients) || 40,
-          is_active: true,
-        });
+      const days = Array.isArray(scheduleDays) && scheduleDays.length > 0
+        ? scheduleDays
+        : [Number(scheduleDay) || 1];
+
+      const rows = days.map((d) => ({
+        doctor_id: assignedDoctorId,
+        clinic_id: newClinic.id,
+        day_of_week: Number(d),
+        start_time: startTime || '08:30:00',
+        end_time: endTime || '17:00:00',
+        max_patients: Number(maxPatients) || 40,
+        is_active: true,
+      }));
+
+      await supabase.from('doctor_clinic_schedules').insert(rows);
     }
 
     // Write audit log
@@ -258,6 +276,7 @@ export async function PUT(req: NextRequest) {
       status,
       isVerified,
       assignedDoctorId,
+      scheduleDays,
       scheduleDay,
       startTime,
       endTime,
@@ -311,44 +330,30 @@ export async function PUT(req: NextRequest) {
       updatedClinic = data;
     }
 
-    // Optional: update, add, or remove doctor schedule
+    // Optional: update, add, or remove doctor schedules (multi-day support)
     if (assignedDoctorId !== undefined) {
-      if (!assignedDoctorId) {
-        // Admin unassigned doctor: remove existing schedule
-        await supabase
-          .from('doctor_clinic_schedules')
-          .delete()
-          .eq('clinic_id', id);
-      } else {
-        const { data: existingSched } = await supabase
-          .from('doctor_clinic_schedules')
-          .select('id')
-          .eq('clinic_id', id)
-          .maybeSingle();
+      // Clear existing schedules for this clinic
+      await supabase
+        .from('doctor_clinic_schedules')
+        .delete()
+        .eq('clinic_id', id);
 
-        if (existingSched) {
-          await supabase
-            .from('doctor_clinic_schedules')
-            .update({
-              doctor_id: assignedDoctorId,
-              ...(scheduleDay ? { day_of_week: Number(scheduleDay) } : {}),
-              ...(startTime ? { start_time: startTime } : {}),
-              ...(endTime ? { end_time: endTime } : {}),
-            })
-            .eq('id', existingSched.id);
-        } else {
-          await supabase
-            .from('doctor_clinic_schedules')
-            .insert({
-              doctor_id: assignedDoctorId,
-              clinic_id: id,
-              day_of_week: Number(scheduleDay) || 1,
-              start_time: startTime || '08:00:00',
-              end_time: endTime || '17:00:00',
-              max_patients: 40,
-              is_active: true,
-            });
-        }
+      if (assignedDoctorId) {
+        const days = Array.isArray(scheduleDays) && scheduleDays.length > 0
+          ? scheduleDays
+          : [Number(scheduleDay) || 1];
+
+        const rows = days.map((d) => ({
+          doctor_id: assignedDoctorId,
+          clinic_id: id,
+          day_of_week: Number(d),
+          start_time: startTime || '08:30:00',
+          end_time: endTime || '17:00:00',
+          max_patients: 40,
+          is_active: true,
+        }));
+
+        await supabase.from('doctor_clinic_schedules').insert(rows);
       }
     }
 
