@@ -34,8 +34,56 @@ export default function ClinicQRCheckInPage() {
   const params = useParams();
   const clinicId = (params?.clinicId as string) || 'clinic-mr-304';
 
-  const clinic =
+  const defaultClinic =
     INITIAL_CDO_CLINICS.find((c) => c.id === clinicId) || INITIAL_CDO_CLINICS[0];
+
+  const [clinic, setClinic] = React.useState<CDOClinic>(defaultClinic);
+  const [isLoadingClinic, setIsLoadingClinic] = React.useState(false);
+
+  // Attempt to fetch live clinic data from database if available
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadLiveClinic() {
+      if (!clinicId) return;
+      setIsLoadingClinic(true);
+      try {
+        const res = await fetch(`/api/admin/clinics?id=${encodeURIComponent(clinicId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data && isMounted) {
+            const row = json.data;
+            const primarySchedule = row.schedules?.[0];
+            const doctor = primarySchedule?.doctor;
+
+            setClinic({
+              ...defaultClinic,
+              id: row.id,
+              name: row.name || defaultClinic.name,
+              hospital: row.hospital?.name || row.hospital_name || defaultClinic.hospital,
+              building: row.building || defaultClinic.building,
+              room: row.room_number ? `Room ${row.room_number}` : defaultClinic.room,
+              activeDoctor: doctor ? `${doctor.first_name} ${doctor.last_name}` : defaultClinic.activeDoctor,
+              doctorSpecialty: doctor?.specialization || defaultClinic.doctorSpecialty,
+              servingNumber: row.activeQueueSession?.current_number || defaultClinic.servingNumber || 1,
+              patientsWaiting: row.activeQueueSession?.patients_waiting ?? defaultClinic.patientsWaiting ?? 3,
+              averageConsultationMin: row.activeQueueSession?.avg_consult_time_mins || defaultClinic.averageConsultationMin || 15,
+              operatingHours: row.operating_hours || defaultClinic.operatingHours,
+              status: row.status === 'ACTIVE' ? 'OPTIMAL' : 'PAUSED',
+              contactNumber: row.phone || row.hospital?.phone || defaultClinic.contactNumber,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load clinic by ID, using default:', err);
+      } finally {
+        if (isMounted) setIsLoadingClinic(false);
+      }
+    }
+    loadLiveClinic();
+    return () => {
+      isMounted = false;
+    };
+  }, [clinicId]);
 
   const [mode, setMode] = React.useState<'MENU' | 'ONLINE_CHECKIN' | 'WALKIN_REGISTER' | 'SUCCESS_ONLINE' | 'SUCCESS_WALKIN'>('MENU');
 
