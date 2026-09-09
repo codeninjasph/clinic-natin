@@ -162,6 +162,7 @@ export default function ClinicsAndRoomsPage() {
   const [selectedClinicForQR, setSelectedClinicForQR] = React.useState<ClinicRecord | null>(null);
   const [qrDataUrl, setQrDataUrl] = React.useState<string>('');
   const [copiedUrl, setCopiedUrl] = React.useState(false);
+  const [qrTargetDomain, setQrTargetDomain] = React.useState<'PRODUCTION' | 'LOCAL'>('PRODUCTION');
 
   // 2. Add Clinic Modal State
   const [addModalOpen, setAddModalOpen] = React.useState(false);
@@ -205,6 +206,9 @@ export default function ClinicsAndRoomsPage() {
     operatingHours: '',
     status: 'ACTIVE' as 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE',
     assignedDoctorId: '',
+    scheduleDay: 1,
+    startTime: '08:30:00',
+    endTime: '13:30:00',
   });
 
   // 4. Decommission / Delete Confirm Dialog State
@@ -260,11 +264,23 @@ export default function ClinicsAndRoomsPage() {
     fetchSupportingData();
   }, [fetchClinics, fetchSupportingData]);
 
-  // Generate QR code data URL whenever selected clinic changes
+  // Generate QR code data URL whenever selected clinic or target domain changes
+  const getStandeeCheckinUrl = React.useCallback(
+    (clinicId: string) => {
+      const origin =
+        qrTargetDomain === 'PRODUCTION'
+          ? 'https://clinicnatin.ph'
+          : typeof window !== 'undefined'
+          ? window.location.origin
+          : 'https://clinicnatin.ph';
+      return `${origin}/c/${clinicId}`;
+    },
+    [qrTargetDomain]
+  );
+
   React.useEffect(() => {
     if (selectedClinicForQR) {
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://clinicnatin.ph';
-      const checkinUrl = `${origin}/c/${selectedClinicForQR.id}`;
+      const checkinUrl = getStandeeCheckinUrl(selectedClinicForQR.id);
 
       QRCode.toDataURL(checkinUrl, {
         width: 520,
@@ -277,7 +293,7 @@ export default function ClinicsAndRoomsPage() {
         .then((url) => setQrDataUrl(url))
         .catch((err) => console.error('Failed to generate QR code', err));
     }
-  }, [selectedClinicForQR]);
+  }, [selectedClinicForQR, getStandeeCheckinUrl]);
 
   // When hospital is selected in Add Modal, auto-populate address & contact
   const handleAddHospitalSelect = (hospId: string) => {
@@ -363,6 +379,22 @@ export default function ClinicsAndRoomsPage() {
     }
   };
 
+  // When hospital is selected in Edit Modal, auto-populate address & contact
+  const handleEditHospitalSelect = (hospId: string) => {
+    const selected = hospitals.find((h) => h.id === hospId);
+    if (selected) {
+      setEditForm((prev) => ({
+        ...prev,
+        hospitalId: selected.id,
+        hospitalName: selected.short_name || selected.name,
+        address: selected.address,
+        city: selected.city || 'Cagayan de Oro',
+        province: selected.province || 'Misamis Oriental',
+        contactPhone: selected.contact_phone || prev.contactPhone,
+      }));
+    }
+  };
+
   // Open Edit Clinic Modal
   const handleOpenEditModal = (clinic: ClinicRecord) => {
     const primarySchedule = clinic.doctor_clinic_schedules?.[0];
@@ -383,6 +415,9 @@ export default function ClinicsAndRoomsPage() {
       operatingHours: clinic.operating_hours || 'Mon–Fri 8:00 AM – 5:00 PM',
       status: clinic.status || 'ACTIVE',
       assignedDoctorId: assignedDocId,
+      scheduleDay: primarySchedule?.day_of_week || 1,
+      startTime: primarySchedule?.start_time ? primarySchedule.start_time.slice(0, 5) : '08:30',
+      endTime: primarySchedule?.end_time ? primarySchedule.end_time.slice(0, 5) : '13:30',
     });
     setEditModalError(null);
     setEditModalOpen(true);
@@ -509,8 +544,7 @@ export default function ClinicsAndRoomsPage() {
 
   const handleCopyLink = () => {
     if (!selectedClinicForQR) return;
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://clinicnatin.ph';
-    const checkinUrl = `${origin}/c/${selectedClinicForQR.id}`;
+    const checkinUrl = getStandeeCheckinUrl(selectedClinicForQR.id);
     navigator.clipboard.writeText(checkinUrl);
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
@@ -528,7 +562,11 @@ export default function ClinicsAndRoomsPage() {
       (c.building_name && c.building_name.toLowerCase().includes(q)) ||
       primaryDoctor.includes(q);
 
-    const matchesHospital = hospitalFilter === 'ALL' || c.hospital_name.toLowerCase().includes(hospitalFilter.toLowerCase());
+    const matchesHospital =
+      hospitalFilter === 'ALL' ||
+      c.hospital_name.toLowerCase().includes(hospitalFilter.toLowerCase()) ||
+      (c.hospitals?.name && c.hospitals.name.toLowerCase().includes(hospitalFilter.toLowerCase())) ||
+      (c.hospitals?.short_name && c.hospitals.short_name.toLowerCase().includes(hospitalFilter.toLowerCase()));
     const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
 
     return matchesSearch && matchesHospital && matchesStatus;
@@ -707,11 +745,15 @@ export default function ClinicsAndRoomsPage() {
                 onChange={(e) => setHospitalFilter(e.target.value)}
                 className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700"
               >
-                <option value="ALL">All Hospital Complexes</option>
-                <option value="Maria Reyna">Maria Reyna XU Hospital</option>
-                <option value="Capitol University">Capitol Univ. Medical Center</option>
-                <option value="Polymedic">Polymedic Medical Plaza</option>
-                <option value="Northern Mindanao">Northern Mindanao Med. Ctr</option>
+                <option value="ALL">All Hospital Complexes ({hospitals.length || affiliatedHospitalsCount})</option>
+                {hospitals.map((h) => {
+                  const label = h.short_name || h.name;
+                  return (
+                    <option key={h.id} value={label}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -803,23 +845,36 @@ export default function ClinicsAndRoomsPage() {
                     </div>
 
                     {/* Practicing Physician Assigned */}
-                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-700 font-bold text-xs">
-                          <Stethoscope className="h-3.5 w-3.5" />
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-start justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-700 font-bold text-xs shrink-0">
+                            <Stethoscope className="h-3.5 w-3.5" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">
+                              {docProfile?.full_name ? `${docProfile.full_name}` : 'Open Room (Unassigned)'}
+                            </p>
+                            <p className="text-[11px] text-brand-700 font-semibold">
+                              {docSpecialty || 'General Outpatient Care'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-900">
-                            {docProfile?.full_name ? `${docProfile.full_name}` : 'Open Room (Unassigned)'}
-                          </p>
-                          <p className="text-[11px] text-brand-700 font-semibold">
-                            {docSpecialty || 'General Outpatient Care'}
-                          </p>
-                        </div>
+
+                        {/* If multiple doctor schedules exist on shared suite */}
+                        {clinic.doctor_clinic_schedules && clinic.doctor_clinic_schedules.length > 1 && (
+                          <div className="pl-9 flex flex-wrap gap-1">
+                            {clinic.doctor_clinic_schedules.slice(1).map((s, idx) => (
+                              <Badge key={s.id || idx} variant="outline" className="text-[9px] font-semibold bg-slate-50 text-slate-600 border-slate-200">
+                                + {s.doctors?.profiles?.full_name || 'Physician'} ({s.doctors?.specialty})
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {activeSession && (
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           <span className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Serving</span>
                           <p className="text-sm font-black text-brand-700">#{activeSession.current_serving_number}</p>
                         </div>
@@ -1119,6 +1174,26 @@ export default function ClinicsAndRoomsPage() {
           )}
 
           <form onSubmit={handleSubmitEdit} className="space-y-4 py-1 text-xs">
+            {/* Hospital Facility Selector */}
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">
+                Hospital Facility Complex <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={editForm.hospitalId}
+                onChange={(e) => handleEditHospitalSelect(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700 font-medium"
+                required
+              >
+                <option value="">Select Official Hospital Facility</option>
+                {hospitals.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.short_name || h.name} &bull; {h.city}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Suite Name</label>
@@ -1181,35 +1256,78 @@ export default function ClinicsAndRoomsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Operational Status</label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value as any })}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700"
-                >
-                  <option value="ACTIVE">ACTIVE (Accepting Queues)</option>
-                  <option value="MAINTENANCE">MAINTENANCE (Temporarily Closed)</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                </select>
-              </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Operational Status</label>
+              <select
+                value={editForm.status}
+                onChange={(e) => setEditForm({ ...editForm, status: e.target.value as any })}
+                className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700"
+              >
+                <option value="ACTIVE">ACTIVE (Accepting Queues)</option>
+                <option value="MAINTENANCE">MAINTENANCE (Temporarily Closed)</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </div>
 
+            {/* Doctor Assignment & Schedule Details */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Assigned Physician</label>
+                <label className="block font-bold text-slate-800 mb-1">
+                  Assigned Practicing Physician
+                </label>
                 <select
                   value={editForm.assignedDoctorId}
                   onChange={(e) => setEditForm({ ...editForm, assignedDoctorId: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700"
                 >
-                  <option value="">Unassigned</option>
+                  <option value="">Unassigned (Shared Consultation Room)</option>
                   {doctors.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {d.profiles?.full_name || 'Physician'} ({d.specialty})
+                      {d.profiles?.full_name || 'Physician'} ({d.specialty}) &bull; {d.hospital_affiliation}
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Select &quot;Unassigned&quot; to clear any active physician schedule for this room.
+                </p>
               </div>
+
+              {editForm.assignedDoctorId && (
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Day of Week</label>
+                    <select
+                      value={editForm.scheduleDay}
+                      onChange={(e) => setEditForm({ ...editForm, scheduleDay: Number(e.target.value) })}
+                      className="w-full rounded-lg border border-slate-200 bg-white p-1.5 text-xs text-slate-800"
+                    >
+                      {DAYS_OF_WEEK.map((d) => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Start Time</label>
+                    <Input
+                      type="time"
+                      value={editForm.startTime}
+                      onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                      className="text-xs bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">End Time</label>
+                    <Input
+                      type="time"
+                      value={editForm.endTime}
+                      onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                      className="text-xs bg-white"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="gap-2 sm:gap-0 pt-2">
@@ -1303,11 +1421,28 @@ export default function ClinicsAndRoomsPage() {
                     <p className="text-xs font-semibold text-slate-600">
                       {selectedClinicForQR.name}
                     </p>
-                    {selectedClinicForQR.doctor_clinic_schedules?.[0]?.doctors?.profiles?.full_name && (
-                      <p className="text-xs font-bold text-slate-800">
-                        {selectedClinicForQR.doctor_clinic_schedules[0].doctors.profiles.full_name}
+                    {selectedClinicForQR.doctor_clinic_schedules?.[0]?.doctors?.profiles?.full_name ? (
+                      <div className="pt-0.5">
+                        <p className="text-xs font-bold text-slate-900">
+                          {(() => {
+                            const raw = selectedClinicForQR.doctor_clinic_schedules[0].doctors.profiles.full_name;
+                            const title = selectedClinicForQR.doctor_clinic_schedules[0].doctors.title;
+                            if (raw.startsWith('Dr.') || raw.startsWith('Dr ')) return raw;
+                            return `${title ? title + ' ' : 'Dr. '}${raw}`;
+                          })()}
+                        </p>
+                        <p className="text-[11px] font-medium text-brand-700">
+                          {selectedClinicForQR.doctor_clinic_schedules[0].doctors.specialty}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] font-medium text-slate-500">
+                        General &amp; Multi-Specialty Consultation Suite
                       </p>
                     )}
+                    <p className="text-[10px] text-slate-400 pt-0.5">
+                      Hours: {selectedClinicForQR.operating_hours || 'Mon–Fri 8:00 AM – 5:00 PM'}
+                    </p>
                   </div>
 
                   {/* Dynamic QR Code Canvas */}
@@ -1347,6 +1482,50 @@ export default function ClinicsAndRoomsPage() {
 
               {/* Right: Controls & Actions */}
               <div className="md:col-span-5 space-y-4 print:hidden">
+                {/* Target Domain Selector */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2.5 shadow-xs">
+                  <label className="text-xs font-bold text-slate-900 block">
+                    Encoded QR Destination URL
+                  </label>
+                  <p className="text-[11px] text-slate-500 leading-normal">
+                    Choose whether this printed standee encodes the real public cloud URL or local development server.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setQrTargetDomain('PRODUCTION')}
+                      className={`p-2 rounded-xl text-left border text-xs transition ${
+                        qrTargetDomain === 'PRODUCTION'
+                          ? 'border-brand-700 bg-brand-50/70 text-brand-900 font-bold'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="block text-[10px] uppercase font-bold text-brand-700">Recommended</span>
+                      Production
+                      <span className="block text-[10px] text-slate-400 font-mono truncate">clinicnatin.ph</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setQrTargetDomain('LOCAL')}
+                      className={`p-2 rounded-xl text-left border text-xs transition ${
+                        qrTargetDomain === 'LOCAL'
+                          ? 'border-brand-700 bg-brand-50/70 text-brand-900 font-bold'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="block text-[10px] uppercase font-bold text-slate-400">Dev Only</span>
+                      Localhost
+                      <span className="block text-[10px] text-slate-400 font-mono truncate">localhost:3000</span>
+                    </button>
+                  </div>
+                  <div className="pt-1">
+                    <p className="text-[10px] font-mono text-slate-500 bg-slate-50 p-1.5 rounded-lg border border-slate-200 truncate">
+                      {getStandeeCheckinUrl(selectedClinicForQR.id)}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                   <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
                     <Printer className="h-4 w-4 text-brand-700" />
@@ -1388,6 +1567,34 @@ export default function ClinicsAndRoomsPage() {
               </div>
             </div>
           )}
+
+          {/* Global scoped print styles for standee */}
+          <style jsx global>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #clinic-printable-standee,
+              #clinic-printable-standee * {
+                visibility: visible !important;
+              }
+              #clinic-printable-standee {
+                position: fixed !important;
+                left: 50% !important;
+                top: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                width: 100% !important;
+                max-width: 440px !important;
+                box-shadow: none !important;
+                border: 2px solid #091e42 !important;
+                border-radius: 1rem !important;
+                padding: 2rem !important;
+                margin: 0 !important;
+                background: #ffffff !important;
+                page-break-inside: avoid !important;
+              }
+            }
+          `}</style>
         </DialogContent>
       </Dialog>
     </div>

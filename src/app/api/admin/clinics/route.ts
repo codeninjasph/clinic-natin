@@ -68,7 +68,6 @@ export async function GET(req: NextRequest) {
     `;
 
     if (id) {
-      // First try by UUID, then fallback to slug matching if needed
       let clinicData: any = null;
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
@@ -86,11 +85,19 @@ export async function GET(req: NextRequest) {
         clinicData = data;
       }
 
-      // Fallback lookup by matching room number or name if not found by UUID
+      // Fallback lookup by matching room number or name if not a direct UUID
       if (!clinicData) {
+        const cleanSlug = id.replace(/^clinic-/, '').replace(/-/g, ' ').trim();
+        const digitsMatch = id.match(/\d+/);
+        const orConditions = [`room_number.ilike.%${cleanSlug}%`, `name.ilike.%${cleanSlug}%`];
+        if (digitsMatch) {
+          orConditions.push(`room_number.ilike.%${digitsMatch[0]}%`);
+        }
+
         const { data } = await supabase
           .from('clinics')
           .select(selectQuery)
+          .or(orConditions.join(','))
           .limit(1)
           .maybeSingle();
         clinicData = data;
@@ -100,7 +107,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Clinic room not found' }, { status: 404 });
       }
 
-      return NextResponse.json({ clinic: clinicData });
+      return NextResponse.json({ clinic: clinicData, data: clinicData });
     }
 
     const { data, error } = await supabase
@@ -288,48 +295,60 @@ export async function PUT(req: NextRequest) {
     if (status !== undefined) updatePayload.status = status;
     if (isVerified !== undefined) updatePayload.is_verified = isVerified;
 
-    const { data: updatedClinic, error: updateErr } = await supabase
-      .from('clinics')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
+    let updatedClinic = oldClinic;
+    if (Object.keys(updatePayload).length > 0) {
+      const { data, error: updateErr } = await supabase
+        .from('clinics')
+        .update(updatePayload)
+        .eq('id', id)
+        .select()
+        .single();
 
-    if (updateErr) {
-      console.error('Error updating clinic:', updateErr);
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      if (updateErr) {
+        console.error('Error updating clinic:', updateErr);
+        return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      }
+      updatedClinic = data;
     }
 
-    // Optional: update or add doctor schedule
-    if (assignedDoctorId) {
-      const { data: existingSched } = await supabase
-        .from('doctor_clinic_schedules')
-        .select('id')
-        .eq('clinic_id', id)
-        .maybeSingle();
-
-      if (existingSched) {
+    // Optional: update, add, or remove doctor schedule
+    if (assignedDoctorId !== undefined) {
+      if (!assignedDoctorId) {
+        // Admin unassigned doctor: remove existing schedule
         await supabase
           .from('doctor_clinic_schedules')
-          .update({
-            doctor_id: assignedDoctorId,
-            ...(scheduleDay ? { day_of_week: Number(scheduleDay) } : {}),
-            ...(startTime ? { start_time: startTime } : {}),
-            ...(endTime ? { end_time: endTime } : {}),
-          })
-          .eq('id', existingSched.id);
+          .delete()
+          .eq('clinic_id', id);
       } else {
-        await supabase
+        const { data: existingSched } = await supabase
           .from('doctor_clinic_schedules')
-          .insert({
-            doctor_id: assignedDoctorId,
-            clinic_id: id,
-            day_of_week: Number(scheduleDay) || 1,
-            start_time: startTime || '08:00:00',
-            end_time: endTime || '17:00:00',
-            max_patients: 40,
-            is_active: true,
-          });
+          .select('id')
+          .eq('clinic_id', id)
+          .maybeSingle();
+
+        if (existingSched) {
+          await supabase
+            .from('doctor_clinic_schedules')
+            .update({
+              doctor_id: assignedDoctorId,
+              ...(scheduleDay ? { day_of_week: Number(scheduleDay) } : {}),
+              ...(startTime ? { start_time: startTime } : {}),
+              ...(endTime ? { end_time: endTime } : {}),
+            })
+            .eq('id', existingSched.id);
+        } else {
+          await supabase
+            .from('doctor_clinic_schedules')
+            .insert({
+              doctor_id: assignedDoctorId,
+              clinic_id: id,
+              day_of_week: Number(scheduleDay) || 1,
+              start_time: startTime || '08:00:00',
+              end_time: endTime || '17:00:00',
+              max_patients: 40,
+              is_active: true,
+            });
+        }
       }
     }
 

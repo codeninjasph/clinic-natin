@@ -50,26 +50,33 @@ export default function ClinicQRCheckInPage() {
         const res = await fetch(`/api/admin/clinics?id=${encodeURIComponent(clinicId)}`);
         if (res.ok) {
           const json = await res.json();
-          if (json.data && isMounted) {
-            const row = json.data;
-            const primarySchedule = row.schedules?.[0];
-            const doctor = primarySchedule?.doctor;
+          const row = json.clinic || json.data;
+          if (row && isMounted) {
+            const primarySchedule = row.doctor_clinic_schedules?.[0];
+            const doctor = primarySchedule?.doctors;
+            const profile = doctor?.profiles;
+            const doctorName = profile?.full_name
+              ? `${doctor?.title ? doctor.title + ' ' : 'Dr. '}${profile.full_name}`
+              : defaultClinic.activeDoctor;
+
+            const activeSession = row.queue_sessions?.[0];
 
             setClinic({
               ...defaultClinic,
               id: row.id,
               name: row.name || defaultClinic.name,
-              hospital: row.hospital?.name || row.hospital_name || defaultClinic.hospital,
-              building: row.building || defaultClinic.building,
-              room: row.room_number ? `Room ${row.room_number}` : defaultClinic.room,
-              activeDoctor: doctor ? `${doctor.first_name} ${doctor.last_name}` : defaultClinic.activeDoctor,
-              doctorSpecialty: doctor?.specialization || defaultClinic.doctorSpecialty,
-              servingNumber: row.activeQueueSession?.current_number || defaultClinic.servingNumber || 1,
-              patientsWaiting: row.activeQueueSession?.patients_waiting ?? defaultClinic.patientsWaiting ?? 3,
-              averageConsultationMin: row.activeQueueSession?.avg_consult_time_mins || defaultClinic.averageConsultationMin || 15,
+              hospital: row.hospitals?.short_name || row.hospitals?.name || row.hospital_name || defaultClinic.hospital,
+              building: row.building_name || defaultClinic.building,
+              floor: row.floor_number || defaultClinic.floor,
+              room: row.room_number ? (row.room_number.startsWith('Room') || row.room_number.startsWith('Suite') ? row.room_number : `Room ${row.room_number}`) : defaultClinic.room,
+              activeDoctor: doctorName,
+              doctorSpecialty: doctor?.specialty || defaultClinic.doctorSpecialty,
+              servingNumber: activeSession?.current_serving_number || defaultClinic.servingNumber || 1,
+              patientsWaiting: defaultClinic.patientsWaiting ?? 3,
+              averageConsultationMin: defaultClinic.averageConsultationMin || 15,
               operatingHours: row.operating_hours || defaultClinic.operatingHours,
               status: row.status === 'ACTIVE' ? 'OPTIMAL' : 'PAUSED',
-              contactNumber: row.phone || row.hospital?.phone || defaultClinic.contactNumber,
+              contactNumber: row.contact_phone || row.hospitals?.contact_phone || defaultClinic.contactNumber,
             });
           }
         }
