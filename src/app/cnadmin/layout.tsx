@@ -62,6 +62,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [selectedRole, setSelectedRole] = React.useState<'DOCTOR' | 'PATIENT'>('DOCTOR');
   const [targetUser, setTargetUser] = React.useState('Dr. Maria Santos, MD');
 
+  // Live Semaphore SMS Credit Telemetry state
+  const [smsCredits, setSmsCredits] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/admin/settings')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.telemetry?.semaphore?.creditBalance !== undefined) {
+          setSmsCredits(d.telemetry.semaphore.creditBalance);
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
+
   // Check existing session
   React.useEffect(() => {
     const active = localStorage.getItem('clinic_natin_impersonation_active');
@@ -176,7 +190,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             {/* Semaphore SMS Credits */}
             <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100/80 px-3 py-1 text-xs font-semibold text-slate-700">
               <MessageSquare className="h-3.5 w-3.5 text-brand-700" />
-              <span>4,820 SMS Credits</span>
+              <span>{smsCredits !== null ? `${smsCredits.toLocaleString()} SMS Credits` : 'Checking Credits...'}</span>
             </div>
 
             {/* Active CDO Clinics */}

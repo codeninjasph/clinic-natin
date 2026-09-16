@@ -587,7 +587,7 @@ export default function CommunicationsPage() {
           {/* SMS Credits */}
           <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100/90 px-3.5 py-1 text-xs font-bold text-slate-700 shadow-2xs">
             <MessageSquare className="h-3.5 w-3.5 text-[#568259]" />
-            <span>{(telemetry?.account.creditBalance || 4820).toLocaleString()} SMS Credits</span>
+            <span>{(telemetry?.account.creditBalance ?? 0).toLocaleString()} SMS Credits</span>
           </div>
 
           <Button
@@ -613,7 +613,7 @@ export default function CommunicationsPage() {
             <div>
               <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">SMS Credit Balance</p>
               <h3 className="text-2xl font-black text-slate-900 mt-0.5">
-                {(telemetry?.account.creditBalance || 4820).toLocaleString()}
+                {(telemetry?.account.creditBalance ?? 0).toLocaleString()}
               </h3>
               <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
                 <ShieldCheck className="w-3.5 h-3.5" />

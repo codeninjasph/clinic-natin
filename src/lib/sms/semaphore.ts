@@ -171,8 +171,8 @@ export class SemaphoreService {
         accountId: 'cn-cdo-fallback',
         accountName: 'Clinic Natin CDO',
         status: 'Degraded',
-        creditBalance: 4820,
-        isSandbox: true,
+        creditBalance: 0,
+        isSandbox: false,
         pingMs: Date.now() - startTime,
       };
     }

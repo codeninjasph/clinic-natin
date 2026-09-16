@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
         accountId: 'cn-cdo-8821',
         accountName: 'Clinic Natin (Sandbox)',
         status: 'Active',
-        creditBalance: 482,
-        isSandbox: true,
+        creditBalance: 0,
+        isSandbox: false,
         pingMs: 45,
       })),
     ]);

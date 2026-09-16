@@ -35,6 +35,19 @@ import {
 
 export default function AdminDashboardPage() {
   const [clinics, setClinics] = React.useState<CDOClinic[]>(INITIAL_CDO_CLINICS);
+  const [smsCredits, setSmsCredits] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/admin/settings')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.telemetry?.semaphore?.creditBalance !== undefined) {
+          setSmsCredits(d.telemetry.semaphore.creditBalance);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const pendingDoctorsCount = INITIAL_DOCTORS.filter((d) => d.status === 'PENDING').length;
   const totalWaiting = clinics.reduce((acc, c) => acc + c.patientsWaiting, 0);
   const totalServing = clinics.reduce((acc, c) => acc + (c.servingNumber > 0 ? 1 : 0), 0);
@@ -317,7 +330,9 @@ export default function AdminDashboardPage() {
             <div className="grid grid-cols-3 gap-3 rounded-xl bg-slate-50 p-3.5 border border-slate-200/80 text-center">
               <div>
                 <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">SMS Balance</p>
-                <p className="text-lg font-bold text-slate-900 mt-0.5">4,820</p>
+                <p className="text-lg font-bold text-slate-900 mt-0.5">
+                  {smsCredits !== null ? smsCredits.toLocaleString() : '...'}
+                </p>
                 <span className="text-[10px] text-emerald-700 font-semibold">&bull; Prepaid Credits</span>
               </div>
               <div>
