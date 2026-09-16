@@ -15,7 +15,7 @@ Historically, patients across Northern Mindanao wake up before dawn to stand in 
 - **Patients** reserve official queue tokens online (₱50 convenience fee via GCash/Maya QRPH), track live turns from home or a cafe, and receive advance SMS notifications.
 - **Secretaries** manage queues with one-click calling, 1-tap emergency delay broadcasts, fair interleaved walk-in ticketing, and a 45-minute Buffer Lane grace period for late arrivals.
 - **Doctors** access a modern consultation suite with pre-recorded vitals, digital prescription pads (℞), and optional Pro Practice Suite upgrades (multi-hospital room scheduling & longitudinal EMR).
-- **Hospital & Platform Administrators** supervise city-wide operations via `/cnadmin` with live Semaphore SMS gateway telemetry, emergency broadcasts, PayMongo financial settlements, and automated queue lifecycle templates.
+- **Hospital & Platform Administrators** supervise city-wide operations via `/cnadmin` with live Semaphore SMS gateway telemetry, emergency broadcasts, PayMongo financial settlements, RA 10173 compliance audit trails, and automated queue lifecycle templates.
 
 ---
 
@@ -66,24 +66,32 @@ Operated by **CodeNinjas Web Development Services**, Clinic Natin runs on a sust
 - **Doctor Subscription Ledger**: Tracking Free vs. Pro (₱999/mo) active subscriptions, MRR calculations, and tier assignments.
 - **Disputes & Forfeitures Engine**: Handling patient claims, no-show forfeitures, and platform fee reconciliations with CSV export.
 
-### 5. 💳 PayMongo QRPH Payment Service
+### 5. 🛡️ RA 10173 Compliance & Statutory Legal Audit Engine (`/cnadmin/compliance`)
+- **Immutable Access & Audit Trail Ledger**: Real-time write-once append-only ledger mandated by **NPC Circular 16-01 Section 27**, tracking sensitive medical record views, prescription generation, administrative impersonations, priority lane modifications, and emergency overrides.
+- **DOH 10-Year Clinical Records Retention Lock**: Enforces **DOH Administrative Order AO 2007-0027** ensuring consultation encounter data and diagnoses are preserved for 10 years for medicolegal and public health defense, even when a patient requests personal identifier erasure.
+- **Data Subject Rights (DSAR) Management Center**: Central processing queue for **Right to Data Portability (RA 10173 Section 18)** (structured JSON archive generation) and **Right to Erasure & Blocking (Section 16)** (anonymizing PII while locking clinical encounters) with statutory 30-day NPC turnaround SLA countdowns.
+- **Mandatory NPC 72-Hour Security Incident & Breach Register**: Mandated under **NPC Circular 16-03**, logging security incidents with severity tagging (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), affected data subjects counts, and active 72-hour statutory countdown timers for formal filing with `privacy.gov.ph`.
+- **RA 9994 Senior Citizens & RA 7277 PWD Priority Lane Audit**: Cross-references queue tokens against verified OSCA and PWD ID records to prevent hallway queue-jumping and verify statutory 20% discount compliance.
+- **Tamper-Evident SHA-256 CSV Export**: Exports compliance audit trails with an authentic cryptographic **SHA-256 integrity checksum** embedded in the file header for legal verification by regulatory bodies or courts.
+
+### 6. 💳 PayMongo QRPH Payment Service
 - Generates dynamic, interoperable **QRPH codes** compliant with Bangko Sentral ng Pilipinas (BSP) standards.
 - Webhook listener (`/api/webhooks/paymongo`) automatically verifies payments, marks transactions as `SUCCESS`, updates appointment status to `PAID`, and triggers SMS booking confirmations.
 
-### 6. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
+### 7. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
 - **Vitals & Demographics**: Birthday (auto-age), blood type, height (ft/in vs cm toggle), weight, and live BMI status.
 - **Triage & Safety**: Quick-tap drug allergy badges (*Penicillin, Aspirin, Amoxicillin, Sulfa Drugs*), chronic comorbidities, and maintenance medications.
 - **Philippine Priority Lanes**: RA 9994 Senior Citizens (OSCA ID), RA 7277 PWDs, and maternal priority validation.
 - **Digital Clinic Pass**: Generates a scannable digital QR pass for 1-second front-desk check-in.
 
-### 7. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
+### 8. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
 - 4-Column Operations Kanban:
   1. **Active Lineup**: Alternating Online (Odd) & Walk-In (Even) queue cards.
   2. **Buffer Lane**: 45-min arrival grace countdown with 1-click restore (+2 slots) and forfeit.
   3. **Currently Serving**: In-consultation status card with 1-click "Complete & Call Next".
   4. **Completed Today**: Session history with cash count tracking.
 
-### 8. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
+### 9. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
 - Attending physician workspace:
   - Active consultation view with chief complaints, pre-populated vitals, and digital Rx pad.
   - **Multi-Clinic Room Switcher**: Instant schedule switching between Maria Reyna, Polymedic, and CUMC.
@@ -131,6 +139,7 @@ clinic-natin/
 │   │   │   ├── admin/
 │   │   │   │   ├── clinics/           # Clinic standee QR generation & doctor mappings
 │   │   │   │   ├── communications/    # Semaphore telemetry, batch broadcast & templates
+│   │   │   │   ├── compliance/        # RA 10173 audit stream, DSAR queue & NPC incidents
 │   │   │   │   ├── finops/            # PayMongo ledger, refunds, cashier reconciliations
 │   │   │   │   └── patients/          # Patient directory & RA 10173 DSAR compliance
 │   │   │   ├── payments/paymongo/     # PayMongo QRPH payment intent creator
@@ -140,7 +149,7 @@ clinic-natin/
 │   │   ├── cnadmin/                   # Central Operations & Administration Portal
 │   │   │   ├── clinics/               # Clinic Standee QR Engine & Hospital Lookups
 │   │   │   ├── communications/        # Emergency Broadcasts, SMS Templates & Gateway Telemetry
-│   │   │   ├── compliance/            # RA 10173 Data Privacy & OSCA Senior Audit Logs
+│   │   │   ├── compliance/            # RA 10173 Data Privacy, DSAR Queue & NPC 72h Register
 │   │   │   ├── doctors/               # Doctor verification, PRC licenses & Pro Subscriptions
 │   │   │   ├── finops/                # Financial Operations, Ledger, Refunds & Remittances
 │   │   │   ├── patients/              # Patient Master Index & DSAR Management
@@ -160,6 +169,7 @@ clinic-natin/
 │   ├── components/
 │   │   └── ui/                        # Complete shadcn/ui component suite
 │   ├── lib/
+│   │   ├── compliance/                # AuditService & RA 10173 compliance logger
 │   │   ├── payments/                  # PayMongo QRPH payment & refund service
 │   │   ├── sms/                       # Semaphore SMS gateway integration & carrier routing
 │   │   ├── supabase/                  # Supabase SSR & browser clients
@@ -216,6 +226,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000):
 - **Administrative Command Center**: `http://localhost:3000/cnadmin`
 - **Communications & SMS Gateway**: `http://localhost:3000/cnadmin/communications`
+- **RA 10173 Compliance & Audit Trail**: `http://localhost:3000/cnadmin/compliance`
 - **Financial Operations & Settlements**: `http://localhost:3000/cnadmin/finops`
 - **Secretary Desk**: `http://localhost:3000/secretary/dashboard`
 - **Doctor Suite**: `http://localhost:3000/doctor/dashboard`
@@ -235,9 +246,10 @@ Open [http://localhost:3000](http://localhost:3000):
 ---
 
 ## ⚖️ Compliance & Data Privacy
-- **Republic Act No. 10173** (Philippine Data Privacy Act of 2012) — Full DSAR data export and anonymization controls.
+- **Republic Act No. 10173** (Philippine Data Privacy Act of 2012) — Full DSAR data export and anonymization controls, immutable access auditing (NPC Circular 16-01), and mandatory 72-hour breach reporting (NPC Circular 16-03).
 - **Republic Act No. 9994** (Expanded Senior Citizens Act — 20% statutory discount & express queueing).
-- **Republic Act No. 7277** (Magna Carta for Persons with Disability).
+- **Republic Act No. 7277 / RA 10754** (Magna Carta for Persons with Disability).
+- **DOH Administrative Order AO 2007-0027** — Mandatory 10-year minimum clinical records retention lock for all medical encounters and diagnostic history.
 - Strict Row-Level Security (RLS) isolating patient longitudinal charts to linked physicians, with restricted secretary triage access limited to active sessions.
 
 ---
