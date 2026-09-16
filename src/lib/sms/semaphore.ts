@@ -43,44 +43,48 @@ export interface SendSMSOptions {
 export class SemaphoreService {
   private static getApiKey(): string | undefined {
     if (process.env.SEMAPHORE_API_KEY) return process.env.SEMAPHORE_API_KEY;
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      const candidates = [
-        path.resolve(process.cwd(), '.env.local'),
-        path.resolve(process.cwd(), 'app/clinic-natin/.env.local'),
-      ];
-      for (const envPath of candidates) {
-        if (fs.existsSync(envPath)) {
-          const content = fs.readFileSync(envPath, 'utf8');
-          const match = content.match(/SEMAPHORE_API_KEY=([^\r\n]+)/);
-          if (match && match[1]) return match[1].trim();
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const candidates = [
+          path.resolve(process.cwd(), '.env.local'),
+          path.resolve(process.cwd(), 'app/clinic-natin/.env.local'),
+        ];
+        for (const envPath of candidates) {
+          if (fs.existsSync(envPath)) {
+            const content = fs.readFileSync(envPath, 'utf8');
+            const match = content.match(/SEMAPHORE_API_KEY=([^\r\n]+)/);
+            if (match && match[1]) return match[1].trim();
+          }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
     return undefined;
   }
 
   private static getSenderName(): string {
     if (process.env.SEMAPHORE_SENDER_NAME) return process.env.SEMAPHORE_SENDER_NAME;
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      const candidates = [
-        path.resolve(process.cwd(), '.env.local'),
-        path.resolve(process.cwd(), 'app/clinic-natin/.env.local'),
-      ];
-      for (const envPath of candidates) {
-        if (fs.existsSync(envPath)) {
-          const content = fs.readFileSync(envPath, 'utf8');
-          const match = content.match(/SEMAPHORE_SENDER_NAME=([^\r\n]+)/);
-          if (match && match[1]) return match[1].trim();
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const candidates = [
+          path.resolve(process.cwd(), '.env.local'),
+          path.resolve(process.cwd(), 'app/clinic-natin/.env.local'),
+        ];
+        for (const envPath of candidates) {
+          if (fs.existsSync(envPath)) {
+            const content = fs.readFileSync(envPath, 'utf8');
+            const match = content.match(/SEMAPHORE_SENDER_NAME=([^\r\n]+)/);
+            if (match && match[1]) return match[1].trim();
+          }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
     return 'CLINICNATIN';
   }

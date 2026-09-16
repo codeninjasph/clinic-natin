@@ -83,24 +83,33 @@ Operated by **CodeNinjas Web Development Services**, Clinic Natin runs on a sust
 - **Statutory Discount & Platform Fee Policies**: Central administrative control plane for configuring the ₱50 reservation deposit, Doctor Pro monthly SaaS tier (₱999), RA 9994 Senior 20% discount rules, RA 7277 PWD 45-minute buffer grace periods, and queue forfeit thresholds.
 - **Live Gateway Telemetry & Diagnostics**: Real-time health monitors and latency measurement across PayMongo QRPh, Semaphore SMS (prepaid credit balance), and Supabase PostgreSQL with 1-click end-to-end diagnostic ping.
 
-### 7. 💳 PayMongo QRPH Payment Service
+### 7. 🧭 Executive Operations Cockpit & Central Command Matrix (`/cnadmin`)
+- **Exclusive Top-Level Access**: High-security operational command center designed strictly for CodeNinjas Platform Executives, the Chief Medical Officer, and the Platform Data Protection Officer (DPO).
+- **Live Supabase Metric Aggregation**: Queries live production tables in parallel (`appointments`, `transactions`, `doctors`, `clinics`, `audit_logs`, `notification_logs`) via `/api/admin/cockpit` with roundtrip DB latency and live Semaphore SMS balance checks — zero static mock constants.
+- **Executive KPI Cards**: Real-time metrics for Active Queued Patients (with dynamic % Online vs. % Walk-in breakdown), Active In-Session Doctor Rooms, Doctor Pro MRR (₱999/mo recurring subscriptions), and Today's Platform Booking Fees (₱50 per confirmed token).
+- **Algorithmic Bottleneck Radar**: Calculates real-time consultation delays and alerts platform ops when clinics exceed 45+ minute backlogs with 1-click **"Broadcast Delay SMS"** modal routing to affected patients.
+- **Multi-Hospital Queue Matrix**: Live operational monitoring across major Cagayan de Oro medical centers (*Maria Reyna, CUMC, Polymedic, NMMC*) tracking active doctor counts, queue depth, buffer lane count, and average turnaround time.
+- **Operational Health & Fairness Analytics**: Dynamic visualization of the **Queue Intake Fairness Ratio** (Online Odd vs. Walk-In Even compliance), **Statutory Priority Distribution** (RA 9994 Senior Citizens, RA 7277 PWDs, Maternity), and **Privacy & Security Sentinel** (NPC 72h incident timer & pending DSAR requests).
+- **Dual-Stream Live Unified Activity Feed**: Real-time tabbed stream toggling between immutable RA 10173 Audit Logs and live Semaphore SMS Dispatches with carrier tags and latency tracking.
+
+### 8. 💳 PayMongo QRPH Payment Service
 - Generates dynamic, interoperable **QRPH codes** compliant with Bangko Sentral ng Pilipinas (BSP) standards.
 - Webhook listener (`/api/webhooks/paymongo`) automatically verifies payments, marks transactions as `SUCCESS`, updates appointment status to `PAID`, and triggers SMS booking confirmations.
 
-### 8. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
+### 9. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
 - **Vitals & Demographics**: Birthday (auto-age), blood type, height (ft/in vs cm toggle), weight, and live BMI status.
 - **Triage & Safety**: Quick-tap drug allergy badges (*Penicillin, Aspirin, Amoxicillin, Sulfa Drugs*), chronic comorbidities, and maintenance medications.
 - **Philippine Priority Lanes**: RA 9994 Senior Citizens (OSCA ID), RA 7277 PWDs, and maternal priority validation.
 - **Digital Clinic Pass**: Generates a scannable digital QR pass for 1-second front-desk check-in.
 
-### 9. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
+### 10. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
 - 4-Column Operations Kanban:
   1. **Active Lineup**: Alternating Online (Odd) & Walk-In (Even) queue cards.
   2. **Buffer Lane**: 45-min arrival grace countdown with 1-click restore (+2 slots) and forfeit.
   3. **Currently Serving**: In-consultation status card with 1-click "Complete & Call Next".
   4. **Completed Today**: Session history with cash count tracking.
 
-### 10. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
+### 11. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
 - Attending physician workspace:
   - Active consultation view with chief complaints, pre-populated vitals, and digital Rx pad.
   - **Multi-Clinic Room Switcher**: Instant schedule switching between Maria Reyna, Polymedic, and CUMC.
@@ -147,6 +156,7 @@ clinic-natin/
 │   │   ├── api/
 │   │   │   ├── admin/
 │   │   │   │   ├── clinics/           # Clinic standee QR generation & doctor mappings
+│   │   │   │   ├── cockpit/           # Live Supabase aggregator & operational telemetry
 │   │   │   │   ├── communications/    # Semaphore telemetry, batch broadcast & templates
 │   │   │   │   ├── compliance/        # RA 10173 audit stream, DSAR queue & NPC incidents
 │   │   │   │   ├── finops/            # PayMongo ledger, refunds, cashier reconciliations
@@ -158,6 +168,7 @@ clinic-natin/
 │   │   │   ├── queue/restore-buffered/# Buffer Lane Grace Period restoration
 │   │   │   └── webhooks/paymongo/     # PayMongo webhook signature & payment handler
 │   │   ├── cnadmin/                   # Central Operations & Administration Portal
+│   │   │   ├── page.tsx               # Operations Cockpit, Bottleneck Radar & Live Matrix
 │   │   │   ├── clinics/               # Clinic Standee QR Engine & Hospital Lookups
 │   │   │   ├── communications/        # Emergency Broadcasts, SMS Templates & Gateway Telemetry
 │   │   │   ├── compliance/            # RA 10173 Data Privacy, DSAR Queue & NPC 72h Register
