@@ -7,7 +7,7 @@
 
 ## 🌟 Overview
 
-**Clinic Natin** is a modern outpatient queue management and clinical coordination platform designed for medical clinics, private practices, and hospital medical arts centers in the Philippines.
+**Clinic Natin** is a modern outpatient queue management, clinical coordination, and healthcare administration platform designed for private practices, hospital medical arts centers, and outpatient departments in the Philippines.
 
 Historically, patients across Northern Mindanao wake up before dawn to stand in long physical lines outside hospital buildings (such as *Maria Reyna Xavier University Hospital*, *Capitol University Medical Center*, *Polymedic Plaza*, and *Northern Mindanao Medical Center*) just to receive a handwritten paper number on a clipboard. 
 
@@ -15,6 +15,7 @@ Historically, patients across Northern Mindanao wake up before dawn to stand in 
 - **Patients** reserve official queue tokens online (₱50 convenience fee via GCash/Maya QRPH), track live turns from home or a cafe, and receive advance SMS notifications.
 - **Secretaries** manage queues with one-click calling, 1-tap emergency delay broadcasts, fair interleaved walk-in ticketing, and a 45-minute Buffer Lane grace period for late arrivals.
 - **Doctors** access a modern consultation suite with pre-recorded vitals, digital prescription pads (℞), and optional Pro Practice Suite upgrades (multi-hospital room scheduling & longitudinal EMR).
+- **Hospital & Platform Administrators** supervise city-wide operations via `/cnadmin` with live Semaphore SMS gateway telemetry, emergency broadcasts, PayMongo financial settlements, and automated queue lifecycle templates.
 
 ---
 
@@ -51,29 +52,38 @@ Operated by **CodeNinjas Web Development Services**, Clinic Natin runs on a sust
 - The secretary places them into the **Buffer Lane (Grace Period)** with a 45-minute countdown.
 - When the patient arrives at the desk, the secretary clicks **"Check In (+2 Slots)"** which automatically slots them into the active queue **2 consultations ahead** and sends an automated SMS.
 
-### 3. 📢 1-Tap Doctor Delay & Queue Broadcast (Semaphore SMS)
-- Both Secretary Desk and Doctor Suite feature 1-tap delay broadcast presets:
-  - `⏱️ +15m Rounds` &bull; `🚨 +30m Surgery` &bull; `🚗 +45m Traffic` &bull; `Custom Announcement`
-- Instantly updates patient mobile tracker screens in real time and broadcasts transactional SMS alerts via the **Semaphore SMS Gateway**.
+### 3. 📢 Broadcast Communications & Semaphore SMS Gateway Engine (`/cnadmin/communications`)
+- **Live Gateway Health & Telemetry**: Real-time ping, 4,820 prepaid SMS credit balance monitor, 24h delivery success rate, average latency breakdown across Philippine carriers (Globe Telecom, Smart Communications, DITO Telecommunity), and today's spend in PHP (₱0.50/credit).
+- **Targeted Hospital Emergency Dispatcher**: Select All CDO Hospitals or specific facilities with dynamic live recipient reach calculation (querying active queue tokens in Supabase), "Inspect Recipients" drawer, severity tagging (`INFO`, `WARNING`, `EMERGENCY`), preset templates (Grid Power Maintenance, Weather/Flood Advisory, Gate Reroutes), and broadcast history archive.
+- **Queue Turn Notice Template Manager**: Database-backed templates for all 6 critical queue lifecycle milestones (`SLOT_CONFIRMED`, `ADVANCE_WARNING_2_AHEAD`, `NOW_SERVING`, `PATIENT_SKIPPED_NOTICE`, `DOCTOR_DELAY_ANNOUNCEMENT`, `CLINIC_CANCELLED`). Includes dynamic variable chips, live character & segment cost counter, and an **interactive smartphone mockup preview** rendering token resolution in real time.
+- **Real-Time Delivery Ledger & Retry Mechanics**: Filterable live ledger with carrier tags, latency, full payload modal, one-click 🔄 "Resend / Retry Failed SMS", 📥 "Export Delivery CSV", and **Supabase Realtime** streaming.
+- **Direct 1-to-1 Patient SMS**: Administrative tool for custom text dispatches to any patient or test mobile number with live carrier detection.
 
-### 4. 💳 PayMongo QRPH Payment Service
+### 4. 💰 Financial Operations & PayMongo Settlement Engine (`/cnadmin/finops`)
+- **Live Transaction Ledger**: Real-time ledger of ₱50 platform fees, QRPH payment intent tracking, and payment method breakdowns (GCash, Maya, Card, Cashier Counter).
+- **Automated PayMongo Refunds**: Direct refund dispatch via PayMongo API with reason codes (`DUPLICATE`, `FRAUDULENT`, `REQUESTED_BY_CUSTOMER`).
+- **Daily Clinic Cashier Remittances**: Reconciliation ledger of physical cash collections for walk-in convenience fees across hospital clinics with 1-click status verification.
+- **Doctor Subscription Ledger**: Tracking Free vs. Pro (₱999/mo) active subscriptions, MRR calculations, and tier assignments.
+- **Disputes & Forfeitures Engine**: Handling patient claims, no-show forfeitures, and platform fee reconciliations with CSV export.
+
+### 5. 💳 PayMongo QRPH Payment Service
 - Generates dynamic, interoperable **QRPH codes** compliant with Bangko Sentral ng Pilipinas (BSP) standards.
 - Webhook listener (`/api/webhooks/paymongo`) automatically verifies payments, marks transactions as `SUCCESS`, updates appointment status to `PAID`, and triggers SMS booking confirmations.
 
-### 5. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
+### 6. 🪪 Patient Health Passport & Onboarding Stepper (`/onboarding`)
 - **Vitals & Demographics**: Birthday (auto-age), blood type, height (ft/in vs cm toggle), weight, and live BMI status.
 - **Triage & Safety**: Quick-tap drug allergy badges (*Penicillin, Aspirin, Amoxicillin, Sulfa Drugs*), chronic comorbidities, and maintenance medications.
 - **Philippine Priority Lanes**: RA 9994 Senior Citizens (OSCA ID), RA 7277 PWDs, and maternal priority validation.
 - **Digital Clinic Pass**: Generates a scannable digital QR pass for 1-second front-desk check-in.
 
-### 6. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
+### 7. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
 - 4-Column Operations Kanban:
   1. **Active Lineup**: Alternating Online (Odd) & Walk-In (Even) queue cards.
   2. **Buffer Lane**: 45-min arrival grace countdown with 1-click restore (+2 slots) and forfeit.
   3. **Currently Serving**: In-consultation status card with 1-click "Complete & Call Next".
   4. **Completed Today**: Session history with cash count tracking.
 
-### 7. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
+### 8. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
 - Attending physician workspace:
   - Active consultation view with chief complaints, pre-populated vitals, and digital Rx pad.
   - **Multi-Clinic Room Switcher**: Instant schedule switching between Maria Reyna, Polymedic, and CUMC.
@@ -101,9 +111,9 @@ Built with **shadcn/ui** primitives and custom CSS variables tuned to Clinic Nat
 - **UI & Components**: [React 19](https://react.dev/) & [shadcn/ui](https://ui.shadcn.com/) (Radix UI primitives)
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) with `class-variance-authority` (cva) & `tailwind-merge`
 - **Icons**: [Lucide React](https://lucide.dev/)
-- **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL 15+, Row Level Security, Realtime WebSockets)
-- **Payment Processing**: [PayMongo API](https://paymongo.com/) (QRPH, GCash, Maya)
-- **SMS Gateway**: [Semaphore API](https://semaphore.co/) (Transactional Philippine SMS)
+- **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL 17, Row Level Security, Realtime WebSockets)
+- **Payment Processing**: [PayMongo API](https://paymongo.com/) (Dynamic QRPH, GCash, Maya, Cards)
+- **SMS Gateway**: [Semaphore API](https://semaphore.co/) (Transactional Philippine SMS, Globe/Smart/DITO routing)
 - **Deployment**: [Vercel](https://vercel.com/)
 
 ---
@@ -118,14 +128,28 @@ clinic-natin/
 │   │   │   ├── discover/              # Patient clinic and doctor search
 │   │   │   └── my-queue/              # Live Patient Turn Tracker & digital token
 │   │   ├── api/
+│   │   │   ├── admin/
+│   │   │   │   ├── clinics/           # Clinic standee QR generation & doctor mappings
+│   │   │   │   ├── communications/    # Semaphore telemetry, batch broadcast & templates
+│   │   │   │   ├── finops/            # PayMongo ledger, refunds, cashier reconciliations
+│   │   │   │   └── patients/          # Patient directory & RA 10173 DSAR compliance
 │   │   │   ├── payments/paymongo/     # PayMongo QRPH payment intent creator
 │   │   │   ├── queue/delay-broadcast/ # 1-Tap Semaphore SMS delay dispatcher
 │   │   │   ├── queue/restore-buffered/# Buffer Lane Grace Period restoration
 │   │   │   └── webhooks/paymongo/     # PayMongo webhook signature & payment handler
+│   │   ├── cnadmin/                   # Central Operations & Administration Portal
+│   │   │   ├── clinics/               # Clinic Standee QR Engine & Hospital Lookups
+│   │   │   ├── communications/        # Emergency Broadcasts, SMS Templates & Gateway Telemetry
+│   │   │   ├── compliance/            # RA 10173 Data Privacy & OSCA Senior Audit Logs
+│   │   │   ├── doctors/               # Doctor verification, PRC licenses & Pro Subscriptions
+│   │   │   ├── finops/                # Financial Operations, Ledger, Refunds & Remittances
+│   │   │   ├── patients/              # Patient Master Index & DSAR Management
+│   │   │   └── queue-monitor/         # City-wide multi-hospital queue command center
 │   │   ├── dashboard/                 # Smart role-based gateway redirector
 │   │   ├── doctor/
 │   │   │   └── dashboard/             # Doctor Suite (Consultation, Multi-room & EMR)
 │   │   ├── login/                     # Portal Sign In with 1-Click Demo Personas
+│   │   ├── mobile/                    # Interactive Mobile App Simulator & PWA preview
 │   │   ├── onboarding/                # Patient Health Passport Stepper & QR Pass
 │   │   ├── secretary/
 │   │   │   └── dashboard/             # Secretary Desk, Buffer Lane & Interleaved Lineup
@@ -136,15 +160,15 @@ clinic-natin/
 │   ├── components/
 │   │   └── ui/                        # Complete shadcn/ui component suite
 │   ├── lib/
-│   │   ├── payments/                  # PayMongo QRPH payment service
-│   │   ├── sms/                       # Semaphore SMS gateway integration
+│   │   ├── payments/                  # PayMongo QRPH payment & refund service
+│   │   ├── sms/                       # Semaphore SMS gateway integration & carrier routing
 │   │   ├── supabase/                  # Supabase SSR & browser clients
 │   │   └── utils.ts                   # cn() styling helper (clsx + tailwind-merge)
 │   └── proxy.ts                       # Next.js 16 role-based authentication proxy
 ├── supabase/
 │   ├── schema.sql                     # Production PostgreSQL schema, DDL & triggers
 │   └── migrations/                    # Incremental database migrations
-├── public/                            # Static media and favicons
+├── public/                            # Static media, icons, PWA assets
 ├── package.json                       # Dependencies & build scripts
 └── README.md                          # Platform documentation
 ```
@@ -172,16 +196,17 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 # Payment Gateway (PayMongo)
 PAYMONGO_SECRET_KEY=sk_live_or_test_key
+NEXT_PUBLIC_PAYMONGO_PUBLIC_KEY=pk_live_or_test_key
 PAYMONGO_WEBHOOK_SECRET=whsec_your_webhook_secret
 
 # SMS Gateway (Semaphore)
 SEMAPHORE_API_KEY=your_semaphore_api_key
 SEMAPHORE_SENDER_NAME=CLINICNATIN
 ```
-*(Note: If `PAYMONGO_SECRET_KEY` or `SEMAPHORE_API_KEY` are left blank, the app gracefully operates in zero-crash mock mode for local testing).*
+*(Note: If `PAYMONGO_SECRET_KEY` or `SEMAPHORE_API_KEY` are left blank, the app gracefully operates in calibrated zero-crash mock/sandbox mode for local testing).*
 
 ### 3. Run Database Migrations
-Execute `supabase/schema.sql` or `supabase/migrations/20260907_business_model_enhancements.sql` in your Supabase SQL Editor.
+Execute `supabase/schema.sql` and the migrations in `supabase/migrations/` in your Supabase SQL Editor.
 
 ### 4. Run Development Server
 ```bash
@@ -189,11 +214,15 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000):
+- **Administrative Command Center**: `http://localhost:3000/cnadmin`
+- **Communications & SMS Gateway**: `http://localhost:3000/cnadmin/communications`
+- **Financial Operations & Settlements**: `http://localhost:3000/cnadmin/finops`
 - **Secretary Desk**: `http://localhost:3000/secretary/dashboard`
 - **Doctor Suite**: `http://localhost:3000/doctor/dashboard`
 - **Patient Queue Tracker**: `http://localhost:3000/my-queue`
 - **Doctor Directory**: `http://localhost:3000/discover`
 - **Health Passport Onboarding**: `http://localhost:3000/onboarding`
+- **Mobile PWA Simulator**: `http://localhost:3000/mobile`
 
 ---
 
@@ -206,9 +235,9 @@ Open [http://localhost:3000](http://localhost:3000):
 ---
 
 ## ⚖️ Compliance & Data Privacy
-- **Republic Act No. 10173** (Philippine Data Privacy Act of 2012)
-- **Republic Act No. 9994** (Expanded Senior Citizens Act — 20% statutory discount & express queueing)
-- **Republic Act No. 7277** (Magna Carta for Persons with Disability)
+- **Republic Act No. 10173** (Philippine Data Privacy Act of 2012) — Full DSAR data export and anonymization controls.
+- **Republic Act No. 9994** (Expanded Senior Citizens Act — 20% statutory discount & express queueing).
+- **Republic Act No. 7277** (Magna Carta for Persons with Disability).
 - Strict Row-Level Security (RLS) isolating patient longitudinal charts to linked physicians, with restricted secretary triage access limited to active sessions.
 
 ---
