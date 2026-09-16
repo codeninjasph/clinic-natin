@@ -129,14 +129,36 @@ export interface DoctorOption {
 }
 
 const DAYS_OF_WEEK = [
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-  { value: 7, label: 'Sunday' },
+  { value: 1, label: 'Monday', short: 'Mon' },
+  { value: 2, label: 'Tuesday', short: 'Tue' },
+  { value: 3, label: 'Wednesday', short: 'Wed' },
+  { value: 4, label: 'Thursday', short: 'Thu' },
+  { value: 5, label: 'Friday', short: 'Fri' },
+  { value: 6, label: 'Saturday', short: 'Sat' },
+  { value: 7, label: 'Sunday', short: 'Sun' },
 ];
+
+/**
+ * Derives a human-readable operating_hours string from selected day numbers + time range.
+ * Example: [2,4,6], '13:00', '17:30'  →  'Tue, Thu, Sat 1:00 PM – 5:30 PM'
+ */
+function deriveOperatingHours(days: number[], startTime: string, endTime: string): string {
+  if (!days.length || !startTime || !endTime) return '';
+  const sorted = [...days].sort((a, b) => a - b);
+  const dayLabels = sorted.map((v) => DAYS_OF_WEEK.find((d) => d.value === v)?.short ?? `Day${v}`).join(', ');
+
+  const fmt = (t: string) => {
+    const [hStr, mStr] = t.split(':');
+    let h = parseInt(hStr, 10);
+    const m = parseInt(mStr || '0', 10);
+    const period = h >= 12 ? 'PM' : 'AM';
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return m === 0 ? `${h}:00 ${period}` : `${h}:${String(m).padStart(2, '0')} ${period}`;
+  };
+
+  return `${dayLabels} ${fmt(startTime)} – ${fmt(endTime)}`;
+}
 
 export default function ClinicsAndRoomsPage() {
   const [clinics, setClinics] = React.useState<ClinicRecord[]>([]);
@@ -206,6 +228,7 @@ export default function ClinicsAndRoomsPage() {
     operatingHours: '',
     status: 'ACTIVE' as 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE',
     assignedDoctorId: '',
+    previousDoctorId: '',
     scheduleDays: [2, 4, 6] as number[],
     startTime: '08:30:00',
     endTime: '13:30:00',
@@ -416,9 +439,14 @@ export default function ClinicsAndRoomsPage() {
       city: clinic.city,
       province: clinic.province,
       contactPhone: clinic.contact_phone || '',
-      operatingHours: clinic.operating_hours || 'Mon–Fri 8:00 AM – 5:00 PM',
+      // Derive operating hours from existing days/times if a doctor is assigned; fall back to stored value
+      operatingHours: assignedDocId && existingDays.length > 0 && primarySchedule?.start_time && primarySchedule?.end_time
+        ? deriveOperatingHours(existingDays, primarySchedule.start_time.slice(0, 5), primarySchedule.end_time.slice(0, 5))
+        : clinic.operating_hours || 'Mon–Fri 8:00 AM – 5:00 PM',
       status: clinic.status || 'ACTIVE',
       assignedDoctorId: assignedDocId,
+      // Track the original doctor so the API can surgically remove only their rows
+      previousDoctorId: assignedDocId,
       scheduleDays: existingDays,
       startTime: primarySchedule?.start_time ? primarySchedule.start_time.slice(0, 5) : '08:30',
       endTime: primarySchedule?.end_time ? primarySchedule.end_time.slice(0, 5) : '13:30',
@@ -1073,12 +1101,22 @@ export default function ClinicsAndRoomsPage() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Operating Hours</label>
-                <Input
-                  value={addForm.operatingHours}
-                  onChange={(e) => setAddForm({ ...addForm, operatingHours: e.target.value })}
-                  placeholder="e.g. MWF 8:30 AM – 1:30 PM"
-                  className="text-xs bg-white"
-                />
+                {addForm.assignedDoctorId ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 font-semibold flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">
+                      {deriveOperatingHours(addForm.scheduleDays, addForm.startTime, addForm.endTime) || <span className="text-slate-400 font-normal">Select days &amp; times above</span>}
+                    </span>
+                    <span className="ml-auto text-[10px] font-normal text-slate-400">auto-derived</span>
+                  </div>
+                ) : (
+                  <Input
+                    value={addForm.operatingHours}
+                    onChange={(e) => setAddForm({ ...addForm, operatingHours: e.target.value })}
+                    placeholder="e.g. MWF 8:30 AM – 1:30 PM"
+                    className="text-xs bg-white"
+                  />
+                )}
               </div>
             </div>
 
@@ -1119,7 +1157,11 @@ export default function ClinicsAndRoomsPage() {
                               const newDays = isSelected
                                 ? addForm.scheduleDays.filter((val) => val !== d.value)
                                 : [...addForm.scheduleDays, d.value].sort();
-                              setAddForm({ ...addForm, scheduleDays: newDays });
+                              setAddForm({
+                                ...addForm,
+                                scheduleDays: newDays,
+                                operatingHours: deriveOperatingHours(newDays, addForm.startTime, addForm.endTime),
+                              });
                             }}
                             className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
                               isSelected
@@ -1145,7 +1187,11 @@ export default function ClinicsAndRoomsPage() {
                       <Input
                         type="time"
                         value={addForm.startTime}
-                        onChange={(e) => setAddForm({ ...addForm, startTime: e.target.value })}
+                        onChange={(e) => setAddForm({
+                          ...addForm,
+                          startTime: e.target.value,
+                          operatingHours: deriveOperatingHours(addForm.scheduleDays, e.target.value, addForm.endTime),
+                        })}
                         className="text-xs bg-white"
                       />
                     </div>
@@ -1155,7 +1201,11 @@ export default function ClinicsAndRoomsPage() {
                       <Input
                         type="time"
                         value={addForm.endTime}
-                        onChange={(e) => setAddForm({ ...addForm, endTime: e.target.value })}
+                        onChange={(e) => setAddForm({
+                          ...addForm,
+                          endTime: e.target.value,
+                          operatingHours: deriveOperatingHours(addForm.scheduleDays, addForm.startTime, e.target.value),
+                        })}
                         className="text-xs bg-white"
                       />
                     </div>
@@ -1283,11 +1333,22 @@ export default function ClinicsAndRoomsPage() {
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Operating Hours</label>
-                <Input
-                  value={editForm.operatingHours}
-                  onChange={(e) => setEditForm({ ...editForm, operatingHours: e.target.value })}
-                  className="text-xs bg-white"
-                />
+                {editForm.assignedDoctorId ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 font-semibold flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">
+                      {deriveOperatingHours(editForm.scheduleDays, editForm.startTime, editForm.endTime) || <span className="text-slate-400 font-normal">Select days &amp; times above</span>}
+                    </span>
+                    <span className="ml-auto text-[10px] font-normal text-slate-400">auto-derived</span>
+                  </div>
+                ) : (
+                  <Input
+                    value={editForm.operatingHours}
+                    onChange={(e) => setEditForm({ ...editForm, operatingHours: e.target.value })}
+                    className="text-xs bg-white"
+                    placeholder="e.g. MWF 8:30 AM – 1:30 PM"
+                  />
+                )}
               </div>
             </div>
 
@@ -1344,7 +1405,11 @@ export default function ClinicsAndRoomsPage() {
                               const newDays = isSelected
                                 ? editForm.scheduleDays.filter((val) => val !== d.value)
                                 : [...editForm.scheduleDays, d.value].sort();
-                              setEditForm({ ...editForm, scheduleDays: newDays });
+                              setEditForm({
+                                ...editForm,
+                                scheduleDays: newDays,
+                                operatingHours: deriveOperatingHours(newDays, editForm.startTime, editForm.endTime),
+                              });
                             }}
                             className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
                               isSelected
@@ -1370,7 +1435,11 @@ export default function ClinicsAndRoomsPage() {
                       <Input
                         type="time"
                         value={editForm.startTime}
-                        onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                        onChange={(e) => setEditForm({
+                          ...editForm,
+                          startTime: e.target.value,
+                          operatingHours: deriveOperatingHours(editForm.scheduleDays, e.target.value, editForm.endTime),
+                        })}
                         className="text-xs bg-white"
                       />
                     </div>
@@ -1380,7 +1449,11 @@ export default function ClinicsAndRoomsPage() {
                       <Input
                         type="time"
                         value={editForm.endTime}
-                        onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                        onChange={(e) => setEditForm({
+                          ...editForm,
+                          endTime: e.target.value,
+                          operatingHours: deriveOperatingHours(editForm.scheduleDays, editForm.startTime, e.target.value),
+                        })}
                         className="text-xs bg-white"
                       />
                     </div>

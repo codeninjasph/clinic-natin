@@ -331,12 +331,26 @@ export async function PUT(req: NextRequest) {
     }
 
     // Optional: update, add, or remove doctor schedules (multi-day support)
+    // IMPORTANT: Only touch rows for the *specific* doctor being assigned/cleared.
+    // Never delete schedules belonging to other doctors who also use this suite.
     if (assignedDoctorId !== undefined) {
-      // Clear existing schedules for this clinic
-      await supabase
-        .from('doctor_clinic_schedules')
-        .delete()
-        .eq('clinic_id', id);
+      // Get the previous doctor for this clinic from the request context (sent as previousDoctorId)
+      // or fall back to clearing only the exact doctor being replaced.
+      const { previousDoctorId } = body; // frontend should send previousDoctorId when changing doctors
+
+      // Determine which doctor's rows to remove:
+      // - If we're explicitly clearing (assignedDoctorId = ''), remove the previousDoctorId's rows.
+      // - If we're assigning the same doctor, remove and re-insert their own rows.
+      // - If we're swapping to a different doctor, remove previousDoctorId's rows only.
+      const doctorToRemove = previousDoctorId || assignedDoctorId;
+
+      if (doctorToRemove) {
+        await supabase
+          .from('doctor_clinic_schedules')
+          .delete()
+          .eq('clinic_id', id)
+          .eq('doctor_id', doctorToRemove);
+      }
 
       if (assignedDoctorId) {
         const days = Array.isArray(scheduleDays) && scheduleDays.length > 0
