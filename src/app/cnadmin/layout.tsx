@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { createClient } from '@/lib/supabase/client';
 
 const NAVIGATION_ITEMS = [
   { href: '/cnadmin', label: 'Operations Cockpit', icon: LayoutDashboard },
@@ -62,6 +63,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [selectedRole, setSelectedRole] = React.useState<'DOCTOR' | 'PATIENT'>('DOCTOR');
   const [targetUser, setTargetUser] = React.useState('Dr. Maria Santos, MD');
 
+  // Current Authenticated Admin State
+  const [adminProfile, setAdminProfile] = React.useState({
+    name: 'CARL KENNETH GALVE',
+    title: 'Founder & Platform Administrator',
+    initials: 'CG',
+    email: 'cdg@clinicnatin.com',
+  });
+
   // Live Semaphore SMS Credit Telemetry state
   const [smsCredits, setSmsCredits] = React.useState<number | null>(null);
 
@@ -76,6 +85,55 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .catch(() => {});
   }, [pathname]);
 
+  // Load Authenticated Admin Profile
+  React.useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        const metadata = user.user_metadata || {};
+        const fullName = metadata.full_name || user.email?.split('@')[0] || 'CARL KENNETH GALVE';
+        const title = metadata.title || 'Founder & Platform Administrator';
+        const initials = fullName
+          .split(' ')
+          .filter(Boolean)
+          .map((n: string) => n[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase() || 'CG';
+
+        setAdminProfile({
+          name: fullName,
+          title,
+          initials,
+          email: user.email || 'cdg@clinicnatin.com',
+        });
+      } else {
+        const demoUser = localStorage.getItem('clinic_natin_demo_user');
+        if (demoUser) {
+          try {
+            const parsed = JSON.parse(demoUser);
+            if (parsed.role === 'ADMIN') {
+              const fullName = parsed.name || 'CARL KENNETH GALVE';
+              const initials = fullName
+                .split(' ')
+                .filter(Boolean)
+                .map((n: string) => n[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase() || 'CG';
+              setAdminProfile({
+                name: fullName,
+                title: 'Founder & Platform Administrator',
+                initials,
+                email: parsed.email || 'cdg@clinicnatin.com',
+              });
+            }
+          } catch {}
+        }
+      }
+    });
+  }, []);
+
   // Check existing session
   React.useEffect(() => {
     const active = localStorage.getItem('clinic_natin_impersonation_active');
@@ -85,6 +143,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       setTicketRef(ticket || 'SUP-DEMO');
     }
   }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut().catch(() => {});
+    document.cookie = 'clinic_natin_role=; path=/; max-age=0';
+    localStorage.removeItem('clinic_natin_demo_role');
+    localStorage.removeItem('clinic_natin_demo_user');
+    router.push('/login');
+  };
 
   const handleStartImpersonation = () => {
     if (!ticketRef.trim()) {
@@ -103,7 +170,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     existingAudit.unshift({
       id: `audit-${Date.now()}`,
       actorId: 'admin-session',
-      actorName: 'Atty. Rafael Ramos (Admin Ops)',
+      actorName: `${adminProfile.name} (${adminProfile.title})`,
       actorRole: 'ADMIN',
       action: 'ADMIN_IMPERSONATION',
       resourceTable: 'sessions',
@@ -229,15 +296,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Separator orientation="vertical" className="h-6" />
 
             {/* Admin Profile Pill */}
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-xs font-bold">
-                AR
+            <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-2xs">
+              <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center text-xs font-bold ring-2 ring-emerald-500/20">
+                {adminProfile.initials}
               </div>
               <div className="hidden sm:block text-left">
-                <p className="text-xs font-bold text-slate-900 leading-tight">Atty. Rafael Ramos</p>
-                <p className="text-[10px] text-slate-500 font-medium">Compliance & Ops Director</p>
+                <p className="text-xs font-bold text-slate-900 leading-tight">{adminProfile.name}</p>
+                <p className="text-[10px] text-emerald-700 font-semibold">{adminProfile.title}</p>
               </div>
             </div>
+
+            {/* Logout Action */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              title="Sign Out"
+              className="h-9 w-9 p-0 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-xl"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </header>

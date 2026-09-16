@@ -222,7 +222,7 @@ function LoginFormContent() {
 
               <button
                 type="button"
-                onClick={() => handleQuickPersonaLogin('ADMIN', 'Atty. Rafael Ramos (Admin Ops)', 'admin@clinicnatin.ph')}
+                onClick={() => handleQuickPersonaLogin('ADMIN', 'Carl Kenneth Galve', 'cdg@clinicnatin.com')}
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-100/80 p-3 text-left hover:bg-slate-200/70 transition group"
               >
                 <div className="flex items-center gap-3">
@@ -230,8 +230,8 @@ function LoginFormContent() {
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-slate-900 group-hover:text-slate-950">Super Admin Console (/cnadmin)</p>
-                    <p className="text-[11px] text-slate-500">CDO Ops Command Center &bull; Live Telemetry</p>
+                    <p className="text-xs font-bold text-slate-900 group-hover:text-slate-950">Carl Kenneth Galve</p>
+                    <p className="text-[11px] text-slate-500">Founder &bull; Top-Level Platform Administrator (/cnadmin)</p>
                   </div>
                 </div>
                 <ArrowRight className="h-4 w-4 text-slate-700 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition" />
