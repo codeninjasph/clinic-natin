@@ -102,19 +102,57 @@ Operated by **CodeNinjas Web Development Services**, Clinic Natin runs on a sust
 - **Philippine Priority Lanes**: RA 9994 Senior Citizens (OSCA ID), RA 7277 PWDs, and maternal priority validation.
 - **Digital Clinic Pass**: Generates a scannable digital QR pass for 1-second front-desk check-in.
 
-### 10. 👩‍💼 Secretary Live Queue Controller (`/secretary/dashboard`)
-- 4-Column Operations Kanban:
-  1. **Active Lineup**: Alternating Online (Odd) & Walk-In (Even) queue cards.
-  2. **Buffer Lane**: 45-min arrival grace countdown with 1-click restore (+2 slots) and forfeit.
-  3. **Currently Serving**: In-consultation status card with 1-click "Complete & Call Next".
-  4. **Completed Today**: Session history with cash count tracking.
+### 10. 👩‍💼 Secretary Front-Desk Reception & Triage Operations (`/secretary/*`)
+Built specifically for non-tech-savvy clinic secretaries (aged 40+, pen-and-paper preference) with high-contrast typography, physical slip metaphors, and zero-mental-math calculators using Shadcn UI:
+- **Persistent Navigation Shell**: [`src/app/secretary/layout.tsx`](file:///c:/Users/ckenn/Documents/IT/Google%20Antigravity/Clinic%20Natin/app/clinic-natin/src/app/secretary/layout.tsx) & [`src/app/secretary/secretary-context.tsx`](file:///c:/Users/ckenn/Documents/IT/Google%20Antigravity/Clinic%20Natin/app/clinic-natin/src/app/secretary/secretary-context.tsx)
+  - Clinic room assignment, doctor presence badge (`In Room` vs `On Rounds`), Now Serving pill, and fast link to Smart TV Mode.
+- **Spiral Logbook & Vitals Triage Desk (`/secretary/dashboard`)**:
+  - 1-click toggle between **"Spiral Logbook Table View"** (lined notebook rows: `#`, `Token`, `Name`, `Channel`, `Vitals`, `Payment`, `Status`, `Actions`) and "Cards View".
+  - Extra-large search bar for name, 09XX mobile, or token lookup.
+  - QR Code patient pass scanner & reception arrival check-in (`qr-scanner-modal.tsx`).
+- **Physical Slip Vitals Intake Pad (`vital-signs-triage-modal.tsx`)**:
+  - Styled like a clinical index card: Blood Pressure with color flags, Temperature with quick pills (`36.5°C`, `37.5°C`, `38.5°C`), Weight & Height with live Feet/Inches $\leftrightarrow$ cm converter, auto-calculated BMI, SpO2 %, and single-tap complaint chips.
+  - Direct auto-sync to `medical_records.vitals`, completing the clinical handshake with the Doctor Cockpit.
+- **Rapid Walk-In Registration Station (`/secretary/walk-in`)**:
+  - Single-page paper form with large inputs, priority lane toggles (Senior, PWD, Pregnant), even sequential ticket preview (`CN-WK...`), and direct transition to vitals triage.
+- **Cashier & Fee Settlement Terminal (`/secretary/cashier`)**:
+  - Automatic 20% Senior/PWD statutory discount checkbox, quick cash tendered buttons (₱500, ₱1,000), giant green **"Change Due: ₱..."** display, HMO pre-auth logger, and printable receipt slips ($8.5'' \times 5.5''$).
+- **Daily Cash Drawer Tally Sheet (`/secretary/summaries`)**:
+  - Physical cash envelope denomination breakdown sheet (₱1000, ₱500, ₱200, ₱100, ₱50, ₱20, Coins) auto-tallying physical drawer cash vs system collections. Direct submission to `daily_clinic_summaries` for Admin FinOps reconciliation.
+- **Hospital Waiting Room TV Display & Audio Chime (`/secretary/display`)**:
+  - 10-foot smart TV monitor layout, Web Audio API hospital chime ("Ding-Dong"), English voice callout speech synthesis, and RA 10173 privacy name masking.
+- **Announcements & Delays Manager (`/secretary/announcements`)**:
+  - 1-tap delay broadcast triggers (+15m Rounds, +30m Surgery, +45m Traffic) and live TV marquee ticker editor.
 
-### 11. 👨‍⚕️ Doctor Consultation Suite (`/doctor/dashboard`)
-- Attending physician workspace:
-  - Active consultation view with chief complaints, pre-populated vitals, and digital Rx pad.
-  - **Multi-Clinic Room Switcher**: Instant schedule switching between Maria Reyna, Polymedic, and CUMC.
-  - **Longitudinal Medical History (Pro Tier)**: Review past visit dates, diagnosis timeline, and uploaded lab results.
-  - **Subscription Tier Toggle**: Built-in switcher to demonstrate Free vs. Pro tiers.
+### 11. 👨‍⚕️ Doctor Consultation & Clinical Suite (`/doctor/*`)
+Comprehensive attending physician workspace with multi-clinic support and full regulatory compliance:
+- **Consultation Cockpit (`/doctor/dashboard`)**:
+  - Active consultation view with chief complaints, triage vitals strip, dynamic longitudinal EMR card, and 1-click **"Recall Patient"** button.
+  - Keyboard shortcuts (`Space` when not typing in form fields, `Ctrl+Enter`) for fast consultation flow.
+  - Real-time Postgres synchronization with optimistic turn advancement.
+- **Atomic Turn Advance & Advance Warning SMS (`/api/queue/call-next`)**:
+  - Atomically marks the current patient as `COMPLETED`, moves the next patient to `SERVING`, and updates `queue_sessions.current_serving_number`.
+  - Dispatches an **"Advance Warning (2 Ahead)"** Semaphore SMS alert to the patient two spots ahead ($N+2$) without spamming notifications.
+- **Cryptographic Rx Security & Public Verification (`/verify-rx/[code]`)**:
+  - Computes tamper-proof SHA-256 checksums (`CN-RX-YYYY-XXXXXX`) embedding physician license numbers, patient demographics, and medication details.
+  - Public pharmacist verification route allowing drugstores to verify prescription authenticity by scanning the printed QR code.
+- **Doctor Electronic Signature Pad & Regulatory Stamp (`/doctor/settings`)**:
+  - HTML5 Canvas drawing pad with variable stroke width and direct PNG upload for high-resolution signature stamps.
+  - Live Rx slip stamp preview displaying signatures alongside PRC, PTR, and PDEA S2 license credentials.
+- **Diagnostic Requisition Pad (`diagnostic-requisition-pad.tsx`)**:
+  - 1-click test ordering across Hematology, Microscopy, Chemistry, Imaging & Diagnostics, and clinical packages (Executive Health, Pre-Op Clearance, Metabolic Syndrome).
+- **Philippine Standard Rx Slip & Dynamic Print Sizing (`/doctor/rx`)**:
+  - Toggle between **Prescription (℞)** and **Lab Requisition (Req)**.
+  - Standard Half-Letter paper format ($8.5'' \times 5.5''$ with `@page { size: 8.5in 5.5in; margin: 6mm; }`) and dynamic verification QR code.
+  - Instant digital copy push to patient phone via Semaphore SMS.
+- **Comprehensive Patient Chart & Longitudinal Ledgers (`/doctor/patients/[patientId]`)**:
+  - Dedicated longitudinal chart with full demographic header, high-visibility allergy/comorbidity warning banner, past SOAP visit encounters, longitudinal vitals progression ledger, and cumulative pharmacological history.
+- **Unified Session Lifecycle Controls**:
+  - Top navigation bar serves as the single source of truth for `startSession`, `pauseSession` (hospital rounds), `resumeSession`, and `endSession` across all doctor pages without redundant controls.
+- **Date-Specific Schedule Overrides (`/doctor/schedule`)**:
+  - Manage leaves, emergency delays, surgery extensions, clinic hour adjustments, or room swaps with public patient announcements.
+- **Practice Analytics (`/doctor/analytics`)**:
+  - Track patient turnaround times, completion ratios, booking channel distribution, and revenue.
 
 ---
 
@@ -140,6 +178,7 @@ Built with **shadcn/ui** primitives and custom CSS variables tuned to Clinic Nat
 - **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL 17, Row Level Security, Realtime WebSockets)
 - **Payment Processing**: [PayMongo API](https://paymongo.com/) (Dynamic QRPH, GCash, Maya, Cards)
 - **SMS Gateway**: [Semaphore API](https://semaphore.co/) (Transactional Philippine SMS, Globe/Smart/DITO routing)
+- **Audio Synthesis**: Web Audio API (Dual-tone hospital chime) & Web Speech API (English queue callouts)
 - **Deployment**: [Vercel](https://vercel.com/)
 
 ---
@@ -151,24 +190,26 @@ clinic-natin/
 ├── src/
 │   ├── app/
 │   │   ├── (patient)/
+│   │   │   ├── account/               # Patient medical profile & health passport
 │   │   │   ├── discover/              # Patient clinic and doctor search
 │   │   │   └── my-queue/              # Live Patient Turn Tracker & digital token
 │   │   ├── api/
-│   │   │   ├── admin/
-│   │   │   │   ├── clinics/           # Clinic standee QR generation & doctor mappings
-│   │   │   │   ├── cockpit/           # Live Supabase aggregator & operational telemetry
-│   │   │   │   ├── communications/    # Semaphore telemetry, batch broadcast & templates
-│   │   │   │   ├── compliance/        # RA 10173 audit stream, DSAR queue & NPC incidents
-│   │   │   │   ├── finops/            # PayMongo ledger, refunds, cashier reconciliations
-│   │   │   │   ├── lookups/           # Reference tables & medical specialties
-│   │   │   │   ├── patients/          # Patient directory & RA 10173 DSAR compliance
-│   │   │   │   └── settings/          # Runtime flags, ICD-10, PNDF, HMOs & telemetry
+│   │   │   ├── admin/                 # Admin cockpit, communications, compliance, finops, lookups
+│   │   │   ├── doctor/
+│   │   │   │   ├── prescriptions/     # Digital Rx generator & crypto verification issuer
+│   │   │   │   ├── register/          # Doctor onboarding & clinic linking
+│   │   │   │   └── save-soap/         # Encounter SOAP notes & vitals recorder
 │   │   │   ├── payments/paymongo/     # PayMongo QRPH payment intent creator
-│   │   │   ├── queue/delay-broadcast/ # 1-Tap Semaphore SMS delay dispatcher
-│   │   │   ├── queue/restore-buffered/# Buffer Lane Grace Period restoration
+│   │   │   ├── queue/
+│   │   │   │   ├── buffer-patient/    # Buffer lane transition
+│   │   │   │   ├── call-next/         # Atomic turn advance & "2 Ahead" SMS alert
+│   │   │   │   ├── delay-broadcast/   # 1-Tap Semaphore SMS delay dispatcher
+│   │   │   │   ├── end-session/       # Session termination & analytics closure
+│   │   │   │   ├── restore-buffered/  # Buffer Lane Grace Period restoration
+│   │   │   │   ├── skip-patient/      # Patient skip counter increment
+│   │   │   │   └── start-session/     # Queue session activation
 │   │   │   └── webhooks/paymongo/     # PayMongo webhook signature & payment handler
 │   │   ├── cnadmin/                   # Central Operations & Administration Portal
-│   │   │   ├── page.tsx               # Operations Cockpit, Bottleneck Radar & Live Matrix
 │   │   │   ├── clinics/               # Clinic Standee QR Engine & Hospital Lookups
 │   │   │   ├── communications/        # Emergency Broadcasts, SMS Templates & Gateway Telemetry
 │   │   │   ├── compliance/            # RA 10173 Data Privacy, DSAR Queue & NPC 72h Register
@@ -177,22 +218,38 @@ clinic-natin/
 │   │   │   ├── patients/              # Patient Master Index & DSAR Management
 │   │   │   ├── queue-monitor/         # City-wide multi-hospital queue command center
 │   │   │   └── settings/              # System Settings, Feature Flags & Master Dictionaries
+│   │   ├── doctor/                    # Attending Physician Suite
+│   │   │   ├── analytics/             # Turnaround time, volume & practice analytics
+│   │   │   ├── dashboard/             # Live Consultation Cockpit, EMR & turn advance
+│   │   │   ├── patients/              # Patient directory & drawer
+│   │   │   │   └── [patientId]/       # Comprehensive longitudinal patient chart & ledgers
+│   │   │   ├── rx/                    # Prescription (℞) & Lab Requisition (Req) pad ($8.5x5.5)
+│   │   │   ├── schedule/              # Multi-hospital schedules & date-specific overrides
+│   │   │   └── settings/              # Electronic signature canvas pad & license credentials
+│   │   ├── secretary/                 # Secretary Reception & Triage Portal
+│   │   │   ├── announcements/         # Delay broadcaster & TV marquee ticker editor
+│   │   │   ├── cashier/               # Fee settlement, 20% Senior/PWD discounts & receipts
+│   │   │   ├── dashboard/             # Spiral Logbook, Cards view & QR arrival scanner
+│   │   │   ├── display/               # 10-foot TV Waiting Room monitor with chime & voice callout
+│   │   │   ├── summaries/             # Daily Cash Drawer denomination tally sheet (EOD)
+│   │   │   └── walk-in/               # Rapid walk-in registration with even ticket preview
+│   │   ├── verify-rx/[code]/          # Public Pharmacist QR Verification Route
 │   │   ├── dashboard/                 # Smart role-based gateway redirector
-│   │   ├── doctor/
-│   │   │   └── dashboard/             # Doctor Suite (Consultation, Multi-room & EMR)
 │   │   ├── login/                     # Portal Sign In with 1-Click Demo Personas
 │   │   ├── mobile/                    # Interactive Mobile App Simulator & PWA preview
 │   │   ├── onboarding/                # Patient Health Passport Stepper & QR Pass
-│   │   ├── secretary/
-│   │   │   └── dashboard/             # Secretary Desk, Buffer Lane & Interleaved Lineup
 │   │   ├── signup/                    # Patient self-registration page
 │   │   ├── globals.css                # Semantic color tokens & Tailwind utilities
 │   │   ├── layout.tsx                 # Root metadata, fonts, and layout
 │   │   └── page.tsx                   # Interactive landing page with FAQ & directory
 │   ├── components/
+│   │   ├── doctor/                    # Diagnostic requisition pad & clinical tools
+│   │   ├── secretary/                 # Spiral logbook, vitals index card modal, QR scanner
 │   │   └── ui/                        # Complete shadcn/ui component suite
 │   ├── lib/
+│   │   ├── audio/                     # Web Audio API hospital chime & speech synthesis
 │   │   ├── compliance/                # AuditService & RA 10173 compliance logger
+│   │   ├── crypto/                    # SHA-256 Rx verification checksum engine
 │   │   ├── payments/                  # PayMongo QRPH payment & refund service
 │   │   ├── sms/                       # Semaphore SMS gateway integration & carrier routing
 │   │   ├── supabase/                  # Supabase SSR & browser clients
@@ -251,8 +308,15 @@ Open [http://localhost:3000](http://localhost:3000):
 - **Communications & SMS Gateway**: `http://localhost:3000/cnadmin/communications`
 - **RA 10173 Compliance & Audit Trail**: `http://localhost:3000/cnadmin/compliance`
 - **Financial Operations & Settlements**: `http://localhost:3000/cnadmin/finops`
-- **Secretary Desk**: `http://localhost:3000/secretary/dashboard`
-- **Doctor Suite**: `http://localhost:3000/doctor/dashboard`
+- **Secretary Desk & Logbook**: `http://localhost:3000/secretary/dashboard`
+- **Secretary Walk-In Registration**: `http://localhost:3000/secretary/walk-in`
+- **Secretary Cashier & Settlement**: `http://localhost:3000/secretary/cashier`
+- **Secretary Waiting Room TV Display**: `http://localhost:3000/secretary/display`
+- **Doctor Consultation Cockpit**: `http://localhost:3000/doctor/dashboard`
+- **Doctor Prescription & Requisition Pad**: `http://localhost:3000/doctor/rx`
+- **Doctor Patient Directory & EMR Charts**: `http://localhost:3000/doctor/patients`
+- **Doctor Schedule & Overrides**: `http://localhost:3000/doctor/schedule`
+- **Public Pharmacist Rx Verification**: `http://localhost:3000/verify-rx/demo-code`
 - **Patient Queue Tracker**: `http://localhost:3000/my-queue`
 - **Doctor Directory**: `http://localhost:3000/discover`
 - **Health Passport Onboarding**: `http://localhost:3000/onboarding`
