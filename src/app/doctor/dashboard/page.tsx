@@ -21,6 +21,8 @@ import {
   Paperclip,
   Loader2,
   Pill,
+  RotateCcw,
+  FlaskConical,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -276,6 +278,17 @@ export default function DoctorDashboardPage() {
 
   // Longitudinal history UI (Pro only)
   const [showLongitudinal, setShowLongitudinal] = useState(false);
+  const [pastEncounters, setPastEncounters] = useState<
+    Array<{
+      id: string;
+      date: string;
+      room: string;
+      dx: string;
+      vitals: string;
+      rx: string | null;
+      attachment?: string;
+    }>
+  >([]);
   const subscriptionTier =
     typeof window !== 'undefined'
       ? (localStorage.getItem('doctor_subscription_tier') as 'free' | 'pro' | null) || 'pro'
@@ -462,6 +475,41 @@ export default function DoctorDashboardPage() {
             .eq('id', patientId)
             .maybeSingle();
           allergies = profile?.allergies || [];
+
+          // Query real longitudinal medical records for this patient
+          const { data: pastRecords } = await supabase
+            .from('medical_records')
+            .select('id, created_at, diagnosis, vitals, private_notes, appointments:appointment_id(queue_sessions:queue_session_id(clinics:clinic_id(name, room_number)))')
+            .eq('patient_id', patientId)
+            .neq('appointment_id', appointmentId)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (pastRecords && pastRecords.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mapped = pastRecords.map((r: any) => {
+              const v = r.vitals;
+              const vitalsText = v?.blood_pressure ? `BP ${v.blood_pressure}, HR ${v.heart_rate || '—'} bpm` : 'Baseline vitals recorded';
+              const clinicInfo = r.appointments?.queue_sessions?.clinics;
+              const clinicName = clinicInfo?.name || 'Clinic Natin CDO';
+              const room = clinicInfo?.room_number || 'Suite 304';
+              return {
+                id: r.id,
+                date: new Date(r.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
+                room: `${clinicName} (${room})`,
+                dx: r.diagnosis || 'Clinical Encounter',
+                vitals: vitalsText,
+                rx: r.private_notes?.includes('[PHARMACOLOGICAL PLAN (Rx)]')
+                  ? r.private_notes.split('[PHARMACOLOGICAL PLAN (Rx)]\n')[1]?.split('\n\n')[0]
+                  : null,
+              };
+            });
+            setPastEncounters(mapped);
+          } else {
+            setPastEncounters([]);
+          }
+        } else {
+          setPastEncounters([]);
         }
 
         setPatientEMR({
@@ -472,6 +520,7 @@ export default function DoctorDashboardPage() {
       } catch (e) {
         console.error('Error fetching patient EMR:', e);
         setPatientEMR({ vitals: null, allergies: [], recordId: null });
+        setPastEncounters([]);
       } finally {
         setEmrLoading(false);
       }
@@ -492,6 +541,7 @@ export default function DoctorDashboardPage() {
       setShowIcdDropdown(false);
     } else {
       setPatientEMR(null);
+      setPastEncounters([]);
     }
   }, [currentServingId, currentServingPatientId, fetchCurrentPatientEMR]);
 
@@ -556,29 +606,34 @@ export default function DoctorDashboardPage() {
     }));
   };
 
-  // ── Queue: call next patient ───────────────────────────────────────────────
+  // ── Queue: call next patient via API ───────────────────────────────────────
   const handleCallNext = useCallback(async () => {
     if (!nextInLine || !session) return;
     try {
-      if (currentlyServing) {
-        await supabase
-          .from('appointments')
-          .update({ status: 'COMPLETED', completed_at: new Date().toISOString() })
-          .eq('id', currentlyServing.id);
+      const res = await fetch('/api/queue/call-next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queueSessionId: session.id,
+          currentAppointmentId: currentlyServing?.id || null,
+          nextAppointmentId: nextInLine.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to advance queue turn');
+
+      if (data.advanceWarningSent) {
+        setToastNotice({
+          type: 'brand',
+          title: 'Advance Warning Dispatched',
+          message: `SMS warning sent to patient ${data.recipientToken} (2 ahead in line).`,
+        });
       }
-      await supabase
-        .from('appointments')
-        .update({ status: 'SERVING', served_at: new Date().toISOString() })
-        .eq('id', nextInLine.id);
-      await supabase
-        .from('queue_sessions')
-        .update({ current_serving_number: nextInLine.queue_number })
-        .eq('id', session.id);
       await fetchDoctorQueue();
     } catch (e) {
       console.error('Error calling next patient:', e);
     }
-  }, [nextInLine, session, currentlyServing, supabase, fetchDoctorQueue]);
+  }, [nextInLine, session, currentlyServing, fetchDoctorQueue]);
 
   // ── Save SOAP + call next ──────────────────────────────────────────────────
   const handleSaveAndCallNext = useCallback(async () => {
@@ -712,13 +767,22 @@ export default function DoctorDashboardPage() {
     }
   };
 
-  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  // ── Keyboard shortcuts (Space or Ctrl + Enter) ─────────────────────────────
   const saveAndCallRef = useRef(handleSaveAndCallNext);
   useEffect(() => { saveAndCallRef.current = handleSaveAndCallNext; });
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      const isTyping =
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        (document.activeElement as HTMLElement)?.isContentEditable;
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        saveAndCallRef.current();
+      } else if (e.code === 'Space' && !isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         saveAndCallRef.current();
       }
@@ -1342,18 +1406,29 @@ export default function DoctorDashboardPage() {
                           placeholder={`1. Amoxicillin 500mg cap #21 — 1 cap TID × 7 days\n2. Paracetamol 500mg tab #10 — 1 tab Q4h PRN fever\n3. Cetirizine 10mg tab #7 — 1 tab OD HS`}
                           className="font-mono text-xs"
                         />
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 mt-1">
                           <span>
                             💊 Integrated with Philippine Formulary &amp; S2 Yellow Pad separation.
                           </span>
                           {currentlyServing && (
-                            <Link
-                              href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
-                              target="_blank"
-                              className="text-brand-600 hover:underline font-medium"
-                            >
-                              Launch Full Digital Rx Pad →
-                            </Link>
+                            <div className="flex items-center gap-3">
+                              <Link
+                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
+                                target="_blank"
+                                className="text-brand-600 hover:underline font-semibold"
+                              >
+                                Digital Rx Pad →
+                              </Link>
+                              <span className="text-slate-300">·</span>
+                              <Link
+                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
+                                target="_blank"
+                                className="text-emerald-700 hover:underline font-semibold flex items-center gap-1"
+                              >
+                                <FlaskConical className="h-3 w-3" />
+                                Order Labs &amp; Imaging →
+                              </Link>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1428,6 +1503,28 @@ export default function DoctorDashboardPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
+                        onClick={() => {
+                          const skippedPatient = appointments.find((a) => a.status === 'SKIPPED' || a.status === 'BUFFERED');
+                          if (skippedPatient) {
+                            handleRestoreBuffered(skippedPatient.id);
+                          } else {
+                            setToastNotice({
+                              type: 'brand',
+                              title: 'Recall Patient',
+                              message: 'No skipped or deferred patient in buffer lane to recall.',
+                            });
+                          }
+                        }}
+                        className="text-xs text-brand-700 hover:bg-brand-50"
+                        title="Recall skipped or buffered patient back into active line"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                        Recall Patient
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleSkipCurrent(false)}
                         className="text-xs text-slate-500 hover:text-red-700 hover:bg-red-50"
                         title="Skip patient if called and absent"
@@ -1439,7 +1536,7 @@ export default function DoctorDashboardPage() {
 
                     <div className="flex items-center gap-2 ml-auto">
                       <span className="text-[11px] text-slate-400 font-mono hidden sm:block">
-                        ⌨️ Ctrl + Enter
+                        ⌨️ Space or Ctrl+Enter
                       </span>
                       <Button
                         variant="brand"
@@ -1516,48 +1613,41 @@ export default function DoctorDashboardPage() {
                     <Crown className="h-4 w-4" />
                     <AlertTitle className="text-xs">Longitudinal EMR Enabled</AlertTitle>
                     <AlertDescription className="text-[11px]">
-                      3 past encounters found for this patient.
+                      {pastEncounters.length > 0
+                        ? `${pastEncounters.length} past encounter${pastEncounters.length > 1 ? 's' : ''} found across all clinic locations.`
+                        : 'No prior clinical records found in the network. This is the patient’s initial visit.'}
                     </AlertDescription>
                   </Alert>
-                  {[
-                    {
-                      date: 'Oct 14, 2025',
-                      room: 'Maria Reyna 304',
-                      dx: 'Acute Bronchitis',
-                      vitals: 'BP 122/80, HR 80 bpm',
-                      rx: 'Co-Amoxiclav 625mg BID × 7 days',
-                    },
-                    {
-                      date: 'June 22, 2025',
-                      room: 'Polymedic Plaza 210',
-                      dx: 'Routine Annual Checkup. Normal ECG.',
-                      vitals: 'BP 118/78, HR 72 bpm',
-                      rx: null,
-                      attachment: 'Complete_Blood_Count_Lab.pdf',
-                    },
-                  ].map((enc) => (
-                    <div
-                      key={enc.date}
-                      className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-slate-800">
-                          Encounter: {enc.date} ({enc.room})
-                        </span>
-                        <span className="text-slate-400">Dr. Santos</span>
-                      </div>
-                      <p className="text-slate-600">Diagnosis: {enc.dx} · {enc.vitals}</p>
-                      {enc.rx && (
-                        <p className="font-mono text-brand-700 mt-0.5">℞ {enc.rx}</p>
-                      )}
-                      {enc.attachment && (
-                        <div className="flex items-center gap-1.5 mt-1 text-blue-600 font-medium">
-                          <Paperclip className="h-3 w-3" />
-                          <span>{enc.attachment}</span>
+
+                  {pastEncounters.length > 0 ? (
+                    pastEncounters.map((enc) => (
+                      <div
+                        key={enc.id || enc.date}
+                        className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-slate-800">
+                            Encounter: {enc.date} ({enc.room})
+                          </span>
+                          <span className="text-slate-400 font-medium">Physician Record</span>
                         </div>
-                      )}
+                        <p className="text-slate-600">Diagnosis: {enc.dx} · {enc.vitals}</p>
+                        {enc.rx && (
+                          <p className="font-mono text-brand-700 mt-0.5">℞ {enc.rx}</p>
+                        )}
+                        {enc.attachment && (
+                          <div className="flex items-center gap-1.5 mt-1 text-blue-600 font-medium">
+                            <Paperclip className="h-3 w-3" />
+                            <span>{enc.attachment}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs">
+                      First consultation for this patient record.
                     </div>
-                  ))}
+                  )}
                 </CardContent>
               ) : subscriptionTier !== 'pro' ? (
                 <CardContent className="pt-0">

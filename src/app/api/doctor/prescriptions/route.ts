@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { SemaphoreService } from '@/lib/sms/semaphore';
 
 /**
  * POST /api/doctor/prescriptions
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     // ── Resolve doctor_id from queue session or authenticated doctor ─────────
     const { data: appt, error: apptErr } = await supabase
       .from('appointments')
-      .select('queue_session_id, patient_id')
+      .select('queue_session_id, patient_id, walk_in_phone')
       .eq('id', appointmentId)
       .single();
 
@@ -120,7 +121,7 @@ export async function POST(req: NextRequest) {
       duration: item.duration || null,
       details: item.details || (item.quantity ? `Qty: #${item.quantity}` : null),
       instructions: item.instructions || null,
-      is_digital_copy_sent: false,
+      is_digital_copy_sent: !!body.pushToPatient,
     }));
 
     const { data: savedPrescriptions, error: rxErr } = await supabase
@@ -135,11 +136,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── If pushToPatient requested, dispatch Semaphore SMS to patient ────────
+    let smsDispatched = false;
+    if (body.pushToPatient && resolvedPatientId) {
+      try {
+        const { data: patientProfile } = await supabase
+          .from('profiles')
+          .select('phone_number, full_name')
+          .eq('id', resolvedPatientId)
+          .maybeSingle();
+
+        const phone = patientProfile?.phone_number || appt.walk_in_phone;
+        if (phone) {
+          await SemaphoreService.sendSMS({
+            phoneNumber: phone,
+            message: `[Clinic Natin] Your digital consultation orders (Rx / Lab Requests) are ready. Access your official digital passport: https://clinicnatin.ph/passport`,
+            notificationType: 'SLOT_CONFIRMED',
+            appointmentId,
+          });
+          smsDispatched = true;
+        }
+      } catch (smsErr) {
+        console.warn('[prescriptions] Failed to dispatch push SMS:', smsErr);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       medicalRecordId,
       prescriptionCount: savedPrescriptions?.length ?? 0,
-      message: `${savedPrescriptions?.length ?? 0} prescription item(s) saved to Supabase.`,
+      smsDispatched,
+      message: `${savedPrescriptions?.length ?? 0} item(s) saved to Supabase.${smsDispatched ? ' Digital copy pushed via SMS.' : ''}`,
     });
   } catch (err) {
     console.error('[prescriptions] Unexpected error:', err);

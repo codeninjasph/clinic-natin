@@ -21,6 +21,7 @@ export interface DoctorData {
   email: string;
   isVerified: boolean;
   verificationStatus: 'VERIFIED' | 'PENDING' | 'RE_UPLOAD_REQUESTED' | 'REVOKED';
+  signatureUrl?: string | null;
 }
 
 export interface ClinicRoom {
@@ -187,6 +188,9 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
             (matchedDoctorRow.verification_status === 'VERIFIED'),
           verificationStatus:
             (matchedDoctorRow.verification_status as any) || 'VERIFIED',
+          signatureUrl:
+            matchedDoctorRow.signature_url ||
+            (typeof window !== 'undefined' ? localStorage.getItem('doctor_signature_url') : null),
         };
         setDoctor(docData);
 

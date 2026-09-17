@@ -438,7 +438,14 @@ export default function DoctorPatientsPage() {
                               <span className="text-[10px] text-slate-400">No visits yet</span>
                             )}
                           </div>
-                          <ChevronRight className="h-4 w-4 text-slate-400" />
+                          <Link
+                            href={`/doctor/patients/${p.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Open full clinical chart"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-700 hover:bg-brand-50 transition-colors"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Link>
                         </div>
                       </div>
                     );
@@ -479,24 +486,36 @@ export default function DoctorPatientsPage() {
                 </div>
 
                 {/* Quick actions for selected patient */}
-                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
+                <div className="space-y-2 mt-3 pt-2 border-t border-slate-100">
                   <Link
-                    href={`/doctor/rx?patientId=${selectedPatient.id}`}
-                    target="_blank"
-                    className="flex-1"
+                    href={`/doctor/patients/${selectedPatient.id}`}
+                    className="w-full block"
                   >
-                    <Button variant="outline" size="sm" className="w-full text-xs font-semibold">
-                      <Pill className="h-3.5 w-3.5 mr-1 text-brand-600" />
-                      Issue Digital Rx
+                    <Button variant="default" size="sm" className="w-full text-xs font-semibold bg-brand-800 hover:bg-brand-900 text-white">
+                      <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                      Open Full Comprehensive Chart →
                     </Button>
                   </Link>
 
-                  <Link href="/doctor/dashboard" className="flex-1">
-                    <Button variant="brand" size="sm" className="w-full text-xs font-semibold">
-                      <Stethoscope className="h-3.5 w-3.5 mr-1" />
-                      Open in Cockpit
-                    </Button>
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/doctor/rx?patientId=${selectedPatient.id}`}
+                      target="_blank"
+                      className="flex-1"
+                    >
+                      <Button variant="outline" size="sm" className="w-full text-xs font-semibold">
+                        <Pill className="h-3.5 w-3.5 mr-1 text-brand-600" />
+                        Issue Digital Rx
+                      </Button>
+                    </Link>
+
+                    <Link href="/doctor/dashboard" className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full text-xs font-semibold">
+                        <Stethoscope className="h-3.5 w-3.5 mr-1 text-brand-700" />
+                        Doctor Cockpit
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               </CardHeader>
 

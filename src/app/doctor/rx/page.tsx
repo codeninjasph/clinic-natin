@@ -21,6 +21,9 @@ import {
 } from 'lucide-react';
 import { searchFormulary, type PhDrug } from '@/data/ph-formulary';
 import { useDoctor } from '../doctor-context';
+import QRCode from 'qrcode';
+import { DiagnosticRequisitionPad, type DiagnosticOrder } from '@/components/doctor/diagnostic-requisition-pad';
+import { generateRxVerificationHash } from '@/lib/crypto/rx-security';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -59,6 +62,7 @@ interface DoctorProfile {
   prcLicense: string;
   ptrNumber: string;
   s2License: string;
+  signatureUrl?: string | null;
   clinicAddress: string;
   clinicPhone: string;
 }
@@ -520,6 +524,23 @@ function PrintableRx({
   const regularItems = items.filter((i) => !i.isS2 && (i.genericName || i.brandName));
   const s2Items = items.filter((i) => i.isS2 && (i.genericName || i.brandName));
 
+  const verification = generateRxVerificationHash({
+    doctorPrc: doctor.prcLicense,
+    patientId: patientName || 'Walk-in',
+    date: rxDate,
+    items: items.map((i) => ({ genericName: i.genericName, dosage: i.dosageForm })),
+  });
+
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+
+  useEffect(() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://clinicnatin.ph';
+    const verifyUrl = `${origin}/verify-rx/${verification.verificationCode}`;
+    QRCode.toDataURL(verifyUrl, { margin: 1, width: 80 })
+      .then(setQrDataUrl)
+      .catch(() => {});
+  }, [verification.verificationCode]);
+
   const renderRxSlip = (slipItems: RxItem[], padColor: 'white' | 'yellow') => (
     <div
       className={`rounded-2xl border-2 p-6 space-y-4 rx-slip ${
@@ -580,19 +601,45 @@ function PrintableRx({
         </div>
       )}
 
-      {/* Signature area */}
-      <div className="mt-6 pt-4 border-t border-slate-200 flex items-end justify-between">
-        <div className="text-xs text-slate-400 space-y-1">
-          <p>Patient or Guardian Signature: ______________________</p>
-          <p>Dispensed by: ______________________ Date: __________</p>
+      {/* Signature & Verification Area */}
+      <div className="mt-6 pt-4 border-t border-slate-200 flex items-end justify-between gap-4">
+        {/* Left: Tamper-Evident QR Code & Token */}
+        <div className="flex items-center gap-3">
+          {qrDataUrl ? (
+            <img
+              src={qrDataUrl}
+              alt="FDA Verification QR"
+              className="h-16 w-16 border border-slate-200 rounded-lg p-0.5 bg-white shrink-0"
+            />
+          ) : (
+            <div className="h-16 w-16 border border-slate-200 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+              <span className="text-[9px] font-mono text-slate-400">QR</span>
+            </div>
+          )}
+          <div className="text-[9px] text-slate-500 font-mono space-y-0.5">
+            <p className="font-bold text-slate-800 uppercase tracking-tight">FDA Circular 2020-007</p>
+            <p>Verification Token: <strong className="text-brand-800">{verification.verificationCode}</strong></p>
+            <p className="text-[8px] text-slate-400">Scan QR or visit clinicnatin.ph/verify-rx</p>
+          </div>
         </div>
-        <div className="text-right text-xs">
-          <div className="border-t border-slate-800 w-36 mb-1 ml-auto" />
+
+        {/* Right: Electronic Signature & Credentials */}
+        <div className="text-right text-xs flex flex-col items-end shrink-0">
+          {doctor.signatureUrl ? (
+            <img
+              src={doctor.signatureUrl}
+              alt="Doctor Signature"
+              className="h-10 object-contain max-w-[140px] -mb-1"
+            />
+          ) : (
+            <div className="border-t border-slate-800 w-36 mb-1" />
+          )}
           <p className="font-bold text-slate-800">
             {doctor.title} {doctor.name}
           </p>
           <p className="text-slate-500">{doctor.specialty}</p>
           <p className="font-mono text-slate-600 text-[10px]">PRC {doctor.prcLicense}</p>
+          <p className="font-mono text-slate-600 text-[10px]">PTR {doctor.ptrNumber}</p>
           {padColor === 'yellow' && doctor.s2License && (
             <p className="font-mono text-amber-700 font-bold text-[10px]">
               S2 Lic: {doctor.s2License}
@@ -651,6 +698,9 @@ function RxPadContent() {
   const patientNameParam = searchParams.get('patient') || '';
   const tokenCode = searchParams.get('token') || '';
 
+  // Pad mode state (Prescription vs Diagnostic Lab Requisition)
+  const [padMode, setPadMode] = useState<'PRESCRIPTION' | 'LAB_REQUISITION'>('PRESCRIPTION');
+
   // Rx state
   const [rxItems, setRxItems] = useState<RxItem[]>([newRxItem()]);
   const [patientName, setPatientName] = useState(patientNameParam);
@@ -675,6 +725,7 @@ function RxPadContent() {
     prcLicense: doctor?.prcLicense || '0123456',
     ptrNumber: doctor?.ptrNumber || 'PTR-CDO-2026-00189',
     s2License: doctor?.s2License || '',
+    signatureUrl: doctor?.signatureUrl || (typeof window !== 'undefined' ? localStorage.getItem('doctor_signature_url') : null),
     clinicAddress: selectedRoom ? `${selectedRoom.room}, ${selectedRoom.hospital}` : 'Room 304, Maria Reyna XU Hospital, CDO',
     clinicPhone: '+63 88 850 3000',
   };
@@ -687,21 +738,25 @@ function RxPadContent() {
         const res = await fetch(`/api/doctor/prescriptions?appointmentId=${appointmentId}`);
         const data = await res.json();
         if (data?.prescriptions && data.prescriptions.length > 0) {
-          const loaded: RxItem[] = data.prescriptions.map((p: any) => ({
-            id: p.id || crypto.randomUUID(),
-            genericName: p.generic_name || '',
-            brandName: p.brand_name || '',
-            dosageForm: p.dosage || '',
-            strength: '',
-            quantity: p.details?.replace(/^Qty:\s*#?/, '') || '',
-            frequency: p.frequency || '',
-            duration: p.duration || '',
-            instructions: p.instructions || '',
-            isS2: false,
-            isControlled: false,
-          }));
-          setRxItems(loaded);
-          setShowPreview(true);
+          const loaded: RxItem[] = data.prescriptions
+            .filter((p: any) => !p.item_type || p.item_type === 'MEDICATION')
+            .map((p: any) => ({
+              id: p.id || crypto.randomUUID(),
+              genericName: p.generic_name || '',
+              brandName: p.brand_name || '',
+              dosageForm: p.dosage || '',
+              strength: '',
+              quantity: p.details?.replace(/^Qty:\s*#?/, '') || '',
+              frequency: p.frequency || '',
+              duration: p.duration || '',
+              instructions: p.instructions || '',
+              isS2: false,
+              isControlled: false,
+            }));
+          if (loaded.length > 0) {
+            setRxItems(loaded);
+            setShowPreview(true);
+          }
         }
       } catch (err) {
         console.error('Error loading existing prescriptions:', err);
@@ -736,8 +791,8 @@ function RxPadContent() {
     setRxItems((prev) => [...prev, newRxItem()]);
   };
 
-  // Save to Supabase
-  const handleSave = async () => {
+  // Save to Supabase & Optional Push to Patient Passport
+  const handleSave = async (pushToPatient = false) => {
     if (doctor && (!doctor.isVerified || doctor.verificationStatus === 'PENDING')) {
       setToastNotice({
         type: 'destructive',
@@ -768,15 +823,59 @@ function RxPadContent() {
           appointmentId: appointmentId || undefined,
           patientId: null,
           items: itemsToSave,
+          pushToPatient,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
-      setToastNotice({ type: 'success', message: `✅ ${data.prescriptionCount} Rx item(s) saved to EMR.` });
+      setToastNotice({
+        type: 'success',
+        message: pushToPatient
+          ? `✅ Official e-Prescription saved & pushed to patient via SMS.`
+          : `✅ ${data.prescriptionCount} Rx item(s) saved to EMR.`,
+      });
       setTimeout(() => setToastNotice(null), 6000);
     } catch {
       setToastNotice({ type: 'destructive', message: '❌ Could not save to Supabase. Print anyway.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveLabOrders = async (order: DiagnosticOrder) => {
+    setIsSaving(true);
+    try {
+      const itemsToSave = order.tests.map((t) => ({
+        itemType: t.category === 'Imaging & Cardiology' ? ('IMAGING' as const) : ('LAB_TEST' as const),
+        genericName: t.testName,
+        details: t.details || (t.fastingRequired ? '10-12h Fasting' : undefined),
+        instructions: order.clinicalImpression || undefined,
+      }));
+
+      const res = await fetch('/api/doctor/prescriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: appointmentId || undefined,
+          patientId: null,
+          items: itemsToSave,
+          pushToPatient: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setToastNotice({
+        type: 'success',
+        message: `✅ Diagnostic requisition issued and saved (${order.tests.length} tests).`,
+      });
+      setTimeout(() => setToastNotice(null), 6000);
+    } catch {
+      setToastNotice({
+        type: 'destructive',
+        message: '❌ Could not save lab order to database.',
+      });
     } finally {
       setIsSaving(false);
     }
@@ -792,8 +891,8 @@ function RxPadContent() {
 
   return (
     <div className={`space-y-5 ${showPreview ? 'max-w-6xl' : 'max-w-4xl'} transition-all`}>
-      {/* ── Top breadcrumb bar ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between no-print">
+      {/* ── Top breadcrumb & Mode Toggle ─────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print border-b border-slate-200 pb-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild className="h-8 gap-1.5 text-xs text-slate-600">
             <Link href="/doctor/dashboard">
@@ -802,55 +901,85 @@ function RxPadContent() {
             </Link>
           </Button>
           <Separator orientation="vertical" className="h-4" />
-          <div className="flex items-center gap-2">
-            <Pill className="h-4 w-4 text-brand-700" />
-            <span className="text-sm font-bold text-slate-900">Digital Rx Pad</span>
-            <Badge variant="brand" className="text-[10px]">FDA Circular 2020-007</Badge>
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setPadMode('PRESCRIPTION')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                padMode === 'PRESCRIPTION'
+                  ? 'bg-white text-brand-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Pill className="h-3.5 w-3.5 text-brand-600" />
+              Prescription (℞)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPadMode('LAB_REQUISITION')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                padMode === 'LAB_REQUISITION'
+                  ? 'bg-white text-brand-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5 text-brand-600" />
+              Lab Requisition (Req)
+            </button>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
           {tokenCode && (
             <Badge variant="success" className="font-mono text-xs">
               Token: {tokenCode}
             </Badge>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowPreview((v) => !v)}
-            className="text-xs"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            {showPreview ? 'Hide Preview' : 'Show Preview'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSave}
-            disabled={!hasValidItems || isSaving || !appointmentId}
-            className="text-xs"
-            title={!appointmentId ? 'No active appointment — cannot save to EMR' : ''}
-          >
-            {isSaving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5" />
-            )}
-            Save to EMR
-          </Button>
-          <Button
-            variant="brand"
-            size="sm"
-            onClick={handlePrint}
-            className="text-xs"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print Rx
-          </Button>
+          {padMode === 'PRESCRIPTION' && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPreview((v) => !v)}
+                className="text-xs"
+              >
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {showPreview ? 'Hide Slip' : 'Preview Slip'}
+              </Button>
+              <Button
+                variant="brand"
+                size="sm"
+                onClick={() => handleSave(true)}
+                disabled={!hasValidItems || isSaving || !appointmentId}
+                className="text-xs font-semibold"
+                title={!appointmentId ? 'No active appointment — cannot save to EMR' : ''}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                ) : (
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                )}
+                Push to Passport (SMS)
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── Toast ──────────────────────────────────────────────────────────── */}
+      {/* ── Mode Render ──────────────────────────────────────────────────────── */}
+      {padMode === 'LAB_REQUISITION' ? (
+        <DiagnosticRequisitionPad
+          patientName={patientName}
+          patientAge={patientAge}
+          doctorProfile={doctorProfile}
+          onSaveOrders={appointmentId ? handleSaveLabOrders : undefined}
+          isSaving={isSaving}
+        />
+      ) : (
+        <>
+          {/* ── Toast ──────────────────────────────────────────────────────────── */}
       {toastNotice && (
         <Alert variant={toastNotice.type === 'destructive' ? 'destructive' : 'success'} className="no-print">
           <div className="flex items-center justify-between w-full">
@@ -1053,8 +1182,10 @@ function RxPadContent() {
           />
         </div>
       </div>
+      </>
+      )}
 
-      {/* ── Print CSS ─────────────────────────────────────────────────────── */}
+      {/* ── Print CSS (Formatted for Philippine Standard 1/2 Letter Bond Paper) ─ */}
       <style>{`
         @media print {
           /* 1. Hide web app chrome */
@@ -1084,21 +1215,24 @@ function RxPadContent() {
             visibility: hidden;
           }
 
-          /* 4. Only show printable prescription zone */
+          /* 4. Only show printable prescription & lab zone */
           .rx-print-zone,
-          .rx-print-zone * {
+          .rx-print-zone *,
+          #lab-requisition-slip,
+          #lab-requisition-slip * {
             visibility: visible !important;
           }
 
           /* 5. Anchor print zone to top-left of paper */
-          .rx-print-zone {
+          .rx-print-zone,
+          #lab-requisition-slip {
             display: block !important;
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 6mm !important;
             background: #ffffff !important;
           }
 
@@ -1112,13 +1246,13 @@ function RxPadContent() {
           .rx-slip {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            margin-bottom: 16mm !important;
+            margin-bottom: 12mm !important;
             box-shadow: none !important;
           }
 
           @page {
-            size: auto;
-            margin: 12mm;
+            size: 8.5in 5.5in;
+            margin: 6mm;
           }
         }
       `}</style>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Settings2,
   FileCheck,
@@ -12,6 +12,9 @@ import {
   Building2,
   FileText,
   CheckCircle2,
+  PenTool,
+  Eraser,
+  Upload,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useDoctor } from '../doctor-context';
@@ -57,6 +60,14 @@ export default function DoctorSettingsPage() {
   const [hmos, setHmos] = useState<string[]>(doctor?.hmoAccreditations || ['Maxicare', 'Intellicare', 'PhilHealth']);
   const [hospitalAffiliation, setHospitalAffiliation] = useState(doctor?.hospitalAffiliation || 'Maria Reyna XU Hospital');
   const [roomAssignment, setRoomAssignment] = useState(doctor?.roomAssignment || 'Room 304');
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('doctor_signature_url') || null;
+    }
+    return null;
+  });
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Sync state when doctor context loads
   useEffect(() => {
@@ -71,8 +82,75 @@ export default function DoctorSettingsPage() {
       setHmos(doctor.hmoAccreditations || []);
       setHospitalAffiliation(doctor.hospitalAffiliation || '');
       setRoomAssignment(doctor.roomAssignment || '');
+      if (doctor.signatureUrl && !signatureDataUrl) {
+        setSignatureDataUrl(doctor.signatureUrl);
+      }
     }
   }, [doctor]);
+
+  // Canvas drawing handlers
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    setIsDrawing(true);
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    ctx.beginPath();
+    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const data = canvas.toDataURL('image/png');
+      setSignatureDataUrl(data);
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    setSignatureDataUrl(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('doctor_signature_url');
+    }
+  };
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const res = event.target?.result as string;
+      setSignatureDataUrl(res);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Toggle HMO selection
   const handleToggleHMO = (hmo: string) => {
@@ -109,6 +187,15 @@ export default function DoctorSettingsPage() {
           .from('profiles')
           .update({ full_name: fullName })
           .eq('id', doctor.profileId);
+      }
+
+      // 3. Persist signature
+      if (typeof window !== 'undefined') {
+        if (signatureDataUrl) {
+          localStorage.setItem('doctor_signature_url', signatureDataUrl);
+        } else {
+          localStorage.removeItem('doctor_signature_url');
+        }
       }
 
       setToastNotice({
@@ -315,6 +402,74 @@ export default function DoctorSettingsPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Electronic Signature Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <PenTool className="h-4 w-4 text-brand-600" />
+                      Doctor Electronic Signature
+                    </CardTitle>
+                    <CardDescription>
+                      FDA Circular No. 2020-007 compliant digital e-sign stamped onto digital prescriptions &amp; lab requests
+                    </CardDescription>
+                  </div>
+                  {signatureDataUrl && (
+                    <Badge variant="success" className="text-[10px]">
+                      Signature Set
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-2 relative">
+                  <canvas
+                    ref={canvasRef}
+                    width={400}
+                    height={120}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                    className="w-full h-28 bg-white rounded-lg border border-slate-200 cursor-crosshair touch-none"
+                  />
+                  {!signatureDataUrl && !isDrawing && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-slate-300 text-xs italic">
+                      Draw signature here using mouse or touch...
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={clearSignature}
+                    className="text-xs text-slate-600"
+                  >
+                    <Eraser className="h-3.5 w-3.5 mr-1" />
+                    Clear Pad
+                  </Button>
+
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors">
+                    <Upload className="h-3.5 w-3.5 text-slate-500" />
+                    Upload Signature Image (PNG)
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      onChange={handleSignatureUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right Column: Live Rx Header Preview */}
@@ -362,6 +517,21 @@ export default function DoctorSettingsPage() {
                     <div className="pl-4 font-mono text-xs text-slate-800 space-y-1">
                       <p className="font-bold">Amoxicillin + Clavulanic Acid 625mg tab</p>
                       <p className="text-[11px] text-slate-500">Sig: 1 tab BID with meals for 7 days #14</p>
+                    </div>
+
+                    {/* Signature block */}
+                    <div className="pt-3 flex flex-col items-end border-t border-slate-100">
+                      {signatureDataUrl ? (
+                        <img
+                          src={signatureDataUrl}
+                          alt="Doctor Signature"
+                          className="h-10 object-contain max-w-[140px] -mb-1"
+                        />
+                      ) : (
+                        <div className="h-6 border-b border-slate-300 w-32 mb-1" />
+                      )}
+                      <p className="text-[11px] font-bold text-slate-900">{fullName || 'Dr. Maria Santos, MD'}</p>
+                      <p className="text-[10px] text-slate-500 font-mono">PRC: {prcLicense || '0108742'}</p>
                     </div>
                   </div>
 
