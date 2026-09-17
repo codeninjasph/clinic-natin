@@ -55,6 +55,7 @@ interface DoctorContextValue {
   setSelectedRoom: (room: ClinicRoom) => void;
   activeSession: ActiveSession | null;
   refreshDoctorData: () => Promise<void>;
+  startSession: (clinicId?: string) => Promise<boolean>;
   pauseSession: (reason?: string, notifyRemaining?: boolean) => Promise<boolean>;
   resumeSession: () => Promise<boolean>;
   endSession: (isEmergency?: boolean, notifyRemaining?: boolean) => Promise<boolean>;
@@ -109,6 +110,7 @@ const DoctorContext = createContext<DoctorContextValue>({
   setSelectedRoom: () => {},
   activeSession: null,
   refreshDoctorData: async () => {},
+  startSession: async () => false,
   pauseSession: async () => false,
   resumeSession: async () => false,
   endSession: async () => false,
@@ -277,7 +279,20 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchDoctorData();
-  }, [fetchDoctorData]);
+    const channel = supabase
+      .channel('doctor-context-sessions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'queue_sessions' },
+        () => {
+          fetchDoctorData();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchDoctorData, supabase]);
 
   const setSelectedRoom = (room: ClinicRoom) => {
     setSelectedRoomState(room);
@@ -287,8 +302,36 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const startSession = async (clinicId?: string): Promise<boolean> => {
+    const targetClinicId = clinicId || selectedRoom?.clinicId;
+    if (!doctor?.id || !targetClinicId) return false;
+    try {
+      const res = await fetch('/api/queue/start-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicId: targetClinicId,
+          doctorId: doctor.id,
+        }),
+      });
+      if (!res.ok) throw new Error('Start session failed');
+      const data = await res.json();
+      if (data.session) {
+        setActiveSession(data.session as ActiveSession);
+      }
+      await fetchDoctorData();
+      return true;
+    } catch (e) {
+      console.error('Error starting session:', e);
+      return false;
+    }
+  };
+
   const pauseSession = async (reason?: string, notifyRemaining = true): Promise<boolean> => {
     if (!activeSession) return false;
+    const pauseNotice = reason || 'Doctor on urgent hospital rounds / checking on confined patient';
+    // Optimistic update for instant UI feedback
+    setActiveSession((prev) => (prev ? { ...prev, status: 'PAUSED', announcement_notice: pauseNotice } : null));
     try {
       const res = await fetch('/api/queue/end-session', {
         method: 'POST',
@@ -296,7 +339,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           sessionId: activeSession.id,
           action: 'PAUSE',
-          reason: reason || 'Doctor on urgent hospital rounds / checking on confined patient',
+          reason: pauseNotice,
           notifyRemaining,
         }),
       });
@@ -305,12 +348,15 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (e) {
       console.error('Error pausing session:', e);
+      await fetchDoctorData();
       return false;
     }
   };
 
   const resumeSession = async (): Promise<boolean> => {
     if (!activeSession) return false;
+    // Optimistic update for instant UI feedback
+    setActiveSession((prev) => (prev ? { ...prev, status: 'ACTIVE', announcement_notice: null } : null));
     try {
       const res = await fetch('/api/queue/end-session', {
         method: 'POST',
@@ -325,12 +371,15 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (e) {
       console.error('Error resuming session:', e);
+      await fetchDoctorData();
       return false;
     }
   };
 
   const endSession = async (isEmergency = false, notifyRemaining = true): Promise<boolean> => {
     if (!activeSession) return false;
+    // Optimistic update
+    setActiveSession(null);
     try {
       const res = await fetch('/api/queue/end-session', {
         method: 'POST',
@@ -342,11 +391,11 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
         }),
       });
       if (!res.ok) throw new Error('End session failed');
-      setActiveSession(null);
       await fetchDoctorData();
       return true;
     } catch (e) {
       console.error('Error ending session:', e);
+      await fetchDoctorData();
       return false;
     }
   };
@@ -360,6 +409,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
         setSelectedRoom,
         activeSession,
         refreshDoctorData: fetchDoctorData,
+        startSession,
         pauseSession,
         resumeSession,
         endSession,

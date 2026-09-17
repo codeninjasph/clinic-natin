@@ -63,6 +63,7 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
     selectedRoom,
     setSelectedRoom,
     activeSession,
+    startSession,
     pauseSession,
     resumeSession,
     endSession,
@@ -84,6 +85,12 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
   const [notifySMS, setNotifySMS] = React.useState(true);
   const [isEmergencyEnd, setIsEmergencyEnd] = React.useState(false);
   const [isProcessingSession, setIsProcessingSession] = React.useState(false);
+
+  const handleStartSession = async () => {
+    setIsProcessingSession(true);
+    await startSession();
+    setIsProcessingSession(false);
+  };
 
   const handleConfirmPause = async () => {
     setIsProcessingSession(true);
@@ -283,7 +290,7 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Center: Live telemetry & Session Controls */}
-          <div className="hidden lg:flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             {activeSession ? (
               activeSession.status === 'PAUSED' ? (
                 <div className="flex items-center gap-2">
@@ -296,10 +303,11 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
                     variant="outline"
                     onClick={handleResumeSession}
                     disabled={isProcessingSession}
-                    className="h-7 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-300 gap-1 px-2.5 rounded-lg"
+                    className="h-7 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-300 gap-1.5 px-2.5 rounded-lg"
+                    title="Resume active patient consultation queue"
                   >
                     <Play className="h-3 w-3 fill-emerald-700" />
-                    Resume Clinic
+                    Resume Session
                   </Button>
                   <Button
                     size="sm"
@@ -309,10 +317,11 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
                       setShowEndDialog(true);
                     }}
                     disabled={isProcessingSession}
-                    className="h-7 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border-red-200 gap-1 px-2 rounded-lg"
+                    className="h-7 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border-red-200 gap-1.5 px-2.5 rounded-lg"
+                    title="Conclude clinic session for today"
                   >
                     <XCircle className="h-3 w-3" />
-                    End
+                    End Session
                   </Button>
                 </div>
               ) : (
@@ -327,10 +336,10 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
                     onClick={() => setShowPauseDialog(true)}
                     disabled={isProcessingSession}
                     title="Pause queue to check on confined patient or attend hospital rounds"
-                    className="h-7 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 gap-1 px-2 rounded-lg"
+                    className="h-7 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-300 gap-1.5 px-2.5 rounded-lg"
                   >
                     <Pause className="h-3 w-3" />
-                    Rounds
+                    Pause (Rounds)
                   </Button>
                   <Button
                     size="sm"
@@ -340,18 +349,33 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
                       setShowEndDialog(true);
                     }}
                     disabled={isProcessingSession}
-                    title="Conclude clinic session"
-                    className="h-7 text-xs font-medium text-slate-600 hover:text-red-600 hover:bg-red-50 hover:border-red-200 border-slate-200 gap-1 px-2 rounded-lg"
+                    title="Conclude clinic session for today"
+                    className="h-7 text-xs font-medium text-slate-600 hover:text-red-600 hover:bg-red-50 hover:border-red-200 border-slate-200 gap-1.5 px-2.5 rounded-lg"
                   >
                     <XCircle className="h-3 w-3" />
-                    End
+                    End Session
                   </Button>
                 </div>
               )
             ) : (
-              <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                <span>No Active Session</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                  <span>No Active Session</span>
+                </div>
+                {selectedRoom && (
+                  <Button
+                    size="sm"
+                    variant="brand"
+                    onClick={handleStartSession}
+                    disabled={isProcessingSession}
+                    className="h-7 text-xs font-semibold gap-1.5 px-2.5 rounded-lg shadow-xs"
+                    title={`Open consultation session at ${selectedRoom.clinicName}`}
+                  >
+                    <Play className="h-3 w-3 fill-current" />
+                    Start Session
+                  </Button>
+                )}
               </div>
             )}
             <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">

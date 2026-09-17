@@ -7,6 +7,7 @@ import {
   Users,
   CheckCircle2,
   Play,
+  Pause,
   RefreshCw,
   BellRing,
   Activity,
@@ -249,7 +250,7 @@ function PriorityBadge({ category }: { category: string }) {
 // ──────────────────────────────────────────────────────────────────────────────
 export default function DoctorDashboardPage() {
   const supabase = createClient();
-  const { doctor, selectedRoom, refreshDoctorData } = useDoctor();
+  const { doctor, selectedRoom, refreshDoctorData, startSession, resumeSession } = useDoctor();
 
   // Queue state
   const [session, setSession] = useState<QueueSession | null>(null);
@@ -406,23 +407,14 @@ export default function DoctorDashboardPage() {
     if (!selectedRoom?.clinicId || !doctor?.id) return;
     setIsStartingSession(true);
     try {
-      const res = await fetch('/api/queue/start-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clinicId: selectedRoom.clinicId,
-          doctorId: doctor.id,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to start session');
+      const ok = await startSession(selectedRoom.clinicId);
+      if (!ok) throw new Error('Failed to start session');
       setToastNotice({
         type: 'success',
         title: 'Session Started',
         message: `Queue session opened at ${selectedRoom.clinicName} (${selectedRoom.room}).`,
       });
       await fetchDoctorQueue();
-      await refreshDoctorData();
     } catch (err: unknown) {
       setToastNotice({
         type: 'destructive',
@@ -907,6 +899,39 @@ export default function DoctorDashboardPage() {
                 <Play className="h-4 w-4 fill-current mr-1.5" />
               )}
               Start Today&apos;s Session
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Paused Session Alert Banner (if queue paused on rounds) ── */}
+      {session?.status === 'PAUSED' && (
+        <Card className="border-amber-300 bg-amber-50/80 shadow-xs">
+          <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                <Pause className="h-5 w-5 fill-current" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-amber-950 text-sm">Clinic Queue is Currently Paused (On Hospital Rounds)</h3>
+                  <Badge variant="warning" className="text-[10px]">PAUSED</Badge>
+                </div>
+                <p className="text-xs text-amber-800 mt-0.5">
+                  Queue operations are temporarily paused while attending to rounds. Click Resume Session when you return to your desk.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="brand"
+              onClick={async () => {
+                await resumeSession();
+                await fetchDoctorQueue();
+              }}
+              className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-xs text-xs font-semibold"
+            >
+              <Play className="h-3.5 w-3.5 fill-current mr-1.5" />
+              Resume Session
             </Button>
           </CardContent>
         </Card>

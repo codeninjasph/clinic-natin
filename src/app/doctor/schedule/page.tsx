@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import {
   CalendarDays,
   CalendarX,
@@ -17,6 +18,7 @@ import {
   Users,
   MapPin,
   Trash2,
+  Stethoscope,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useDoctor } from '../doctor-context';
@@ -87,7 +89,7 @@ const DAYS = [
 
 export default function DoctorSchedulePage() {
   const supabase = createClient();
-  const { doctor, selectedRoom, refreshDoctorData } = useDoctor();
+  const { doctor, selectedRoom, refreshDoctorData, activeSession, startSession } = useDoctor();
 
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [allClinics, setAllClinics] = useState<ClinicOption[]>([]);
@@ -115,14 +117,6 @@ export default function DoctorSchedulePage() {
   const [overrideStartTime, setOverrideStartTime] = useState('09:00');
   const [overrideEndTime, setOverrideEndTime] = useState('13:00');
   const [overrideClinicId, setOverrideClinicId] = useState('');
-
-  // Today's active queue session
-  const [todaySession, setTodaySession] = useState<{
-    id: string;
-    status: string;
-    current_serving_number: number;
-    clinic_id: string;
-  } | null>(null);
 
   // Toast
   const [toastNotice, setToastNotice] = useState<{
@@ -177,18 +171,7 @@ export default function DoctorSchedulePage() {
 
         setSchedules(items);
 
-        // 3. Fetch today's session
-        const todayStr = new Date().toISOString().split('T')[0];
-        const { data: sessData } = await supabase
-          .from('queue_sessions')
-          .select('id, status, current_serving_number, clinic_id')
-          .eq('doctor_id', doctor.id)
-          .eq('session_date', todayStr)
-          .maybeSingle();
-
-        setTodaySession(sessData || null);
-
-        // 4. Fetch schedule overrides
+        // 3. Fetch schedule overrides
         const { data: overData } = await supabase
           .from('schedule_overrides')
           .select('id, doctor_id, target_date, override_type, delay_minutes, announcement_message, new_start_time, new_end_time, new_clinic_id, created_at, clinic:clinics(id, name, hospital_name, room_number)')
@@ -207,48 +190,6 @@ export default function DoctorSchedulePage() {
   useEffect(() => {
     fetchSchedulesAndClinics();
   }, [fetchSchedulesAndClinics]);
-
-  // ── Session Control Handlers ──────────────────────────────────────────────
-  const handleToggleSession = async (action: 'START' | 'PAUSE' | 'RESUME') => {
-    if (!selectedRoom?.clinicId || !doctor?.id) return;
-    try {
-      if (action === 'START') {
-        const res = await fetch('/api/queue/start-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clinicId: selectedRoom.clinicId, doctorId: doctor.id }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to start session');
-        setToastNotice({
-          type: 'success',
-          title: 'Session Live',
-          message: `Consultation session started at ${selectedRoom.clinicName}.`,
-        });
-      } else if (todaySession) {
-        const nextStatus = action === 'PAUSE' ? 'PAUSED' : 'ACTIVE';
-        const { error } = await supabase
-          .from('queue_sessions')
-          .update({ status: nextStatus, last_updated_at: new Date().toISOString() })
-          .eq('id', todaySession.id);
-
-        if (error) throw error;
-        setToastNotice({
-          type: 'brand',
-          title: action === 'PAUSE' ? 'Session Paused' : 'Session Resumed',
-          message: `Queue session is now ${nextStatus.toLowerCase()}.`,
-        });
-      }
-      await fetchSchedulesAndClinics();
-      await refreshDoctorData();
-    } catch (err: unknown) {
-      setToastNotice({
-        type: 'destructive',
-        title: 'Action Failed',
-        message: err instanceof Error ? err.message : 'Could not change session state.',
-      });
-    }
-  };
 
   // ── Add Schedule Slot ─────────────────────────────────────────────────────
   const handleAddSlot = async (e: React.FormEvent) => {
@@ -333,15 +274,15 @@ export default function DoctorSchedulePage() {
 
       // If override applies to today's active session, update announcement or status in real time
       const todayStr = new Date().toISOString().split('T')[0];
-      if (overrideDate === todayStr && todaySession) {
+      if (overrideDate === todayStr && activeSession) {
         await supabase
           .from('queue_sessions')
           .update({
             announcement_notice: overrideAnnouncement.trim() || null,
-            status: overrideType === 'CANCELLED_CLINIC' ? 'CANCELLED' : todaySession.status,
+            status: overrideType === 'CANCELLED_CLINIC' ? 'CANCELLED' : activeSession.status,
             last_updated_at: new Date().toISOString(),
           })
-          .eq('id', todaySession.id);
+          .eq('id', activeSession.id);
       }
 
       setToastNotice({
@@ -448,9 +389,9 @@ export default function DoctorSchedulePage() {
           <div className="flex items-center gap-3.5">
             <div
               className={`h-11 w-11 rounded-xl flex items-center justify-center font-bold text-white shadow-xs ${
-                todaySession?.status === 'ACTIVE'
+                activeSession?.status === 'ACTIVE'
                   ? 'bg-emerald-600 animate-pulse'
-                  : todaySession?.status === 'PAUSED'
+                  : activeSession?.status === 'PAUSED'
                   ? 'bg-amber-500'
                   : 'bg-slate-400'
               }`}
@@ -462,15 +403,22 @@ export default function DoctorSchedulePage() {
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900">
                   Today&apos;s Session:{' '}
-                  {todaySession ? (
-                    <span className="text-emerald-700 font-black">{todaySession.status}</span>
+                  {activeSession ? (
+                    <span className={activeSession.status === 'ACTIVE' ? 'text-emerald-700 font-black' : 'text-amber-700 font-black'}>
+                      {activeSession.status === 'ACTIVE' ? 'ACTIVE' : 'PAUSED (ON ROUNDS)'}
+                    </span>
                   ) : (
                     <span className="text-slate-500 font-semibold">Not Started</span>
                   )}
                 </h3>
-                {todaySession?.status === 'ACTIVE' && (
+                {activeSession?.status === 'ACTIVE' && (
                   <Badge variant="success" className="text-[10px]">
-                    Serving #{todaySession.current_serving_number || 0}
+                    Serving #{activeSession.current_serving_number || 0}
+                  </Badge>
+                )}
+                {activeSession?.status === 'PAUSED' && (
+                  <Badge variant="warning" className="text-[10px]">
+                    On Rounds
                   </Badge>
                 )}
               </div>
@@ -485,25 +433,26 @@ export default function DoctorSchedulePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {!todaySession || todaySession.status !== 'ACTIVE' ? (
+            {activeSession ? (
+              <Link href="/doctor/dashboard">
+                <Button
+                  variant="brand"
+                  size="sm"
+                  className="text-xs font-semibold shadow-xs"
+                >
+                  <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
+                  Open Live Consultation Cockpit →
+                </Button>
+              </Link>
+            ) : (
               <Button
                 variant="brand"
                 size="sm"
-                onClick={() => handleToggleSession(todaySession ? 'RESUME' : 'START')}
+                onClick={() => startSession()}
                 className="text-xs"
               >
                 <Play className="h-3.5 w-3.5 fill-current mr-1.5" />
-                {todaySession?.status === 'PAUSED' ? 'Resume Session' : 'Start Today\'s Session'}
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleToggleSession('PAUSE')}
-                className="text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
-              >
-                <Pause className="h-3.5 w-3.5 fill-current mr-1.5" />
-                Pause Queue (Rounds)
+                Start Today&apos;s Session
               </Button>
             )}
           </div>
