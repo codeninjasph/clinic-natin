@@ -63,6 +63,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [selectedRole, setSelectedRole] = React.useState<'DOCTOR' | 'PATIENT'>('DOCTOR');
   const [targetUser, setTargetUser] = React.useState('Dr. Maria Santos, MD');
 
+  // Authorization Shield State (Defense-in-depth against direct access/FOUC)
+  const [isAuthorizing, setIsAuthorizing] = React.useState(true);
+  const [isAuthorized, setIsAuthorized] = React.useState(false);
+
   // Current Authenticated Admin State
   const [adminProfile, setAdminProfile] = React.useState({
     name: 'CARL KENNETH GALVE',
@@ -85,56 +89,120 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .catch(() => {});
   }, [pathname]);
 
-  // Load Authenticated Admin Profile
+  // Enforce Strict Admin Authorization
   React.useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        const metadata = user.user_metadata || {};
-        const fullName = metadata.full_name || user.email?.split('@')[0] || 'CARL KENNETH GALVE';
-        const title = metadata.title || 'Founder & Platform Administrator';
-        const initials = fullName
-          .split(' ')
-          .filter(Boolean)
-          .map((n: string) => n[0])
-          .slice(0, 2)
-          .join('')
-          .toUpperCase() || 'CG';
+    let isMounted = true;
 
-        setAdminProfile({
-          name: fullName,
-          title,
-          initials,
-          email: user.email || 'cdg@clinicnatin.com',
-        });
-      } else {
-        const demoUser = localStorage.getItem('clinic_natin_demo_user');
-        if (demoUser) {
-          try {
-            const parsed = JSON.parse(demoUser);
-            if (parsed.role === 'ADMIN') {
-              const fullName = parsed.name || 'CARL KENNETH GALVE';
-              const initials = fullName
-                .split(' ')
-                .filter(Boolean)
-                .map((n: string) => n[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase() || 'CG';
+    const verifyAdminAccess = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Check local cookies & storage
+        const roleCookie = document.cookie
+          .split('; ')
+          .find((row) => row.startsWith('clinic_natin_role='))
+          ?.split('=')[1];
+        const demoRole = localStorage.getItem('clinic_natin_demo_role');
+        const demoUserStr = localStorage.getItem('clinic_natin_demo_user');
+
+        let verifiedAdmin = false;
+
+        // 1. Live Supabase User Check
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role, full_name')
+            .eq('auth_id', user.id)
+            .maybeSingle();
+
+          const role = profile?.role || (user.user_metadata?.role as string) || roleCookie;
+          if (role === 'ADMIN') {
+            verifiedAdmin = true;
+            const metadata = user.user_metadata || {};
+            const fullName = profile?.full_name || metadata.full_name || user.email?.split('@')[0] || 'CARL KENNETH GALVE';
+            const title = metadata.title || 'Founder & Platform Administrator';
+            const initials = fullName
+              .split(' ')
+              .filter(Boolean)
+              .map((n: string) => n[0])
+              .slice(0, 2)
+              .join('')
+              .toUpperCase() || 'CG';
+
+            if (isMounted) {
               setAdminProfile({
                 name: fullName,
-                title: 'Founder & Platform Administrator',
+                title,
                 initials,
-                email: parsed.email || 'cdg@clinicnatin.com',
+                email: user.email || 'cdg@clinicnatin.com',
               });
             }
-          } catch {}
+          }
+        }
+
+        // 2. Demo Admin Session Check
+        if (!verifiedAdmin && (demoRole === 'ADMIN' || roleCookie === 'ADMIN')) {
+          verifiedAdmin = true;
+          if (demoUserStr) {
+            try {
+              const parsed = JSON.parse(demoUserStr);
+              if (parsed.role === 'ADMIN') {
+                const fullName = parsed.name || 'CARL KENNETH GALVE';
+                const initials = fullName
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((n: string) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase() || 'CG';
+
+                if (isMounted) {
+                  setAdminProfile({
+                    name: fullName,
+                    title: 'Founder & Platform Administrator',
+                    initials,
+                    email: parsed.email || 'cdg@clinicnatin.com',
+                  });
+                }
+              }
+            } catch {}
+          }
+        }
+
+        if (!isMounted) return;
+
+        if (verifiedAdmin) {
+          setIsAuthorized(true);
+          setIsAuthorizing(false);
+        } else {
+          // Strictly route non-admin users to their designated portals or login
+          const effectiveRole = roleCookie || demoRole;
+          if (effectiveRole === 'DOCTOR') {
+            router.replace('/doctor/dashboard?unauthorized=1');
+          } else if (effectiveRole === 'SECRETARY') {
+            router.replace('/secretary/dashboard?unauthorized=1');
+          } else if (effectiveRole === 'PATIENT') {
+            router.replace('/my-queue?unauthorized=1');
+          } else {
+            router.replace(`/login?returnUrl=${encodeURIComponent(pathname)}&unauthorized=1`);
+          }
+        }
+      } catch {
+        if (isMounted) {
+          router.replace(`/login?returnUrl=${encodeURIComponent(pathname)}&unauthorized=1`);
         }
       }
-    });
-  }, []);
+    };
 
-  // Check existing session
+    verifyAdminAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname, router]);
+
+  // Check existing impersonation session
   React.useEffect(() => {
     const active = localStorage.getItem('clinic_natin_impersonation_active');
     const ticket = localStorage.getItem('clinic_natin_impersonation_ticket');
@@ -195,6 +263,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setTicketRef('');
     router.push('/cnadmin');
   };
+
+  if (isAuthorizing || !isAuthorized) {
+    return (
+      <div
+        className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center"
+        style={{
+          fontFamily:
+            'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        }}
+      >
+        <div className="h-14 w-14 rounded-2xl bg-brand-700/20 border border-brand-500/40 flex items-center justify-center text-brand-400 mb-4 shadow-lg shadow-brand-950/50 animate-pulse">
+          <ShieldCheck className="h-7 w-7 text-brand-400" />
+        </div>
+        <h1 className="text-lg font-bold tracking-tight text-white mb-1">
+          Clinic Natin Platform Operations
+        </h1>
+        <p className="text-xs text-slate-400 max-w-sm mb-4">
+          Verifying administrative clearance &amp; RA 10173 session compliance...
+        </p>
+        <div className="h-1 w-48 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-full bg-brand-500 rounded-full animate-pulse w-3/4" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

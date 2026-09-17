@@ -51,7 +51,8 @@ function LoginFormContent() {
 
     setTimeout(() => {
       if (role === 'ADMIN') {
-        router.push('/cnadmin');
+        const dest = returnUrl && returnUrl.startsWith('/cnadmin') ? returnUrl : '/cnadmin';
+        router.push(dest);
       } else if (role === 'SECRETARY') {
         router.push('/secretary/dashboard');
       } else if (role === 'DOCTOR') {
@@ -92,7 +93,7 @@ function LoginFormContent() {
         localStorage.setItem('clinic_natin_demo_role', role);
 
         if (role === 'ADMIN') {
-          destination = '/cnadmin';
+          destination = returnUrl && returnUrl.startsWith('/cnadmin') ? returnUrl : '/cnadmin';
         } else if (role === 'SECRETARY') {
           destination = '/secretary/dashboard';
         } else if (role === 'DOCTOR') {
@@ -143,7 +144,11 @@ function LoginFormContent() {
         {unauthorized && (
           <div className="mb-4 flex items-center gap-2 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-800">
             <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
-            <span>Please sign in with authorized staff credentials to access that portal.</span>
+            <span>
+              {returnUrl?.includes('/cnadmin')
+                ? 'Administrative clearance required. Please authenticate with your platform administrator credentials to access the Operations Cockpit.'
+                : 'Please sign in with authorized staff credentials to access that portal.'}
+            </span>
           </div>
         )}
 
