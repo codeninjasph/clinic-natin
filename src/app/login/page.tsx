@@ -298,11 +298,17 @@ function LoginFormContent() {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-2">
             <p className="text-xs text-slate-600">
               New patient without an account?{' '}
               <Link href="/signup" className="font-bold text-brand-700 hover:underline">
                 Create a free patient account &rarr;
+              </Link>
+            </p>
+            <p className="text-xs text-slate-500">
+              Are you a licensed physician?{' '}
+              <Link href="/doctor/register" className="font-bold text-slate-800 hover:text-brand-700 hover:underline">
+                Register your practice &rarr;
               </Link>
             </p>
           </div>

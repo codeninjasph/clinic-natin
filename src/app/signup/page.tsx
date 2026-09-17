@@ -369,11 +369,17 @@ function SignupFormContent() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-100 text-center space-y-2">
             <p className="text-xs text-slate-600">
               Already have an account or staff credential?{' '}
               <Link href="/login" className="font-bold text-brand-700 hover:underline">
                 Sign in here &rarr;
+              </Link>
+            </p>
+            <p className="text-xs text-slate-500">
+              Are you a licensed physician?{' '}
+              <Link href="/doctor/register" className="font-bold text-slate-800 hover:text-brand-700 hover:underline">
+                Register your practice &rarr;
               </Link>
             </p>
           </div>
