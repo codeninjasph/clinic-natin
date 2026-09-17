@@ -125,15 +125,36 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           clinic_payment_method,
           is_paid_to_clinic,
           created_at,
-          profiles:patient_id ( full_name, phone_number ),
-          medical_records:id ( id, vitals )
+          profiles:patient_id ( full_name, phone_number )
         `)
         .eq('queue_session_id', sessionId)
         .order('queue_number', { ascending: true });
 
       if (error) {
-        console.error('[SecretaryContext] Error fetching appts:', error);
+        console.error('[SecretaryContext] Error fetching appts:', error.message || error);
         return;
+      }
+
+      // Fetch any existing vitals from medical_records for these appointments
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apptIds = (data || []).map((r: any) => r.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let medRecMap: Record<string, any> = {};
+
+      if (apptIds.length > 0) {
+        const { data: medRecs, error: medError } = await supabase
+          .from('medical_records')
+          .select('id, appointment_id, vitals')
+          .in('appointment_id', apptIds);
+
+        if (!medError && medRecs) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          medRecs.forEach((m: any) => {
+            if (m.appointment_id) {
+              medRecMap[m.appointment_id] = m;
+            }
+          });
+        }
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,7 +172,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
             ? `CN-ON${String(row.queue_number).padStart(3, '0')}`
             : `CN-WK${String(row.queue_number).padStart(3, '0')}`);
 
-        const medRec = Array.isArray(row.medical_records) ? row.medical_records[0] : row.medical_records;
+        const medRec = medRecMap[row.id];
         const hasVitals = !!(medRec?.vitals && (medRec.vitals.blood_pressure || medRec.vitals.temperature_c));
 
         return {
