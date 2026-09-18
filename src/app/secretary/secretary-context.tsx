@@ -83,7 +83,12 @@ interface SecretaryContextValue {
   loading: boolean;
   isRealtime: boolean;
   refreshData: () => Promise<void>;
-  updateAppointmentPaid: (appointmentId: string, method: string, amount: number) => Promise<boolean>;
+  updateAppointmentPaid: (
+    appointmentId: string,
+    method: string,
+    amount: number,
+    meta?: { hmoProvider?: string; hmoCode?: string; idNumber?: string; gcashRef?: string }
+  ) => Promise<boolean>;
 }
 
 const SecretaryContext = createContext<SecretaryContextValue | undefined>(undefined);
@@ -437,22 +442,66 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
     };
   }, [activeSession?.id, supabase, fetchAppointments]);
 
-  const updateAppointmentPaid = async (appointmentId: string, method: string, amount: number) => {
+  const updateAppointmentPaid = async (
+    appointmentId: string,
+    method: string,
+    amount: number,
+    meta?: { hmoProvider?: string; hmoCode?: string; idNumber?: string; gcashRef?: string }
+  ) => {
     try {
+      // Map UI payment method values to DB enum values
+      const dbMethodMap: Record<string, string> = {
+        CASH: 'CASH',
+        GCASH: 'CASH',         // GCash stored as CASH category; reference saved in notes
+        HMO: 'HMO',
+        FREE: 'FREE_FOLLOWUP', // DB enum uses FREE_FOLLOWUP
+        CARD: 'CARD',
+        PHILHEALTH: 'PHILHEALTH',
+      };
+      const dbMethod = dbMethodMap[method.toUpperCase()] ?? 'CASH';
+
+      // Build a metadata notes string to store provenance
+      const notesParts: string[] = [];
+      if (method === 'GCASH' && meta?.gcashRef) notesParts.push(`GCash Ref: ${meta.gcashRef}`);
+      if (method === 'HMO' && meta?.hmoProvider) notesParts.push(`HMO: ${meta.hmoProvider}`);
+      if (method === 'HMO' && meta?.hmoCode) notesParts.push(`GL Code: ${meta.hmoCode}`);
+      if (meta?.idNumber) notesParts.push(`Discount ID: ${meta.idNumber}`);
+      const paymentNotes = notesParts.length > 0 ? notesParts.join(' | ') : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const updatePayload: Record<string, any> = {
+        is_paid_to_clinic: true,
+        clinic_payment_method: dbMethod,
+        consultation_fee: amount,
+      };
+      // Only set notes if the column exists in the live DB (graceful)
+      if (paymentNotes) {
+        updatePayload.payment_notes = paymentNotes;
+      }
+
       const { error } = await supabase
         .from('appointments')
-        .update({
-          is_paid_to_clinic: true,
-          clinic_payment_method: method,
-          consultation_fee: amount,
-        })
+        .update(updatePayload)
         .eq('id', appointmentId);
 
-      if (error) throw error;
+      if (error) {
+        // If payment_notes column doesn't exist, retry without it
+        if (error.message?.includes('payment_notes')) {
+          delete updatePayload.payment_notes;
+          const { error: retryError } = await supabase
+            .from('appointments')
+            .update(updatePayload)
+            .eq('id', appointmentId);
+          if (retryError) throw retryError;
+        } else {
+          throw error;
+        }
+      }
+
       setAppointments((prev) =>
         prev.map((a) =>
           a.id === appointmentId
-            ? { ...a, is_paid_to_clinic: true, clinic_payment_method: method, consultation_fee: amount }
+            ? { ...a, is_paid_to_clinic: true, clinic_payment_method: dbMethod, consultation_fee: amount }
             : a
         )
       );
