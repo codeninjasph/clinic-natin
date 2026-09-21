@@ -64,6 +64,7 @@ function CashierPageContent() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
+  const [notFoundPreselectedId, setNotFoundPreselectedId] = useState<string | null>(null);
 
   // Cashier Terminal Form State
   const [baseFee, setBaseFee] = useState<number>(600);
@@ -98,16 +99,21 @@ function CashierPageContent() {
     }
   }, [doctor?.consultation_fee]);
 
-  // Handle preselection from URL query param
+  // Handle preselection from URL query param (UX-05: Do not silently fallback)
   useEffect(() => {
     if (preselectedId && appointments.length > 0) {
       const found = appointments.find((a) => a.id === preselectedId);
       if (found) {
         setSelectedAppt(found);
+        setNotFoundPreselectedId(null);
+      } else {
+        setSelectedAppt(null);
+        setNotFoundPreselectedId(preselectedId);
       }
-    } else if (!selectedAppt && appointments.length > 0) {
+    } else if (!preselectedId && !selectedAppt && appointments.length > 0) {
       const firstUnpaid = appointments.find((a) => !a.is_paid_to_clinic) || appointments[0];
       setSelectedAppt(firstUnpaid);
+      setNotFoundPreselectedId(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedId, appointments]);
@@ -319,7 +325,10 @@ function CashierPageContent() {
                     <button
                       key={appt.id}
                       type="button"
-                      onClick={() => setSelectedAppt(appt)}
+                      onClick={() => {
+                        setSelectedAppt(appt);
+                        setNotFoundPreselectedId(null);
+                      }}
                       className={`w-full text-left p-3 rounded-xl border transition-all ${
                         isSelected
                           ? 'bg-brand-50 border-brand-700 ring-2 ring-brand-300/30 shadow-xs'
@@ -692,6 +701,29 @@ function CashierPageContent() {
                   </Button>
                 )}
               </CardContent>
+            </Card>
+          ) : notFoundPreselectedId ? (
+            <Card className="border-2 border-amber-300 bg-amber-50/70 p-12 text-center rounded-2xl space-y-3">
+              <div className="h-12 w-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h3 className="text-base font-black text-amber-950">Patient Appointment Not Found</h3>
+              <p className="text-xs text-amber-800 max-w-md mx-auto leading-relaxed">
+                The requested appointment ID (<span className="font-mono text-[11px] font-bold">{notFoundPreselectedId}</span>) does not exist in today&apos;s active clinic queue. The link may have expired or belongs to another date.
+              </p>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNotFoundPreselectedId(null);
+                    const firstUnpaid = appointments.find((a) => !a.is_paid_to_clinic) || appointments[0];
+                    if (firstUnpaid) setSelectedAppt(firstUnpaid);
+                  }}
+                  className="text-xs font-bold border-amber-300 bg-white text-amber-900 hover:bg-amber-100 rounded-xl"
+                >
+                  Select First Unpaid Patient
+                </Button>
+              </div>
             </Card>
           ) : (
             <Card className="border-2 border-dashed border-slate-200 bg-white p-16 text-center rounded-2xl">

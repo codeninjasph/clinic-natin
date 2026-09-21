@@ -18,7 +18,9 @@ import {
   ChevronRight,
   FileText,
   Stethoscope,
+  Sparkles,
 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 import { searchFormulary, type PhDrug } from '@/data/ph-formulary';
 import { useDoctor } from '../doctor-context';
 import QRCode from 'qrcode';
@@ -100,6 +102,70 @@ function newRxItem(): RxItem {
     isS2: false,
     isControlled: false,
   };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helper: Parse textual SOAP plan lines into structured Rx items
+// ──────────────────────────────────────────────────────────────────────────────
+function parsePlanToRxItems(planText: string): RxItem[] {
+  const lines = planText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (lines.length === 0) return [newRxItem()];
+
+  const items = lines.map((line) => {
+    const cleaned = line.replace(/^(\d+[\.\)]|\-|\*|•)\s*/, '').trim();
+    let qty = '';
+    const qtyMatch = cleaned.match(/(?:#|qty:?\s*|quantity:?\s*)(\d+)/i);
+    if (qtyMatch) qty = qtyMatch[1];
+
+    const parts = cleaned.split(/\s*[-—–]\s*/);
+    const medPart = parts[0] || cleaned;
+    const sigPart = parts.slice(1).join(' — ') || 'Take as directed';
+
+    const medWords = medPart.replace(/(?:#|qty:?\s*|quantity:?\s*)\d+/i, '').trim().split(/\s+/);
+    const genericName = medWords[0] || '';
+    const strengthOrDosage = medWords.slice(1).join(' ') || '';
+
+    const freqMatch = sigPart.match(/(OD|BID|TID|QID|Q\d+h|HS|PRN|daily|twice|thrice)/i);
+    let frequency = '1 × OD (Once Daily)';
+    if (freqMatch) {
+      const f = freqMatch[0].toUpperCase();
+      if (f === 'BID') frequency = '1 × BID (Twice Daily)';
+      else if (f === 'TID') frequency = '1 × TID (Three Times Daily)';
+      else if (f === 'QID') frequency = '1 × QID (Four Times Daily)';
+      else if (f === 'HS') frequency = '1 × HS (At Bedtime)';
+      else if (f === 'PRN') frequency = '1 × PRN (As Needed)';
+      else if (f.startsWith('Q')) frequency = `1 × ${f}`;
+    }
+
+    const durMatch = sigPart.match(/(\d+\s*(days|weeks|months|d|w|m))/i);
+    const duration = durMatch ? durMatch[0] : '7 days';
+
+    const matchedDrug = genericName ? searchFormulary(genericName)[0] : undefined;
+
+    return {
+      id: crypto.randomUUID(),
+      genericName: matchedDrug?.genericName || genericName,
+      brandName: matchedDrug?.brandNames[0] || '',
+      dosageForm: strengthOrDosage.toLowerCase().includes('cap')
+        ? 'Capsule'
+        : strengthOrDosage.toLowerCase().includes('syr')
+        ? 'Syrup'
+        : 'Tablet',
+      strength: strengthOrDosage.replace(/\b(tab|tablets?|cap|capsules?|syr|syrup)\b/gi, '').trim(),
+      quantity: qty,
+      frequency,
+      duration,
+      instructions: sigPart,
+      isS2: matchedDrug?.is_s2 || false,
+      isControlled: matchedDrug?.is_controlled || false,
+    };
+  });
+
+  return items.length > 0 ? items : [newRxItem()];
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -693,23 +759,37 @@ function PrintableRx({
 function RxPadContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const supabase = createClient();
 
-  const appointmentId = searchParams.get('appointmentId') || '';
+  const appointmentIdParam = searchParams.get('appointmentId') || '';
   const patientNameParam = searchParams.get('patient') || '';
-  const tokenCode = searchParams.get('token') || '';
+  const tokenCodeParam = searchParams.get('token') || '';
+  const patientIdParam = searchParams.get('patientId') || '';
+  const planParam = searchParams.get('plan') || '';
 
   // Pad mode state (Prescription vs Diagnostic Lab Requisition)
   const [padMode, setPadMode] = useState<'PRESCRIPTION' | 'LAB_REQUISITION'>('PRESCRIPTION');
 
-  // Rx state
-  const [rxItems, setRxItems] = useState<RxItem[]>([newRxItem()]);
+  // Resolved appointment & patient state
+  const [activeAppointmentId, setActiveAppointmentId] = useState<string>(appointmentIdParam);
+  const [activePatientId, setActivePatientId] = useState<string | null>(patientIdParam || null);
   const [patientName, setPatientName] = useState(patientNameParam);
   const [patientAge, setPatientAge] = useState('');
+  const [tokenCode, setTokenCode] = useState(tokenCodeParam);
+  const [isServingAutoLinked, setIsServingAutoLinked] = useState(false);
+
+  // Rx state
+  const [rxItems, setRxItems] = useState<RxItem[]>(() => {
+    if (planParam) {
+      return parsePlanToRxItems(planParam);
+    }
+    return [newRxItem()];
+  });
   const [doctorNotes, setDoctorNotes] = useState('');
   const [rxDate] = useState(
     new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
   );
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(!!planParam);
   const [isSaving, setIsSaving] = useState(false);
   const [toastNotice, setToastNotice] = useState<{
     type: 'success' | 'destructive';
@@ -730,40 +810,101 @@ function RxPadContent() {
     clinicPhone: '+63 88 850 3000',
   };
 
-  // Auto-load existing prescriptions from Supabase for this appointment
+  // ── Auto-resolve patient details & existing prescriptions ──────────────────
   useEffect(() => {
-    if (!appointmentId) return;
-    const loadSavedRx = async () => {
+    let isCancelled = false;
+
+    const resolvePatientAndPrescriptions = async () => {
       try {
-        const res = await fetch(`/api/doctor/prescriptions?appointmentId=${appointmentId}`);
-        const data = await res.json();
-        if (data?.prescriptions && data.prescriptions.length > 0) {
-          const loaded: RxItem[] = data.prescriptions
-            .filter((p: any) => !p.item_type || p.item_type === 'MEDICATION')
-            .map((p: any) => ({
-              id: p.id || crypto.randomUUID(),
-              genericName: p.generic_name || '',
-              brandName: p.brand_name || '',
-              dosageForm: p.dosage || '',
-              strength: '',
-              quantity: p.details?.replace(/^Qty:\s*#?/, '') || '',
-              frequency: p.frequency || '',
-              duration: p.duration || '',
-              instructions: p.instructions || '',
-              isS2: false,
-              isControlled: false,
-            }));
-          if (loaded.length > 0) {
-            setRxItems(loaded);
-            setShowPreview(true);
+        let apptIdToLoad = activeAppointmentId;
+
+        // If no appointmentId was passed in query, find the currently SERVING patient in the queue
+        if (!apptIdToLoad) {
+          const { data: servingAppt } = await supabase
+            .from('appointments')
+            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender)')
+            .eq('status', 'SERVING')
+            .order('served_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (servingAppt && !isCancelled) {
+            apptIdToLoad = servingAppt.id;
+            setActiveAppointmentId(servingAppt.id);
+            setIsServingAutoLinked(true);
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const prof = (servingAppt as any).profiles;
+            const displayName = prof?.full_name || servingAppt.walk_in_name || `Patient ${servingAppt.token_code}`;
+            setPatientName(displayName);
+            setTokenCode(servingAppt.token_code);
+            if (servingAppt.patient_id) setActivePatientId(servingAppt.patient_id);
+            if (prof?.date_of_birth) {
+              const age = Math.floor((Date.now() - new Date(prof.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000));
+              setPatientAge(`${age} yrs ${prof.gender ? `· ${prof.gender}` : ''}`);
+            }
+          }
+        } else {
+          // If appointmentId was provided, fetch complete demographics
+          const { data: appt } = await supabase
+            .from('appointments')
+            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender)')
+            .eq('id', apptIdToLoad)
+            .maybeSingle();
+
+          if (appt && !isCancelled) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const prof = (appt as any).profiles;
+            const displayName = prof?.full_name || appt.walk_in_name || `Patient ${appt.token_code}`;
+            if (!patientName) setPatientName(displayName);
+            if (!tokenCode) setTokenCode(appt.token_code);
+            if (appt.patient_id) setActivePatientId(appt.patient_id);
+            if (prof?.date_of_birth) {
+              const age = Math.floor((Date.now() - new Date(prof.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000));
+              setPatientAge(`${age} yrs ${prof.gender ? `· ${prof.gender}` : ''}`);
+            }
+          }
+        }
+
+        // Auto-load already saved prescriptions from Supabase (if not already parsed from plan)
+        if (apptIdToLoad && !planParam) {
+          const res = await fetch(`/api/doctor/prescriptions?appointmentId=${apptIdToLoad}`);
+          const data = await res.json();
+          if (data?.prescriptions && data.prescriptions.length > 0 && !isCancelled) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const loaded: RxItem[] = data.prescriptions
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .filter((p: any) => !p.item_type || p.item_type === 'MEDICATION')
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .map((p: any) => ({
+                id: p.id || crypto.randomUUID(),
+                genericName: p.generic_name || '',
+                brandName: p.brand_name || '',
+                dosageForm: p.dosage || '',
+                strength: '',
+                quantity: p.details?.replace(/^Qty:\s*#?/, '') || '',
+                frequency: p.frequency || '',
+                duration: p.duration || '',
+                instructions: p.instructions || '',
+                isS2: false,
+                isControlled: false,
+              }));
+            if (loaded.length > 0) {
+              setRxItems(loaded);
+              setShowPreview(true);
+            }
           }
         }
       } catch (err) {
-        console.error('Error loading existing prescriptions:', err);
+        console.error('Error resolving patient and prescriptions:', err);
       }
     };
-    loadSavedRx();
-  }, [appointmentId]);
+
+    resolvePatientAndPrescriptions();
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeAppointmentId, supabase, patientName, tokenCode, planParam]);
 
   // Check if any item is S2
   const hasS2Items = rxItems.some((i) => i.isS2 && i.genericName);
@@ -820,8 +961,8 @@ function RxPadContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appointmentId: appointmentId || undefined,
-          patientId: null,
+          appointmentId: activeAppointmentId || undefined,
+          patientId: activePatientId || undefined,
           items: itemsToSave,
           pushToPatient,
         }),
@@ -857,8 +998,8 @@ function RxPadContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appointmentId: appointmentId || undefined,
-          patientId: null,
+          appointmentId: activeAppointmentId || undefined,
+          patientId: activePatientId || undefined,
           items: itemsToSave,
           pushToPatient: true,
         }),
@@ -952,9 +1093,9 @@ function RxPadContent() {
                 variant="brand"
                 size="sm"
                 onClick={() => handleSave(true)}
-                disabled={!hasValidItems || isSaving || !appointmentId}
+                disabled={!hasValidItems || isSaving || !activeAppointmentId}
                 className="text-xs font-semibold"
-                title={!appointmentId ? 'No active appointment — cannot save to EMR' : ''}
+                title={!activeAppointmentId ? 'No active appointment — cannot save to EMR' : ''}
               >
                 {isSaving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
@@ -968,13 +1109,29 @@ function RxPadContent() {
         </div>
       </div>
 
+      {/* ── Active Consultation Context Banner ────────────────────────────────── */}
+      {patientName && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-brand-50/70 border border-brand-200 rounded-xl px-4 py-2.5 text-xs no-print">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-brand-900">Active Patient:</span>
+            <span className="font-semibold text-slate-800">{patientName}</span>
+            {patientAge && <Badge variant="outline" className="text-[10px] bg-white">{patientAge}</Badge>}
+            {tokenCode && <Badge variant="brand" className="text-[10px] font-mono">{tokenCode}</Badge>}
+            {isServingAutoLinked && (
+              <Badge variant="success" className="text-[10px]">Serving in Cockpit</Badge>
+            )}
+          </div>
+          <span className="text-[11px] text-brand-700">Digital prescription linked to this consultation encounter.</span>
+        </div>
+      )}
+
       {/* ── Mode Render ──────────────────────────────────────────────────────── */}
       {padMode === 'LAB_REQUISITION' ? (
         <DiagnosticRequisitionPad
           patientName={patientName}
           patientAge={patientAge}
           doctorProfile={doctorProfile}
-          onSaveOrders={appointmentId ? handleSaveLabOrders : undefined}
+          onSaveOrders={activeAppointmentId ? handleSaveLabOrders : undefined}
           isSaving={isSaving}
         />
       ) : (
@@ -1144,6 +1301,20 @@ function RxPadContent() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSave(false)}
+                    disabled={!hasValidItems || isSaving || !activeAppointmentId}
+                    className="text-xs border-brand-300 text-brand-700 hover:bg-brand-50"
+                  >
+                    {isSaving ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Save to EMR
+                  </Button>
                   <Button
                     variant="brand"
                     size="sm"

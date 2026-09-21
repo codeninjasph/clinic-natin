@@ -60,7 +60,7 @@ export default function DoctorAnalyticsPage() {
       if (aErr) throw aErr;
 
       const items: AppointmentStat[] = (apptsData || []).map((a) => {
-        const isOnline = a.queue_number % 2 === 1;
+        const isOnline = a.booking_channel === 'ONLINE';
         return {
           id: a.id,
           status: a.status,

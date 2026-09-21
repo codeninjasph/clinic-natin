@@ -145,17 +145,6 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
 
           if (role === 'DOCTOR') {
             verifiedDoctor = true;
-            const fullName =
-              profile?.full_name ||
-              user.user_metadata?.full_name ||
-              'Dr. Maria Santos';
-            const initials = fullName
-              .split(' ')
-              .filter(Boolean)
-              .map((n: string) => n[0])
-              .slice(0, 2)
-              .join('')
-              .toUpperCase();
           }
         }
 

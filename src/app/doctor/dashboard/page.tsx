@@ -24,6 +24,7 @@ import {
   Pill,
   RotateCcw,
   FlaskConical,
+  Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -42,6 +43,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { BufferModal } from '@/components/secretary/buffer-modal';
 
 import { useDoctor } from '../doctor-context';
 
@@ -62,6 +64,7 @@ interface Appointment {
   token_code: string;
   status: string;
   priority_category: string;
+  priority_notes?: string | null;
   display_name: string;
   booking_channel?: 'ONLINE' | 'WALK_IN';
   patient_id?: string | null;
@@ -200,8 +203,8 @@ function analyzeVitals(v: Vitals): Record<string, VitalFlag> {
 
   // BMI
   if (v.bmi !== null) {
-    if (v.bmi < 18.5 || v.bmi >= 30) flags.bmi = 'warning';
-    else if (v.bmi >= 25) flags.bmi = 'warning';
+    if (v.bmi >= 30) flags.bmi = 'critical';
+    else if (v.bmi >= 25 || v.bmi < 18.5) flags.bmi = 'warning';
     else flags.bmi = 'normal';
   }
 
@@ -229,7 +232,7 @@ function bmiLabel(bmi: number | null): string {
 // ──────────────────────────────────────────────────────────────────────────────
 // Priority badge helper
 // ──────────────────────────────────────────────────────────────────────────────
-function PriorityBadge({ category }: { category: string }) {
+function PriorityBadge({ category, notes }: { category: string; notes?: string | null }) {
   if (category === 'NONE') return null;
   const map: Record<string, string> = {
     SENIOR: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -240,7 +243,7 @@ function PriorityBadge({ category }: { category: string }) {
     <span
       className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-[10px] font-bold ${map[category] || 'bg-slate-100 text-slate-700'}`}
     >
-      {category} (20% Off)
+      {category} (20% Off){notes ? ` • ${notes}` : ''}
     </span>
   );
 }
@@ -297,6 +300,9 @@ export default function DoctorDashboardPage() {
 
   // UI state
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingRx, setIsGeneratingRx] = useState(false);
+  const [isBufferModalOpen, setIsBufferModalOpen] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [queueTab, setQueueTab] = useState<'active' | 'buffered'>('active');
   const [toastNotice, setToastNotice] = useState<{
     type: 'success' | 'destructive' | 'brand';
@@ -315,11 +321,13 @@ export default function DoctorDashboardPage() {
   // ── Fetch queue + appointments ─────────────────────────────────────────────
   const fetchDoctorQueue = useCallback(async () => {
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
       let query = supabase
         .from('queue_sessions')
         .select('*')
-        .in('status', ['ACTIVE', 'PAUSED'])
-        .order('session_date', { ascending: false });
+        .in('status', ['ACTIVE', 'PAUSED', 'PENDING'])
+        .eq('session_date', todayStr)
+        .order('last_updated_at', { ascending: false });
 
       if (selectedRoom?.clinicId) {
         query = query.eq('clinic_id', selectedRoom.clinicId);
@@ -336,14 +344,14 @@ export default function DoctorDashboardPage() {
         const { data: apptsData } = await supabase
           .from('appointments')
           .select(
-            'id, queue_number, token_code, status, priority_category, walk_in_name, patient_id, buffered_at, grace_period_deadline, created_at, profiles:patient_id (full_name, date_of_birth, gender, allergies, phone_number)'
+            'id, queue_number, token_code, status, priority_category, priority_notes, booking_channel, walk_in_name, patient_id, buffered_at, grace_period_deadline, created_at, profiles:patient_id (full_name, date_of_birth, gender, allergies, phone_number)'
           )
           .eq('queue_session_id', sessionData.id)
           .order('queue_number', { ascending: true });
 
         if (apptsData) {
           const formatted: Appointment[] = apptsData.map((a) => {
-            const isOnline = a.queue_number % 2 === 1;
+            const isOnline = a.booking_channel === 'ONLINE' || (!a.booking_channel && !a.walk_in_name);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const profile = (a as any).profiles;
             const displayName =
@@ -361,8 +369,9 @@ export default function DoctorDashboardPage() {
                   : `CN-WK${String(a.queue_number).padStart(3, '0')}`),
               status: a.status,
               priority_category: a.priority_category || 'NONE',
+              priority_notes: a.priority_notes || null,
               display_name: displayName,
-              booking_channel: isOnline ? 'ONLINE' : 'WALK_IN',
+              booking_channel: (a.booking_channel as 'ONLINE' | 'WALK_IN') || (isOnline ? 'ONLINE' : 'WALK_IN'),
               patient_id: a.patient_id,
               patient_profile: profile || null,
               buffered_at: a.buffered_at,
@@ -600,15 +609,20 @@ export default function DoctorDashboardPage() {
 
   // ── Queue: call next patient via API ───────────────────────────────────────
   const handleCallNext = useCallback(async () => {
-    if (!nextInLine || !session) return;
+    if (!session) return;
+    if (!nextInLine && !currentlyServing) return;
+
     try {
+      if (session.status === 'PENDING') {
+        await startSession(selectedRoom?.clinicId);
+      }
       const res = await fetch('/api/queue/call-next', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           queueSessionId: session.id,
           currentAppointmentId: currentlyServing?.id || null,
-          nextAppointmentId: nextInLine.id,
+          nextAppointmentId: nextInLine?.id || null,
         }),
       });
       const data = await res.json();
@@ -620,12 +634,23 @@ export default function DoctorDashboardPage() {
           title: 'Advance Warning Dispatched',
           message: `SMS warning sent to patient ${data.recipientToken} (2 ahead in line).`,
         });
+      } else if (data.completedOnly) {
+        setToastNotice({
+          type: 'success',
+          title: 'Consultation Concluded',
+          message: 'Patient consultation completed. No more patients waiting in queue.',
+        });
       }
       await fetchDoctorQueue();
     } catch (e) {
       console.error('Error calling next patient:', e);
+      setToastNotice({
+        type: 'destructive',
+        title: 'Queue Advance Error',
+        message: e instanceof Error ? e.message : 'Failed to advance queue turn',
+      });
     }
-  }, [nextInLine, session, currentlyServing, fetchDoctorQueue]);
+  }, [nextInLine, session, currentlyServing, selectedRoom?.clinicId, startSession, fetchDoctorQueue]);
 
   // ── Save SOAP + call next ──────────────────────────────────────────────────
   const handleSaveAndCallNext = useCallback(async () => {
@@ -649,17 +674,21 @@ export default function DoctorDashboardPage() {
           icd10Label: soap.diagnoses[0]?.label || null,
         }),
       });
-      if (!soapRes.ok) throw new Error('Save failed');
+      const soapData = await soapRes.json().catch(() => ({}));
+      if (!soapRes.ok) throw new Error(soapData.error || 'Save failed');
       setToastNotice({
         type: 'success',
         title: 'Consultation Saved',
-        message: 'SOAP notes recorded. Calling next patient...',
+        message: nextInLine
+          ? `SOAP recorded for ${currentlyServing.display_name}. Calling next patient...`
+          : `SOAP recorded for ${currentlyServing.display_name}. Concluding session...`,
       });
-    } catch {
+    } catch (err: unknown) {
+      console.error('Save consultation error:', err);
       setToastNotice({
         type: 'destructive',
-        title: 'Save Error',
-        message: 'Could not save SOAP notes. Queue progressed regardless.',
+        title: 'Save Warning',
+        message: err instanceof Error ? err.message : 'Could not save consultation completely.',
       });
     }
     await handleCallNext();
@@ -668,18 +697,76 @@ export default function DoctorDashboardPage() {
     setIcdResults([]);
     setIsSaving(false);
     setTimeout(() => setToastNotice(null), 6000);
-  }, [currentlyServing, session, isSaving, soap, handleCallNext]);
+  }, [currentlyServing, session, isSaving, soap, nextInLine, handleCallNext]);
+
+  // ── Auto-generate digital prescription immediately from SOAP plan ───────────
+  const handleAutoGenerateRx = async () => {
+    if (!currentlyServing) return;
+    if (!soap.plan.trim()) {
+      setToastNotice({
+        type: 'destructive',
+        title: 'Plan is Empty',
+        message: 'Please write medication instructions in the Pharmacological Plan (Rx) box first.',
+      });
+      return;
+    }
+    setIsGeneratingRx(true);
+    try {
+      const res = await fetch('/api/doctor/save-soap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: currentlyServing.id,
+          patientId: currentlyServing.patient_id,
+          chiefComplaint: soap.chiefComplaint,
+          hpi: soap.hpi,
+          physicalExam: soap.pe,
+          diagnoses: soap.diagnoses,
+          plan: soap.plan,
+          nonPharmPlan: soap.nonPharmPlan,
+          followupDate: soap.followupRecommended ? soap.followupDate : null,
+          icd10Code: soap.diagnoses[0]?.code || null,
+          icd10Label: soap.diagnoses[0]?.label || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to auto-generate prescription');
+
+      setToastNotice({
+        type: 'success',
+        title: 'Digital Prescription Generated',
+        message: `Digital Rx automatically created and saved to EMR for ${currentlyServing.display_name}.`,
+      });
+      if (currentlyServing.id) {
+        fetchCurrentPatientEMR(currentlyServing.id, currentlyServing.patient_id || null);
+      }
+    } catch (err: unknown) {
+      setToastNotice({
+        type: 'destructive',
+        title: 'Prescription Error',
+        message: err instanceof Error ? err.message : 'Could not create prescription.',
+      });
+    } finally {
+      setIsGeneratingRx(false);
+    }
+  };
 
   // ── Queue: Buffer current patient (Labs / Diagnostic) ─────────────────────
-  const handleBufferCurrent = async () => {
+  const handleConfirmBuffer = async (
+    appointmentId: string,
+    graceMinutes: number,
+    reason: string
+  ) => {
     if (!currentlyServing) return;
+    setIsBuffering(true);
     try {
       const res = await fetch('/api/queue/buffer-patient', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appointmentId: currentlyServing.id,
-          reason: 'Sent for diagnostic lab / imaging tests',
+          appointmentId,
+          reason,
+          graceMinutes,
         }),
       });
       const data = await res.json();
@@ -687,9 +774,10 @@ export default function DoctorDashboardPage() {
       setToastNotice({
         type: 'brand',
         title: 'Patient Buffered',
-        message: `${currentlyServing.display_name} (${currentlyServing.token_code}) moved to Buffer Lane (45m Grace Period).`,
+        message: `${currentlyServing.display_name} (${currentlyServing.token_code}) moved to Buffer Lane (${graceMinutes}m Grace Period).`,
       });
       setSoap(DEFAULT_SOAP);
+      setIsBufferModalOpen(false);
       await fetchDoctorQueue();
     } catch (err: unknown) {
       setToastNotice({
@@ -697,6 +785,8 @@ export default function DoctorDashboardPage() {
         title: 'Buffer Failed',
         message: err instanceof Error ? err.message : 'Could not buffer patient.',
       });
+    } finally {
+      setIsBuffering(false);
     }
   };
 
@@ -871,7 +961,7 @@ export default function DoctorDashboardPage() {
       )}
 
       {/* ── Start Session Launcher Banner (if no active session today) ── */}
-      {!session && (
+      {(!session || session.status === 'PENDING') && (
         <Card className="border-brand-200 bg-brand-50/50">
           <CardContent className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -882,7 +972,7 @@ export default function DoctorDashboardPage() {
                 <h3 className="font-bold text-slate-900 text-sm">No Active Queue Session for Today</h3>
                 <p className="text-xs text-slate-500">
                   {selectedRoom
-                    ? `Launch queue session for ${selectedRoom.clinicName} (${selectedRoom.room})`
+                    ? `Launch queue session for ${selectedRoom.clinicName} (${selectedRoom.room})${waitingPatients.length > 0 ? ` · ${waitingPatients.length} patient${waitingPatients.length > 1 ? 's' : ''} waiting` : ''}`
                     : 'Select a clinic room from the top bar to open today\'s queue session.'}
                 </p>
               </div>
@@ -947,7 +1037,7 @@ export default function DoctorDashboardPage() {
             </p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-brand-700">
-                #{session?.current_serving_number || '—'}
+                #{session?.status === 'ACTIVE' && session.current_serving_number ? session.current_serving_number : '—'}
               </span>
               <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1063,7 +1153,7 @@ export default function DoctorDashboardPage() {
                           · PhilHealth / HMO Covered
                         </p>
                       </div>
-                      <PriorityBadge category={currentlyServing.priority_category} />
+                      <PriorityBadge category={currentlyServing.priority_category} notes={currentlyServing.priority_notes} />
                     </div>
                   </div>
 
@@ -1403,14 +1493,32 @@ export default function DoctorDashboardPage() {
                             Pharmacological Plan (Rx)
                           </label>
                           {currentlyServing ? (
-                            <Link
-                              href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
-                              target="_blank"
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-2.5 py-1 rounded-md transition-colors shadow-xs"
-                            >
-                              <Pill className="h-3.5 w-3.5 text-brand-600" />
-                              Open Digital Rx Pad ↗
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={handleAutoGenerateRx}
+                                disabled={isGeneratingRx || !soap.plan.trim()}
+                                className="h-7 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border-brand-200"
+                                title="Automatically parse medications in the Plan box and create digital prescriptions in EMR"
+                              >
+                                {isGeneratingRx ? (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                ) : (
+                                  <Sparkles className="h-3 w-3 mr-1 text-brand-600" />
+                                )}
+                                Auto-Generate Rx
+                              </Button>
+                              <Link
+                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}&patient=${encodeURIComponent(currentlyServing.display_name)}&token=${encodeURIComponent(currentlyServing.token_code)}&plan=${encodeURIComponent(soap.plan || '')}`}
+                                target="_blank"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-2.5 py-1 rounded-md transition-colors shadow-xs"
+                              >
+                                <Pill className="h-3.5 w-3.5 text-brand-600" />
+                                Open Digital Rx Pad ↗
+                              </Link>
+                            </div>
                           ) : (
                             <Link
                               href="/doctor/rx"
@@ -1438,15 +1546,16 @@ export default function DoctorDashboardPage() {
                           {currentlyServing && (
                             <div className="flex items-center gap-3">
                               <Link
-                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
+                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}&patient=${encodeURIComponent(currentlyServing.display_name)}&token=${encodeURIComponent(currentlyServing.token_code)}&plan=${encodeURIComponent(soap.plan || '')}`}
                                 target="_blank"
-                                className="text-brand-600 hover:underline font-semibold"
+                                className="text-brand-600 hover:underline font-semibold flex items-center gap-1"
                               >
+                                <Pill className="h-3 w-3" />
                                 Digital Rx Pad →
                               </Link>
                               <span className="text-slate-300">·</span>
                               <Link
-                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}`}
+                                href={`/doctor/rx?appointmentId=${currentlyServing.id}&patientId=${currentlyServing.patient_id || ''}&patient=${encodeURIComponent(currentlyServing.display_name)}&token=${encodeURIComponent(currentlyServing.token_code)}&plan=${encodeURIComponent(soap.plan || '')}`}
                                 target="_blank"
                                 className="text-emerald-700 hover:underline font-semibold flex items-center gap-1"
                               >
@@ -1517,9 +1626,10 @@ export default function DoctorDashboardPage() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={handleBufferCurrent}
+                        onClick={() => setIsBufferModalOpen(true)}
+                        disabled={isBuffering}
                         className="text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-800 border-amber-200"
-                        title="Move to Buffer Lane while waiting for lab or X-ray results (45m Grace Period)"
+                        title="Move to Buffer Lane with configurable grace period for lab or imaging results"
                       >
                         <Activity className="h-3.5 w-3.5 mr-1" />
                         Buffer (Labs/X-ray)
@@ -1573,7 +1683,7 @@ export default function DoctorDashboardPage() {
                         ) : (
                           <CheckCircle2 className="h-4 w-4 mr-1.5" />
                         )}
-                        Save Consultation &amp; Call Next
+                        {nextInLine ? 'Save Consultation & Call Next' : 'Save & Conclude Consultation'}
                       </Button>
                     </div>
                   </div>
@@ -1894,12 +2004,12 @@ export default function DoctorDashboardPage() {
                                 </span>
                                 <span
                                   className={`text-[9px] font-bold px-1 rounded ${
-                                    appt.queue_number % 2 === 1
+                                    appt.booking_channel === 'ONLINE'
                                       ? 'bg-emerald-50 text-emerald-700'
                                       : 'bg-blue-50 text-blue-700'
                                   }`}
                                 >
-                                  {appt.queue_number % 2 === 1 ? 'Online' : 'Walk-in'}
+                                  {appt.booking_channel === 'ONLINE' ? 'Online' : 'Walk-in'}
                                 </span>
                               </div>
                             </div>
@@ -1921,6 +2031,7 @@ export default function DoctorDashboardPage() {
                             {appt.priority_category !== 'NONE' && (
                               <p className="text-[9px] font-bold text-amber-600 mt-0.5">
                                 {appt.priority_category}
+                                {appt.priority_notes ? ` • ${appt.priority_notes}` : ''}
                               </p>
                             )}
                           </div>
@@ -1933,6 +2044,22 @@ export default function DoctorDashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* ── Buffer Lane Configurable Grace Modal ── */}
+      {isBufferModalOpen && currentlyServing && (
+        <BufferModal
+          isOpen={isBufferModalOpen}
+          onClose={() => setIsBufferModalOpen(false)}
+          appointment={{
+            id: currentlyServing.id,
+            token_code: currentlyServing.token_code,
+            queue_number: currentlyServing.queue_number,
+            display_name: currentlyServing.display_name,
+          }}
+          isLoading={isBuffering}
+          onConfirm={handleConfirmBuffer}
+        />
+      )}
     </div>
   );
 }

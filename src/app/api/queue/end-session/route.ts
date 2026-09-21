@@ -143,12 +143,16 @@ export async function POST(req: NextRequest) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const phone = (appt as any).profiles?.phone_number || appt.walk_in_phone;
             if (phone) {
-              await SemaphoreService.sendSMS(
-                phone,
-                `[CLINIC NATIN] Notice: ${doctorName} had to attend to an urgent hospital emergency. Clinic in ${clinicRoom} is concluded for today. Please approach reception for priority rescheduling.`,
-                appt.id,
-                'DOCTOR_DELAY_ANNOUNCEMENT'
-              );
+              try {
+                await SemaphoreService.sendSMS(
+                  phone,
+                  `[CLINIC NATIN] Notice: ${doctorName} had to attend to an urgent hospital emergency. Clinic in ${clinicRoom} is concluded for today. Please approach reception for priority rescheduling.`,
+                  appt.id,
+                  'DOCTOR_DELAY_ANNOUNCEMENT'
+                );
+              } catch (smsErr) {
+                console.error(`[End Session API] Failed to send emergency SMS for appt ${appt.id}:`, smsErr);
+              }
             }
           }
         }

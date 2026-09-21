@@ -210,63 +210,33 @@ export function VitalSignsTriageModal({
     };
 
     try {
-      // Check if medical record exists
-      const { data: existing } = await supabase
-        .from('medical_records')
-        .select('id')
-        .eq('appointment_id', appointment.id)
-        .maybeSingle();
-
-      if (existing) {
-        const { error } = await supabase
-          .from('medical_records')
-          .update({
-            vitals: vitalsPayload,
-            chief_complaint: fullChiefComplaint || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id);
-
-        if (error) throw error;
-      } else {
-        // Need a doctor_id and patient_id (or fallback)
-        let finalPatientId = appointment.patient_id;
-        if (!finalPatientId) {
-          // Check or create anonymous profile for walkin
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('id')
-            .limit(1)
-            .maybeSingle();
-          finalPatientId = profile?.id || null;
-        }
-
-        let finalDoctorId = doctorId;
-        if (!finalDoctorId) {
-          const { data: doc } = await supabase.from('doctors').select('id').limit(1).single();
-          finalDoctorId = doc?.id;
-        }
-
-        if (!finalPatientId || !finalDoctorId) {
-          throw new Error('Missing physician or patient profile reference.');
-        }
-
-        const { error } = await supabase.from('medical_records').insert({
-          appointment_id: appointment.id,
-          patient_id: finalPatientId,
-          doctor_id: finalDoctorId,
+      const res = await fetch('/api/secretary/save-vitals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: appointment.id,
           vitals: vitalsPayload,
-          chief_complaint: fullChiefComplaint || null,
-        });
+          chiefComplaint: fullChiefComplaint || null,
+          doctorId: doctorId || null,
+          patientId: appointment.patient_id || null,
+        }),
+      });
 
-        if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || data.detail || 'Failed to save vital signs');
       }
 
       if (onSaveSuccess) onSaveSuccess();
       onClose();
     } catch (err: unknown) {
-      console.error('[TriageModal] Save vitals failed:', err);
-      setSaveError(err instanceof Error ? err.message : 'Could not save vital signs.');
+      const errorMsg =
+        err instanceof Error
+          ? err.message
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          : (err as any)?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+      console.error('[TriageModal] Save vitals failed:', errorMsg);
+      setSaveError(errorMsg || 'Could not save vital signs.');
     } finally {
       setIsSaving(false);
     }

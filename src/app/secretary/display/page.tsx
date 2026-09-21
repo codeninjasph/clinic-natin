@@ -142,6 +142,7 @@ export default function WaitingRoomDisplayPage() {
             token_code,
             status,
             priority_category,
+            booking_channel,
             walk_in_name,
             profiles:patient_id ( full_name )
           `)
@@ -151,7 +152,7 @@ export default function WaitingRoomDisplayPage() {
         if (apptsData) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mapped: DisplayAppointment[] = (apptsData || []).map((a: any) => {
-            const isOnline = a.queue_number % 2 === 1;
+            const isOnline = a.booking_channel === 'ONLINE' || (!a.booking_channel && !a.walk_in_name);
             const name = a.profiles?.full_name || a.walk_in_name || (isOnline ? `Online Patient #${a.queue_number}` : `Walk-in Patient #${a.queue_number}`);
             const token = a.token_code || (isOnline ? `CN-ON${String(a.queue_number).padStart(3, '0')}` : `CN-WK${String(a.queue_number).padStart(3, '0')}`);
 

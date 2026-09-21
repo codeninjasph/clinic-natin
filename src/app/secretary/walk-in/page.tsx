@@ -60,15 +60,83 @@ export default function WalkInRegistrationPage() {
       setErrorMsg('Please enter the patient full name.');
       return;
     }
-    if (!activeSession) {
-      setErrorMsg('No active queue session today. A doctor session must be active to register walk-ins.');
-      return;
-    }
-
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
+      let targetSessionId = activeSession?.id;
+
+      if (!targetSessionId) {
+        const targetClinicId = clinic?.id;
+        const targetDoctorId = doctor?.id;
+        if (!targetClinicId || !targetDoctorId) {
+          setErrorMsg('Clinic or Doctor details not resolved. Please wait a moment or refresh the page.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const dayOfWeek = new Date().getDay() === 0 ? 7 : new Date().getDay();
+
+        // Check if session already exists for today
+        const { data: existingSess } = await supabase
+          .from('queue_sessions')
+          .select('id')
+          .eq('doctor_id', targetDoctorId)
+          .eq('clinic_id', targetClinicId)
+          .eq('session_date', todayStr)
+          .maybeSingle();
+
+        if (existingSess) {
+          targetSessionId = existingSess.id;
+        } else {
+          // Find schedule
+          const { data: sched } = await supabase
+            .from('doctor_clinic_schedules')
+            .select('id')
+            .eq('doctor_id', targetDoctorId)
+            .eq('clinic_id', targetClinicId)
+            .limit(1)
+            .maybeSingle();
+
+          let schedId = sched?.id;
+          if (!schedId) {
+            const { data: newSched } = await supabase
+              .from('doctor_clinic_schedules')
+              .insert({
+                doctor_id: targetDoctorId,
+                clinic_id: targetClinicId,
+                day_of_week: dayOfWeek,
+                start_time: '08:00:00',
+                end_time: '17:00:00',
+                max_patients: 50,
+                is_active: true,
+              })
+              .select('id')
+              .single();
+            schedId = newSched?.id;
+          }
+
+          const { data: createdSess, error: sessErr } = await supabase
+            .from('queue_sessions')
+            .insert({
+              schedule_id: schedId,
+              doctor_id: targetDoctorId,
+              clinic_id: targetClinicId,
+              session_date: todayStr,
+              status: 'PENDING',
+              current_serving_number: 0,
+              accepting_walkins: true,
+              accepting_online: true,
+            })
+            .select('id')
+            .single();
+
+          if (sessErr) throw sessErr;
+          targetSessionId = createdSess.id;
+        }
+      }
+
       // 1. Create or find profile
       let patientId: string | null = null;
       if (phone.trim() || fullName.trim()) {
@@ -95,7 +163,7 @@ export default function WalkInRegistrationPage() {
       const { data: newAppt, error: apptErr } = await supabase
         .from('appointments')
         .insert({
-          queue_session_id: activeSession.id,
+          queue_session_id: targetSessionId,
           patient_id: patientId,
           walk_in_name: fullName.trim(),
           walk_in_phone: phone.trim() || null,

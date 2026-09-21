@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { playHospitalChime, announcePatientCall } from '@/lib/audio/queue-chime';
 import Link from 'next/link';
 import {
   Search,
@@ -25,6 +26,7 @@ import {
   Timer,
   PhoneCall,
   BadgeCheck,
+  Bell,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSecretary, type Appointment, type PriorityCategory } from '../secretary-context';
@@ -42,6 +44,8 @@ import {
 } from '@/components/ui/table';
 import { VitalSignsTriageModal } from '@/components/secretary/vital-signs-triage-modal';
 import { QRScannerModal } from '@/components/secretary/qr-scanner-modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { BufferModal } from '@/components/secretary/buffer-modal';
 
 // ── Priority Badge ──────────────────────────────────────────────────────────
 function PriorityBadge({ category }: { category: PriorityCategory }) {
@@ -111,12 +115,22 @@ function ChannelBadge({ channel }: { channel: string }) {
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function SecretaryDashboardPage() {
   const supabase = createClient();
-  const { activeSession, appointments, doctor, loading, refreshData } = useSecretary();
+  const {
+    activeSession,
+    appointments,
+    doctor,
+    loading,
+    refreshData,
+    doctorCallAlert,
+    dismissDoctorCallAlert,
+  } = useSecretary();
 
   const [viewMode, setViewMode] = useState<'logbook' | 'cards'>('logbook');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [selectedApptForVitals, setSelectedApptForVitals] = useState<Appointment | null>(null);
+  const [selectedApptForBuffer, setSelectedApptForBuffer] = useState<Appointment | null>(null);
+  const [confirmCallInsideAppt, setConfirmCallInsideAppt] = useState<Appointment | null>(null);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -125,6 +139,17 @@ export default function SecretaryDashboardPage() {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  // UX-01: Auto chime and timeout for doctor call alert
+  React.useEffect(() => {
+    if (doctorCallAlert) {
+      playHospitalChime().catch(() => {});
+      const timer = setTimeout(() => {
+        dismissDoctorCallAlert();
+      }, 12000);
+      return () => clearTimeout(timer);
+    }
+  }, [doctorCallAlert, dismissDoctorCallAlert]);
 
   const filteredAppointments = useMemo(() => {
     return appointments.filter((appt) => {
@@ -160,7 +185,7 @@ export default function SecretaryDashboardPage() {
         .update({ status: 'WAITING' })
         .eq('id', apptId);
       if (error) throw error;
-      showToast('Patient marked as arrived in clinic waiting lounge.');
+      showToast('Patient marked as waiting in lobby.');
       await refreshData();
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Could not check in patient.', 'error');
@@ -169,34 +194,46 @@ export default function SecretaryDashboardPage() {
     }
   };
 
-  const handleSkipToBuffer = async (apptId: string, currentSkips: number) => {
-    setActionLoadingId(apptId);
-    try {
-      const newCount = (currentSkips || 0) + 1;
-      if (newCount >= 3) {
+  // UX-06: Configurable Buffer Lane Handler
+  const handleOpenBufferModal = async (appt: Appointment) => {
+    const newCount = (appt.skip_count || 0) + 1;
+    if (newCount >= 3) {
+      try {
         const { error } = await supabase
           .from('appointments')
           .update({ status: 'CANCELLED_NO_SHOW', skip_count: newCount })
-          .eq('id', apptId);
+          .eq('id', appt.id);
         if (error) throw error;
-        showToast('Patient reached 3 missed calls — marked as No-Show.', 'error');
-      } else {
-        const deadline = new Date(Date.now() + 45 * 60 * 1000).toISOString();
-        const { error } = await supabase
-          .from('appointments')
-          .update({
-            status: 'BUFFERED',
-            skip_count: newCount,
-            buffered_at: new Date().toISOString(),
-            grace_period_deadline: deadline,
-          })
-          .eq('id', apptId);
-        if (error) throw error;
-        showToast('Patient moved to Buffer Lane with a 45-minute grace period.');
+        showToast(`Patient #${appt.queue_number} reached 3 missed calls — marked as No-Show.`, 'error');
+        await refreshData();
+      } catch {
+        showToast('Failed to mark patient as no-show.', 'error');
       }
+    } else {
+      setSelectedApptForBuffer(appt);
+    }
+  };
+
+  const handleConfirmBuffer = async (apptId: string, graceMinutes: number, reason: string) => {
+    setActionLoadingId(apptId);
+    try {
+      const res = await fetch('/api/queue/buffer-patient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: apptId,
+          reason,
+          graceMinutes,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to place patient in buffer lane.');
+
+      showToast(data.message || `Patient moved to Buffer Lane (${graceMinutes}m grace period).`);
+      setSelectedApptForBuffer(null);
       await refreshData();
     } catch (err: unknown) {
-      showToast('Failed to place patient in buffer lane.', 'error');
+      showToast(err instanceof Error ? err.message : 'Failed to place patient in buffer lane.', 'error');
     } finally {
       setActionLoadingId(null);
     }
@@ -224,34 +261,71 @@ export default function SecretaryDashboardPage() {
     }
   };
 
-  const handleCallInside = async (appt: Appointment) => {
+  /**
+   * Routes through /api/queue/call-next — the same authoritative endpoint the
+   * Doctor Cockpit uses. This ensures:
+   *   • served_at / completed_at timestamps are stamped server-side
+   *   • The 2-ahead Semaphore SMS advance warning fires when credits are loaded
+   *   • Hospital chime + voice callout play on the lobby TV/speaker
+   *
+   * SMS errors are caught inside the API route so the queue advance always
+   * succeeds even when Semaphore credits are zero — it degrades gracefully.
+   */
+  const handleCallInside = useCallback(async (appt: Appointment) => {
     if (!activeSession) return;
     setActionLoadingId(appt.id);
     try {
       const currentServing = appointments.find((a) => a.status === 'SERVING');
-      if (currentServing) {
-        await supabase
-          .from('appointments')
-          .update({ status: 'COMPLETED' })
-          .eq('id', currentServing.id);
+
+      const res = await fetch('/api/queue/call-next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queueSessionId: activeSession.id,
+          currentAppointmentId: currentServing?.id ?? null,
+          nextAppointmentId: appt.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not advance patient turn.');
+
+      // Fire the lobby audio experience (non-blocking — errors are swallowed)
+      playHospitalChime().catch(() => {});
+      announcePatientCall({
+        tokenCode: appt.token_code,
+        displayName: appt.display_name,
+        roomNumber: undefined, // clinic room shown on the TV display already
+      });
+
+      // Primary confirmation toast
+      showToast(`Token ${appt.token_code} — ${appt.display_name} is now inside with the doctor!`);
+
+      // Secondary SMS dispatch notice (only when Semaphore actually sent it)
+      if (data.advanceWarningSent && data.recipientToken) {
+        setTimeout(() => {
+          showToast(`📱 2-ahead SMS dispatched to token ${data.recipientToken}.`);
+        }, 1800);
       }
-      await supabase
-        .from('appointments')
-        .update({ status: 'SERVING' })
-        .eq('id', appt.id);
-      await supabase
-        .from('queue_sessions')
-        .update({
-          current_serving_number: appt.queue_number,
-          last_updated_at: new Date().toISOString(),
-        })
-        .eq('id', activeSession.id);
-      showToast(`Token ${appt.token_code} (${appt.display_name}) is now inside with the doctor!`);
+
       await refreshData();
     } catch (err: unknown) {
-      showToast('Could not advance patient turn.', 'error');
+      showToast(
+        err instanceof Error ? err.message : 'Could not advance patient turn.',
+        'error'
+      );
     } finally {
       setActionLoadingId(null);
+    }
+  }, [activeSession, appointments, refreshData]);
+
+  // UX-03: Safe Call Inside with confirmation if another patient is currently SERVING
+  const handleInitiateCallInside = (appt: Appointment) => {
+    const currentServing = appointments.find((a) => a.status === 'SERVING');
+    if (currentServing && currentServing.id !== appt.id) {
+      setConfirmCallInsideAppt(appt);
+    } else {
+      handleCallInside(appt);
     }
   };
 
@@ -373,6 +447,64 @@ export default function SecretaryDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── UX-01: DOCTOR CALLED ALERT BANNER ── */}
+      {doctorCallAlert && (
+        <div className="rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-4 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100 animate-pulse">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 text-white px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
+                  Doctor Called Next Patient
+                </span>
+                <span className="text-xs text-emerald-800 font-semibold">
+                  Queue #{doctorCallAlert.queueNumber}
+                </span>
+              </div>
+              <p className="text-sm font-black text-slate-900 mt-0.5">
+                Token <span className="font-mono text-emerald-700">{doctorCallAlert.tokenCode}</span> — {doctorCallAlert.displayName} is now being called inside room!
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={dismissDoctorCallAlert}
+            className="rounded-xl border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition-colors shadow-xs shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* ── UX-04: SESSION STATUS DIRECTION BANNER ── */}
+      {(!activeSession || activeSession.status !== 'ACTIVE') && (
+        <div className={`rounded-2xl border p-4 shadow-xs flex items-start gap-3.5 ${
+          activeSession?.status === 'PAUSED'
+            ? 'border-amber-200 bg-amber-50/90 text-amber-900'
+            : 'border-blue-200 bg-blue-50/90 text-blue-900'
+        }`}>
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+            activeSession?.status === 'PAUSED' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+          }`}>
+            <Clock3 className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-xs font-bold uppercase tracking-wider">
+              {activeSession?.status === 'PAUSED'
+                ? 'Doctor On Hospital Rounds / Surgery Break'
+                : 'Clinic Session Awaiting Doctor to Start'}
+            </h4>
+            <p className="text-xs mt-1 leading-relaxed opacity-90">
+              {activeSession?.status === 'PAUSED'
+                ? activeSession.announcement_notice || 'The doctor has paused consultation rounds. The queue will automatically resume when the doctor clicks Resume in their cockpit.'
+                : `Dr. ${doctor?.name || 'the doctor'} has not yet started today's queue session. You can continue registering walk-in patients and recording triage vitals. Ask the doctor to click "Start Clinic Session" in their Doctor Cockpit when ready to call patients.`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── STATS BAR ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -571,6 +703,8 @@ export default function SecretaryDashboardPage() {
                               <Check className="h-3 w-3" />
                               Done
                             </span>
+                          ) : ['COMPLETED', 'CANCELLED_NO_SHOW'].includes(appt.status) ? (
+                            <span className="text-slate-300 text-xs font-medium">—</span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 text-[10px] font-bold">
                               <AlertTriangle className="h-3 w-3" />
@@ -582,13 +716,42 @@ export default function SecretaryDashboardPage() {
                         {/* 6. Payment */}
                         <TableCell className="text-center">
                           {appt.is_paid_to_clinic ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                appt.clinic_payment_method === 'GCASH' || appt.clinic_payment_method === 'MAYA'
+                                  ? 'bg-violet-100 text-violet-700 border-violet-200'
+                                  : appt.clinic_payment_method === 'HMO'
+                                  ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                  : appt.clinic_payment_method === 'FREE_FOLLOWUP'
+                                  ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                  : 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                              }`}
+                              title={
+                                appt.clinic_payment_method === 'GCASH'
+                                  ? 'Paid via GCash e-wallet'
+                                  : appt.clinic_payment_method === 'MAYA'
+                                  ? 'Paid via Maya e-wallet'
+                                  : appt.clinic_payment_method === 'HMO'
+                                  ? 'Covered by HMO Guarantee Letter'
+                                  : appt.clinic_payment_method === 'FREE_FOLLOWUP'
+                                  ? 'Free Follow-up'
+                                  : 'Paid in Cash'
+                              }
+                            >
                               <Check className="h-3 w-3" />
-                              Paid
+                              {appt.clinic_payment_method === 'GCASH'
+                                ? 'GCash'
+                                : appt.clinic_payment_method === 'MAYA'
+                                ? 'Maya'
+                                : appt.clinic_payment_method === 'HMO'
+                                ? 'HMO'
+                                : appt.clinic_payment_method === 'FREE_FOLLOWUP'
+                                ? 'Free'
+                                : 'Paid (Cash)'}
                             </span>
                           ) : (
                             <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
-                              ₱{doctor?.consultation_fee || 600}
+                              ₱{appt.consultation_fee || doctor?.consultation_fee || 600}
                             </span>
                           )}
                         </TableCell>
@@ -601,17 +764,19 @@ export default function SecretaryDashboardPage() {
                         {/* 8. Actions */}
                         <TableCell className="text-right pr-4">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Vitals */}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setSelectedApptForVitals(appt)}
-                              className="h-8 text-xs font-bold text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 gap-1.5 px-2.5 rounded-lg"
-                              title="Record vital signs"
-                            >
-                              <Stethoscope className="h-3.5 w-3.5 text-brand-700" />
-                              <span>Vitals</span>
-                            </Button>
+                            {/* Vitals (UX-02: Only show for active queue states) */}
+                            {['WAITING', 'BOOKED', 'BUFFERED'].includes(appt.status) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedApptForVitals(appt)}
+                                className="h-8 text-xs font-bold text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 gap-1.5 px-2.5 rounded-lg"
+                                title="Record vital signs"
+                              >
+                                <Stethoscope className="h-3.5 w-3.5 text-brand-700" />
+                                <span>Vitals</span>
+                              </Button>
+                            )}
 
                             {/* Payment */}
                             <Link href={`/secretary/cashier?appointmentId=${appt.id}`}>
@@ -641,14 +806,14 @@ export default function SecretaryDashboardPage() {
                                 )}
                                 <span>Restore</span>
                               </Button>
-                            ) : !isDone && !isNoShow ? (
+                            ) : !isDone && !isNoShow && !isServing ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleSkipToBuffer(appt.id, appt.skip_count)}
+                                onClick={() => handleOpenBufferModal(appt)}
                                 disabled={isLoading}
                                 className="h-8 w-8 p-0 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-lg"
-                                title="Move to Buffer Lane (45-min grace)"
+                                title="Move to Buffer Lane (Configurable Grace)"
                               >
                                 {isLoading ? (
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -658,11 +823,11 @@ export default function SecretaryDashboardPage() {
                               </Button>
                             ) : null}
 
-                            {/* Call Inside */}
+                            {/* Call Inside (UX-03: Safe Call Inside) */}
                             {(appt.status === 'WAITING' || appt.status === 'BOOKED') && (
                               <Button
                                 size="sm"
-                                onClick={() => handleCallInside(appt)}
+                                onClick={() => handleInitiateCallInside(appt)}
                                 disabled={isLoading}
                                 className="h-8 text-xs font-bold bg-brand-700 hover:bg-brand-700/90 text-white gap-1.5 px-3 rounded-lg shadow-xs"
                                 title="Call patient into consultation room"
@@ -735,7 +900,7 @@ export default function SecretaryDashboardPage() {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => handleCallInside(appt)}
+                        onClick={() => handleInitiateCallInside(appt)}
                         disabled={actionLoadingId === appt.id}
                         className="h-8 text-xs font-bold flex-1 bg-brand-700 hover:bg-brand-700/90 text-white rounded-xl"
                       >
@@ -909,6 +1074,36 @@ export default function SecretaryDashboardPage() {
             showToast('Patient checked in and marked as waiting.');
             refreshData();
           }}
+        />
+      )}
+
+      {/* ── UX-03: Safe Call Inside Confirmation Dialog ── */}
+      <ConfirmDialog
+        open={!!confirmCallInsideAppt}
+        onOpenChange={(open) => !open && setConfirmCallInsideAppt(null)}
+        title={`Advance Turn & Call In #${confirmCallInsideAppt?.queue_number}?`}
+        description={`Patient #${appointments.find((a) => a.status === 'SERVING')?.queue_number} (${appointments.find((a) => a.status === 'SERVING')?.display_name}) is currently marked as SERVING. Calling #${confirmCallInsideAppt?.queue_number} (${confirmCallInsideAppt?.display_name}) inside will automatically mark the current patient COMPLETED.`}
+        confirmLabel={`Yes, Call In #${confirmCallInsideAppt?.queue_number}`}
+        cancelLabel="Cancel"
+        variant="brand"
+        isLoading={actionLoadingId === confirmCallInsideAppt?.id}
+        onConfirm={async () => {
+          if (confirmCallInsideAppt) {
+            const target = confirmCallInsideAppt;
+            setConfirmCallInsideAppt(null);
+            await handleCallInside(target);
+          }
+        }}
+      />
+
+      {/* ── UX-06: Buffer Lane Configurable Modal ── */}
+      {selectedApptForBuffer && (
+        <BufferModal
+          isOpen={!!selectedApptForBuffer}
+          onClose={() => setSelectedApptForBuffer(null)}
+          appointment={selectedApptForBuffer}
+          isLoading={actionLoadingId === selectedApptForBuffer.id}
+          onConfirm={handleConfirmBuffer}
         />
       )}
     </div>

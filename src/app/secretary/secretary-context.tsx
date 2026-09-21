@@ -54,6 +54,7 @@ export interface Appointment {
   grace_period_deadline: string | null;
   consultation_fee: number;
   clinic_payment_method?: string | null;
+  payment_notes?: string | null;
   is_paid_to_clinic: boolean;
   created_at: string;
   display_name: string;
@@ -74,6 +75,13 @@ export interface QueueSession {
   doctor_id?: string;
 }
 
+export interface DoctorCallAlert {
+  queueNumber: number;
+  displayName: string;
+  tokenCode: string;
+  calledAt: number;
+}
+
 interface SecretaryContextValue {
   secretary: SecretaryProfile | null;
   doctor: DoctorInfo | null;
@@ -82,6 +90,8 @@ interface SecretaryContextValue {
   appointments: Appointment[];
   loading: boolean;
   isRealtime: boolean;
+  doctorCallAlert: DoctorCallAlert | null;
+  dismissDoctorCallAlert: () => void;
   refreshData: () => Promise<void>;
   updateAppointmentPaid: (
     appointmentId: string,
@@ -102,11 +112,21 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRealtime, setIsRealtime] = useState(false);
+  const [doctorCallAlert, setDoctorCallAlert] = useState<DoctorCallAlert | null>(null);
 
   const activeSessionRef = useRef<QueueSession | null>(null);
   useEffect(() => {
     activeSessionRef.current = activeSession;
   }, [activeSession]);
+
+  const appointmentsRef = useRef<Appointment[]>([]);
+  useEffect(() => {
+    appointmentsRef.current = appointments;
+  }, [appointments]);
+
+  const dismissDoctorCallAlert = useCallback(() => {
+    setDoctorCallAlert(null);
+  }, []);
 
   const fetchAppointments = useCallback(async (sessionId: string) => {
     try {
@@ -128,6 +148,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           grace_period_deadline,
           consultation_fee,
           clinic_payment_method,
+          payment_notes,
           is_paid_to_clinic,
           created_at,
           profiles:patient_id ( full_name, phone_number )
@@ -196,6 +217,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           grace_period_deadline: row.grace_period_deadline,
           consultation_fee: row.consultation_fee || 0,
           clinic_payment_method: row.clinic_payment_method || null,
+          payment_notes: row.payment_notes || null,
           is_paid_to_clinic: !!row.is_paid_to_clinic,
           created_at: row.created_at,
           display_name: displayName,
@@ -213,7 +235,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
 
   const refreshData = useCallback(async () => {
     try {
-      // 1. Check logged in user profile
+      // 1. Check logged in user profile or default active secretary
       const { data: { user } } = await supabase.auth.getUser();
       let doctorId: string | null = null;
       let secretaryObj: SecretaryProfile | null = null;
@@ -240,11 +262,34 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // If no explicit secretary found, check first active doctor as default practice
+      // If no explicit secretary found from auth, fetch default active secretary
+      if (!secretaryObj) {
+        const { data: defaultSec } = await supabase
+          .from('secretaries')
+          .select('id, profile_id, doctor_id, is_active, profiles:profile_id ( full_name )')
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+
+        if (defaultSec) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p = (defaultSec as any).profiles;
+          secretaryObj = {
+            id: defaultSec.id,
+            profile_id: defaultSec.profile_id,
+            doctor_id: defaultSec.doctor_id,
+            full_name: p?.full_name || 'Elena Bautista',
+          };
+          setSecretary(secretaryObj);
+          doctorId = defaultSec.doctor_id;
+        }
+      }
+
+      // Load doctor details
       if (!doctorId) {
         const { data: firstDoc } = await supabase
           .from('doctors')
-          .select('id, title, specialty, consultation_fee, profiles ( full_name )')
+          .select('id, title, specialty, consultation_fee_default, profiles:profile_id ( full_name )')
           .limit(1)
           .maybeSingle();
 
@@ -254,55 +299,60 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           const prof = (firstDoc as any).profiles;
           setDoctor({
             id: firstDoc.id,
-            name: prof?.full_name || 'Dr. Maria Santos',
+            name: prof?.full_name || 'Dr. Maria Santos, MD',
             specialty: firstDoc.specialty || 'Internal Medicine / Cardiology',
             title: firstDoc.title || 'MD, FPCP, FPCC',
-            consultation_fee: Number(firstDoc.consultation_fee) || 600,
+            consultation_fee: Number(firstDoc.consultation_fee_default) || 600,
           });
         }
       } else {
         const { data: docData } = await supabase
           .from('doctors')
-          .select('id, title, specialty, consultation_fee, profiles ( full_name )')
+          .select('id, title, specialty, consultation_fee_default, profiles:profile_id ( full_name )')
           .eq('id', doctorId)
-          .single();
+          .maybeSingle();
 
         if (docData) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const prof = (docData as any).profiles;
           setDoctor({
             id: docData.id,
-            name: prof?.full_name || 'Attending Physician',
-            specialty: docData.specialty || 'Specialist',
-            title: docData.title || 'MD',
-            consultation_fee: Number(docData.consultation_fee) || 600,
+            name: prof?.full_name || 'Dr. Maria Santos, MD',
+            specialty: docData.specialty || 'Internal Medicine / Cardiology',
+            title: docData.title || 'MD, FPCP, FPCC',
+            consultation_fee: Number(docData.consultation_fee_default) || 600,
           });
         }
       }
 
-      // 2. Fetch today's session (ACTIVE or PAUSED, or most recent today)
-      let sessQuery = supabase
-        .from('queue_sessions')
-        .select(`
-          id,
-          schedule_id,
-          session_date,
-          status,
-          current_serving_number,
-          announcement_notice,
-          last_updated_at,
-          clinic_id,
-          doctor_id,
-          clinics:clinic_id ( id, name, hospital_name, room_number )
-        `)
-        .in('status', ['ACTIVE', 'PAUSED'])
-        .order('last_updated_at', { ascending: false });
+      const todayStr = new Date().toISOString().split('T')[0];
 
+      // 2. Fetch today's session (ACTIVE, PAUSED, or PENDING) strictly for this doctor & today
+      let sessionData: any = null;
       if (doctorId) {
-        sessQuery = sessQuery.eq('doctor_id', doctorId);
-      }
+        const { data } = await supabase
+          .from('queue_sessions')
+          .select(`
+            id,
+            schedule_id,
+            session_date,
+            status,
+            current_serving_number,
+            announcement_notice,
+            last_updated_at,
+            clinic_id,
+            doctor_id,
+            clinics:clinic_id ( id, name, hospital_name, room_number )
+          `)
+          .eq('doctor_id', doctorId)
+          .eq('session_date', todayStr)
+          .in('status', ['ACTIVE', 'PAUSED', 'PENDING'])
+          .order('last_updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      const { data: sessionData } = await sessQuery.limit(1).maybeSingle();
+        sessionData = data;
+      }
 
       if (sessionData) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -331,52 +381,50 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
 
         await fetchAppointments(currentSession.id);
       } else {
-        // Fallback demo session or query by doctor
-        const { data: fallbackSession } = await supabase
-          .from('queue_sessions')
-          .select(`
-            id,
-            schedule_id,
-            session_date,
-            status,
-            current_serving_number,
-            announcement_notice,
-            last_updated_at,
-            clinic_id,
-            doctor_id,
-            clinics:clinic_id ( id, name, hospital_name, room_number )
-          `)
-          .order('session_date', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // No session active or pending for today: do NOT load past sessions!
+        setActiveSession(null);
+        setAppointments([]);
 
-        if (fallbackSession) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const fs = fallbackSession as any;
-          const currentSession: QueueSession = {
-            id: fs.id,
-            schedule_id: fs.schedule_id,
-            session_date: fs.session_date,
-            status: fs.status,
-            current_serving_number: fs.current_serving_number || 0,
-            announcement_notice: fs.announcement_notice,
-            last_updated_at: fs.last_updated_at,
-            clinic_id: fs.clinic_id,
-            doctor_id: fs.doctor_id,
-          };
-          setActiveSession(currentSession);
-          if (fs.clinics) {
+        // Determine today's clinic from doctor schedules
+        if (doctorId) {
+          const dayOfWeek = new Date().getDay() === 0 ? 7 : new Date().getDay();
+          const { data: schedData } = await supabase
+            .from('doctor_clinic_schedules')
+            .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number )')
+            .eq('doctor_id', doctorId)
+            .eq('day_of_week', dayOfWeek)
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (schedData?.clinics) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const c = schedData.clinics as any;
             setClinic({
-              id: fs.clinics.id,
-              name: fs.clinics.name,
-              hospital_name: fs.clinics.hospital_name,
-              room_number: fs.clinics.room_number,
+              id: c.id,
+              name: c.name,
+              hospital_name: c.hospital_name,
+              room_number: c.room_number,
             });
+          } else {
+            const { data: anySched } = await supabase
+              .from('doctor_clinic_schedules')
+              .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number )')
+              .eq('doctor_id', doctorId)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle();
+
+            if (anySched?.clinics) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const c = anySched.clinics as any;
+              setClinic({
+                id: c.id,
+                name: c.name,
+                hospital_name: c.hospital_name,
+                room_number: c.room_number,
+              });
+            }
           }
-          await fetchAppointments(currentSession.id);
-        } else {
-          setActiveSession(null);
-          setAppointments([]);
         }
       }
     } catch (err) {
@@ -421,13 +469,34 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
         (payload) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const updated = payload.new as any;
+          const newNum = updated.current_serving_number;
+
+          // Alert secretary when doctor advances the queue turn
+          if (
+            typeof newNum === 'number' &&
+            newNum > 0 &&
+            activeSessionRef.current &&
+            newNum !== activeSessionRef.current.current_serving_number
+          ) {
+            const matched = appointmentsRef.current.find((a) => a.queue_number === newNum);
+            setDoctorCallAlert({
+              queueNumber: newNum,
+              displayName: matched?.display_name || `Patient #${newNum}`,
+              tokenCode: matched?.token_code || `CN-#${newNum}`,
+              calledAt: Date.now(),
+            });
+          }
+
           setActiveSession((prev) =>
             prev
               ? {
                   ...prev,
                   status: updated.status ?? prev.status,
                   current_serving_number: updated.current_serving_number ?? prev.current_serving_number,
-                  announcement_notice: updated.announcement_notice ?? prev.announcement_notice,
+                  announcement_notice:
+                    'announcement_notice' in updated
+                      ? updated.announcement_notice
+                      : prev.announcement_notice,
                 }
               : prev
           );
@@ -442,6 +511,30 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
     };
   }, [activeSession?.id, supabase, fetchAppointments]);
 
+  // Doctor session changes listener (to catch session started/paused/ended by doctor)
+  useEffect(() => {
+    if (!doctor?.id) return;
+    const sessionChannel = supabase
+      .channel(`secretary-doc-session-${doctor.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'queue_sessions',
+          filter: `doctor_id=eq.${doctor.id}`,
+        },
+        () => {
+          refreshData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sessionChannel);
+    };
+  }, [doctor?.id, refreshData, supabase]);
+
   const updateAppointmentPaid = async (
     appointmentId: string,
     method: string,
@@ -452,9 +545,10 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
       // Map UI payment method values to DB enum values
       const dbMethodMap: Record<string, string> = {
         CASH: 'CASH',
-        GCASH: 'CASH',         // GCash stored as CASH category; reference saved in notes
+        GCASH: 'GCASH',
+        MAYA: 'MAYA',
         HMO: 'HMO',
-        FREE: 'FREE_FOLLOWUP', // DB enum uses FREE_FOLLOWUP
+        FREE: 'FREE_FOLLOWUP',
         CARD: 'CARD',
         PHILHEALTH: 'PHILHEALTH',
       };
@@ -474,15 +568,30 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
         clinic_payment_method: dbMethod,
         consultation_fee: amount,
       };
-      // Only set notes if the column exists in the live DB (graceful)
+      if (method === 'HMO' && meta?.hmoProvider) {
+        updatePayload.hmo_name = meta.hmoProvider;
+      }
+      if (method === 'HMO' && meta?.hmoCode) {
+        updatePayload.hmo_approval_code = meta.hmoCode;
+      }
       if (paymentNotes) {
         updatePayload.payment_notes = paymentNotes;
       }
 
-      const { error } = await supabase
+      let { error } = await supabase
         .from('appointments')
         .update(updatePayload)
         .eq('id', appointmentId);
+
+      // Graceful fallback if clinic_payment_method enum in DB doesn't support GCASH/MAYA
+      if (error && (error.message?.includes('clinic_payment_method') || error.message?.includes('invalid input value for enum'))) {
+        updatePayload.clinic_payment_method = 'CASH';
+        const retryRes = await supabase
+          .from('appointments')
+          .update(updatePayload)
+          .eq('id', appointmentId);
+        error = retryRes.error;
+      }
 
       if (error) {
         // If payment_notes column doesn't exist, retry without it
@@ -501,7 +610,13 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
       setAppointments((prev) =>
         prev.map((a) =>
           a.id === appointmentId
-            ? { ...a, is_paid_to_clinic: true, clinic_payment_method: dbMethod, consultation_fee: amount }
+            ? {
+                ...a,
+                is_paid_to_clinic: true,
+                clinic_payment_method: dbMethod,
+                payment_notes: paymentNotes,
+                consultation_fee: amount,
+              }
             : a
         )
       );
@@ -522,6 +637,8 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
         appointments,
         loading,
         isRealtime,
+        doctorCallAlert,
+        dismissDoctorCallAlert,
         refreshData,
         updateAppointmentPaid,
       }}

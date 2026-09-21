@@ -15,19 +15,26 @@ export async function POST(req: NextRequest) {
     const { queueSessionId, currentAppointmentId, nextAppointmentId } = body as {
       queueSessionId: string;
       currentAppointmentId?: string | null;
-      nextAppointmentId: string;
+      nextAppointmentId?: string | null;
     };
 
-    if (!queueSessionId || !nextAppointmentId) {
+    if (!queueSessionId) {
       return NextResponse.json(
-        { error: 'queueSessionId and nextAppointmentId are required' },
+        { error: 'queueSessionId is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!currentAppointmentId && !nextAppointmentId) {
+      return NextResponse.json(
+        { error: 'Either currentAppointmentId or nextAppointmentId is required' },
         { status: 400 }
       );
     }
 
     const supabase = await createServerClient();
 
-    // 1. Mark previous patient COMPLETED if currently serving
+    // 1. Mark previous patient COMPLETED if currently serving, and ensure no other patient remains SERVING
     if (currentAppointmentId) {
       await supabase
         .from('appointments')
@@ -36,6 +43,37 @@ export async function POST(req: NextRequest) {
           completed_at: new Date().toISOString(),
         })
         .eq('id', currentAppointmentId);
+    }
+
+    // Atomically complete any other appointment in this queue session currently marked SERVING
+    let completeOthersQuery = supabase
+      .from('appointments')
+      .update({
+        status: 'COMPLETED',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('queue_session_id', queueSessionId)
+      .eq('status', 'SERVING');
+
+    if (nextAppointmentId) {
+      completeOthersQuery = completeOthersQuery.neq('id', nextAppointmentId);
+    }
+    await completeOthersQuery;
+
+    // If concluding consultation without calling another patient (queue empty)
+    if (!nextAppointmentId) {
+      await supabase
+        .from('queue_sessions')
+        .update({
+          last_updated_at: new Date().toISOString(),
+        })
+        .eq('id', queueSessionId);
+
+      return NextResponse.json({
+        success: true,
+        completedOnly: true,
+        message: 'Consultation concluded successfully.',
+      });
     }
 
     // 2. Fetch incoming appointment to get queue number & clinic room

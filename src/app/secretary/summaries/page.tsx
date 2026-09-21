@@ -96,7 +96,10 @@ export default function DailySummariesPage() {
     let hmoClaimsCount = 0;
 
     paidAppointments.forEach((a) => {
-      const method = (a.clinic_payment_method || 'CASH').toUpperCase();
+      let method = (a.clinic_payment_method || 'CASH').toUpperCase();
+      if (method === 'CASH' && a.payment_notes?.toLowerCase().includes('gcash')) {
+        method = 'GCASH';
+      }
       const fee = a.consultation_fee || doctor?.consultation_fee || 600;
       if (method === 'CASH') {
         cashCollected += fee;

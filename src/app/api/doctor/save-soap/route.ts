@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
           icd10_code: icd10Code || (Array.isArray(diagnoses) ? diagnoses[0]?.code : null) || null,
           private_notes: privateNotes || null,
           followup_date: followupDate || null,
+          updated_at: new Date().toISOString(),
         },
         {
           onConflict: 'appointment_id',
@@ -107,10 +108,67 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── Auto-generate digital prescriptions from Pharmacological Plan (Rx) ──────
+    let prescriptionCount = 0;
+    if (record?.id && plan && typeof plan === 'string' && plan.trim()) {
+      try {
+        const lines = plan
+          .split('\n')
+          .map((l: string) => l.trim())
+          .filter((l: string) => l.length > 0);
+
+        const rxRows = lines.map((line: string) => {
+          const cleaned = line.replace(/^(\d+[\.\)]|\-|\*|•)\s*/, '').trim();
+          let qty: string | null = null;
+          const qtyMatch = cleaned.match(/(?:#|qty:?\s*|quantity:?\s*)(\d+)/i);
+          if (qtyMatch) qty = qtyMatch[1];
+
+          const parts = cleaned.split(/\s*[-—–]\s*/);
+          const medPart = parts[0] || cleaned;
+          const sigPart = parts.slice(1).join(' — ') || 'Take as directed';
+
+          const medWords = medPart.split(/\s+/);
+          const genericName = medWords[0] || 'Medication';
+          const dosage = medWords.slice(1).join(' ') || '';
+
+          return {
+            medical_record_id: record.id,
+            item_type: 'MEDICATION' as const,
+            generic_name: genericName,
+            dosage: dosage || null,
+            details: qty ? `Qty: #${qty}` : (sigPart || 'Take as directed'),
+            instructions: sigPart,
+            frequency: sigPart.match(/(OD|BID|TID|QID|Q\d+h|HS|PRN|daily|twice|thrice)/i)?.[0] || 'As directed',
+            duration: sigPart.match(/(\d+\s*(days|weeks|months|d|w|m))/i)?.[0] || 'Until finished',
+            is_digital_copy_sent: false,
+          };
+        });
+
+        if (rxRows.length > 0) {
+          const { data: existingRx } = await supabase
+            .from('prescriptions_lab_requests')
+            .select('id')
+            .eq('medical_record_id', record.id)
+            .limit(1);
+
+          if (!existingRx || existingRx.length === 0) {
+            const { data: insertedRx } = await supabase
+              .from('prescriptions_lab_requests')
+              .insert(rxRows)
+              .select('id');
+            prescriptionCount = insertedRx?.length || 0;
+          }
+        }
+      } catch (rxErr) {
+        console.warn('[save-soap] Could not auto-generate prescriptions from plan:', rxErr);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       medicalRecordId: record?.id,
-      message: 'Consultation SOAP note saved successfully.',
+      prescriptionCount,
+      message: 'Consultation SOAP note and digital prescriptions saved successfully.',
     });
   } catch (err) {
     console.error('[save-soap] Unexpected error:', err);

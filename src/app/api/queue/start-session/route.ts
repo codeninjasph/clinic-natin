@@ -96,7 +96,27 @@ export async function POST(req: NextRequest) {
       .select('*')
       .single();
 
-    if (sessErr) throw sessErr;
+    if (sessErr) {
+      // Handle potential race condition if another request created the session concurrently
+      if (
+        sessErr.code === '23505' ||
+        sessErr.message?.includes('duplicate key') ||
+        sessErr.message?.includes('unique constraint')
+      ) {
+        const { data: fallbackSession } = await supabase
+          .from('queue_sessions')
+          .select('*')
+          .eq('doctor_id', doctorId)
+          .eq('clinic_id', clinicId)
+          .eq('session_date', todayStr)
+          .maybeSingle();
+
+        if (fallbackSession) {
+          return NextResponse.json({ success: true, session: fallbackSession });
+        }
+      }
+      throw sessErr;
+    }
 
     return NextResponse.json({ success: true, session: newSession });
   } catch (err: unknown) {

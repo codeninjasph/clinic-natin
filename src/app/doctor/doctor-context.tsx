@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export interface DoctorData {
@@ -123,6 +123,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
   const [selectedRoom, setSelectedRoomState] = useState<ClinicRoom | null>(DEFAULT_ROOMS[0]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const isStartingSessionRef = useRef(false);
 
   const supabase = createClient();
 
@@ -184,7 +185,7 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
           subscriptionTier: (matchedDoctorRow.subscription_tier as 'free' | 'pro') || 'pro',
           hospitalAffiliation: matchedDoctorRow.hospital_affiliation || 'Maria Reyna XU Hospital',
           roomAssignment: matchedDoctorRow.room_assignment || 'Room 304',
-          email: matchedProfileRow?.phone_number || 'doctor@clinicnatin.ph',
+          email: matchedProfileRow?.email || user?.email || 'doctor@clinicnatin.ph',
           isVerified:
             matchedDoctorRow.is_verified ??
             (matchedDoctorRow.verification_status === 'VERIFIED'),
@@ -251,13 +252,15 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
           setSelectedRoomState(DEFAULT_ROOMS[0]);
         }
 
-        // Fetch active queue session for this doctor (ACTIVE or PAUSED)
+        // Fetch active queue session for this doctor for today (ACTIVE or PAUSED)
+        const todayStr = new Date().toISOString().split('T')[0];
         const { data: session } = await supabase
           .from('queue_sessions')
           .select('*')
           .eq('doctor_id', matchedDoctorRow.id)
+          .eq('session_date', todayStr)
           .in('status', ['ACTIVE', 'PAUSED'])
-          .order('session_date', { ascending: false })
+          .order('last_updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -279,20 +282,31 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchDoctorData();
+  }, [fetchDoctorData]);
+
+  useEffect(() => {
+    if (!doctor?.id) return;
+
     const channel = supabase
-      .channel('doctor-context-sessions')
+      .channel(`doctor-context-sessions:${doctor.id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'queue_sessions' },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'queue_sessions',
+          filter: `doctor_id=eq.${doctor.id}`,
+        },
         () => {
           fetchDoctorData();
         }
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchDoctorData, supabase]);
+  }, [doctor?.id, fetchDoctorData, supabase]);
 
   const setSelectedRoom = (room: ClinicRoom) => {
     setSelectedRoomState(room);
@@ -305,6 +319,11 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
   const startSession = async (clinicId?: string): Promise<boolean> => {
     const targetClinicId = clinicId || selectedRoom?.clinicId;
     if (!doctor?.id || !targetClinicId) return false;
+    if (activeSession?.status === 'ACTIVE' && activeSession.clinic_id === targetClinicId) {
+      return true; // Already active session for this clinic
+    }
+    if (isStartingSessionRef.current) return false;
+    isStartingSessionRef.current = true;
     try {
       const res = await fetch('/api/queue/start-session', {
         method: 'POST',
@@ -324,6 +343,8 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('Error starting session:', e);
       return false;
+    } finally {
+      isStartingSessionRef.current = false;
     }
   };
 

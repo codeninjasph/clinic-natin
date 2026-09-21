@@ -63,7 +63,7 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE clinic_payment_method AS ENUM ('CASH', 'HMO', 'CARD', 'PHILHEALTH', 'FREE_FOLLOWUP');
+    CREATE TYPE clinic_payment_method AS ENUM ('CASH', 'GCASH', 'MAYA', 'HMO', 'CARD', 'PHILHEALTH', 'FREE_FOLLOWUP');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;

@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { BufferModal } from '@/components/secretary/buffer-modal';
 
 interface QueueSession {
   id: string;
@@ -38,6 +39,7 @@ interface AppointmentItem {
   token_code: string;
   status: 'BOOKED' | 'WAITING' | 'SERVING' | 'BUFFERED' | 'COMPLETED' | 'SKIPPED' | 'CANCELLED_NO_SHOW';
   priority_category: string;
+  priority_notes?: string | null;
   walk_in_name?: string | null;
   walk_in_phone?: string | null;
   booking_channel: 'ONLINE' | 'WALK_IN';
@@ -63,6 +65,7 @@ export default function DoctorQueuePage() {
   const [loading, setLoading] = useState(true);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [selectedApptForBuffer, setSelectedApptForBuffer] = useState<AppointmentItem | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,11 +82,13 @@ export default function DoctorQueuePage() {
   // ── Fetch Queue Session & Appointments ────────────────────────────────────
   const fetchQueue = useCallback(async () => {
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
       let sessionQuery = supabase
         .from('queue_sessions')
         .select('id, status, current_serving_number, session_date')
-        .in('status', ['ACTIVE', 'PAUSED'])
-        .order('session_date', { ascending: false });
+        .in('status', ['ACTIVE', 'PAUSED', 'PENDING'])
+        .eq('session_date', todayStr)
+        .order('last_updated_at', { ascending: false });
 
       if (selectedRoom?.clinicId) {
         sessionQuery = sessionQuery.eq('clinic_id', selectedRoom.clinicId);
@@ -100,7 +105,7 @@ export default function DoctorQueuePage() {
         const { data: apptsData } = await supabase
           .from('appointments')
           .select(
-            'id, queue_number, token_code, status, priority_category, walk_in_name, walk_in_phone, booking_channel, buffered_at, grace_period_deadline, created_at, served_at, completed_at, profiles:patient_id (full_name, phone_number, allergies, date_of_birth)'
+            'id, queue_number, token_code, status, priority_category, priority_notes, walk_in_name, walk_in_phone, booking_channel, buffered_at, grace_period_deadline, created_at, served_at, completed_at, profiles:patient_id (full_name, phone_number, allergies, date_of_birth)'
           )
           .eq('queue_session_id', sessionData.id)
           .order('queue_number', { ascending: true });
@@ -109,7 +114,7 @@ export default function DoctorQueuePage() {
           const items: AppointmentItem[] = apptsData.map((a) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const profile = (a as any).profiles;
-            const isOnline = a.queue_number % 2 === 1;
+            const isOnline = a.booking_channel === 'ONLINE' || (!a.booking_channel && !a.walk_in_name);
             return {
               id: a.id,
               queue_number: a.queue_number,
@@ -120,6 +125,7 @@ export default function DoctorQueuePage() {
                   : `CN-WK${String(a.queue_number).padStart(3, '0')}`),
               status: a.status,
               priority_category: a.priority_category || 'NONE',
+              priority_notes: a.priority_notes || null,
               walk_in_name: a.walk_in_name,
               walk_in_phone: a.walk_in_phone,
               booking_channel: (a.booking_channel as 'ONLINE' | 'WALK_IN') || (isOnline ? 'ONLINE' : 'WALK_IN'),
@@ -230,22 +236,27 @@ export default function DoctorQueuePage() {
     }
   };
 
-  // ── Buffer Patient (45m Grace Period) ─────────────────────────────────────
-  const handleBufferPatient = async (appointmentId: string) => {
+  // ── Buffer Patient (Configurable Grace Period) ───────────────────────────
+  const handleConfirmBuffer = async (
+    appointmentId: string,
+    graceMinutes: number,
+    reason: string
+  ) => {
     setActionLoadingId(appointmentId);
     try {
       const res = await fetch('/api/queue/buffer-patient', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appointmentId, reason: 'Sent for diagnostic labs/imaging' }),
+        body: JSON.stringify({ appointmentId, reason, graceMinutes }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to buffer patient');
       setToastNotice({
         type: 'brand',
         title: 'Patient Buffered',
-        message: data.message || 'Patient moved to Buffer Lane (45m Grace Period).',
+        message: data.message || `Patient moved to Buffer Lane (${graceMinutes}m Grace Period).`,
       });
+      setSelectedApptForBuffer(null);
       await fetchQueue();
     } catch (err: unknown) {
       setToastNotice({
@@ -399,8 +410,8 @@ export default function DoctorQueuePage() {
         </div>
       </div>
 
-      {/* Session Launcher Card if no session today */}
-      {!session && !loading && (
+      {/* Session Launcher Card if no active session today */}
+      {(!session || session.status === 'PENDING') && !loading && (
         <Card className="border-brand-200 bg-brand-50/50">
           <CardContent className="p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -411,7 +422,7 @@ export default function DoctorQueuePage() {
                 <h3 className="font-bold text-slate-900 text-sm">No Active Queue Session for Today</h3>
                 <p className="text-xs text-slate-500">
                   {selectedRoom
-                    ? `Launch queue session for ${selectedRoom.clinicName} (${selectedRoom.room})`
+                    ? `Launch queue session for ${selectedRoom.clinicName} (${selectedRoom.room})${appointments.filter((a) => a.status === 'WAITING' || a.status === 'BOOKED').length > 0 ? ` · ${appointments.filter((a) => a.status === 'WAITING' || a.status === 'BOOKED').length} patient(s) waiting` : ''}`
                     : 'Select a clinic room from the top bar to open today\'s queue session.'}
                 </p>
               </div>
@@ -639,9 +650,16 @@ export default function DoctorQueuePage() {
                         {/* Priority / Type */}
                         <td className="py-3.5 px-4">
                           {appt.priority_category !== 'NONE' ? (
-                            <Badge variant="warning" className="text-[10px]">
-                              {appt.priority_category} (20% Off)
-                            </Badge>
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge variant="warning" className="text-[10px]">
+                                {appt.priority_category} (20% Off)
+                              </Badge>
+                              {appt.priority_notes && (
+                                <span className="text-[10px] text-amber-700 font-medium max-w-[140px] truncate" title={appt.priority_notes}>
+                                  {appt.priority_notes}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-slate-400 text-[11px]">Regular</span>
                           )}
@@ -667,7 +685,17 @@ export default function DoctorQueuePage() {
                           {isBuffered && appt.buffered_at && (
                             <p className="text-[9px] text-amber-700 mt-1 flex items-center gap-1 font-medium">
                               <Clock className="h-2.5 w-2.5" />
-                              Grace: 45m window
+                              Grace:{' '}
+                              {appt.grace_period_deadline
+                                ? `${Math.max(
+                                    10,
+                                    Math.round(
+                                      (new Date(appt.grace_period_deadline).getTime() -
+                                        new Date(appt.buffered_at).getTime()) /
+                                        60000
+                                    )
+                                  )}m window`
+                                : '45m window'}
                             </p>
                           )}
                         </td>
@@ -690,10 +718,10 @@ export default function DoctorQueuePage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => handleBufferPatient(appt.id)}
+                                  onClick={() => setSelectedApptForBuffer(appt)}
                                   disabled={actionLoadingId === appt.id}
                                   className="h-7 text-xs px-2 text-amber-700 border-amber-200 hover:bg-amber-50"
-                                  title="Buffer for lab tests"
+                                  title="Buffer for lab/diagnostic tests"
                                 >
                                   <Activity className="h-3 w-3 mr-1" />
                                   Buffer
@@ -762,6 +790,22 @@ export default function DoctorQueuePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Buffer Lane Configurable Grace Modal ── */}
+      {selectedApptForBuffer && (
+        <BufferModal
+          isOpen={!!selectedApptForBuffer}
+          onClose={() => setSelectedApptForBuffer(null)}
+          appointment={{
+            id: selectedApptForBuffer.id,
+            token_code: selectedApptForBuffer.token_code,
+            queue_number: selectedApptForBuffer.queue_number,
+            display_name: selectedApptForBuffer.patient?.full_name || selectedApptForBuffer.walk_in_name || `Patient #${selectedApptForBuffer.queue_number}`,
+          }}
+          isLoading={actionLoadingId === selectedApptForBuffer.id}
+          onConfirm={handleConfirmBuffer}
+        />
+      )}
     </div>
   );
 }
