@@ -327,7 +327,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
 
       const todayStr = new Date().toISOString().split('T')[0];
 
-      // 2. Fetch today's session (ACTIVE, PAUSED, or PENDING) strictly for this doctor & today
+      // 2. Fetch today's session (ACTIVE, PAUSED, or PENDING; fallback to COMPLETED if clinic ended)
       let sessionData: any = null;
       if (doctorId) {
         const { data } = await supabase
@@ -351,7 +351,33 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           .limit(1)
           .maybeSingle();
 
-        sessionData = data;
+        if (data) {
+          sessionData = data;
+        } else {
+          // Fallback to today's COMPLETED session so secretary can perform end-of-day reconciliation
+          const { data: completedData } = await supabase
+            .from('queue_sessions')
+            .select(`
+              id,
+              schedule_id,
+              session_date,
+              status,
+              current_serving_number,
+              announcement_notice,
+              last_updated_at,
+              clinic_id,
+              doctor_id,
+              clinics:clinic_id ( id, name, hospital_name, room_number )
+            `)
+            .eq('doctor_id', doctorId)
+            .eq('session_date', todayStr)
+            .eq('status', 'COMPLETED')
+            .order('last_updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          sessionData = completedData;
+        }
       }
 
       if (sessionData) {
