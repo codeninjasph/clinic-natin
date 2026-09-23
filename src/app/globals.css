@@ -1,48 +1,48 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #09090b;
+  --background: #F8F9FA;
+  --foreground: #1A1A1A;
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #1A1A1A;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #568259;
+  --popover-foreground: #1A1A1A;
+  --primary: #32bea6;
   --primary-foreground: #ffffff;
-  --secondary: #F1FFFA;
-  --secondary-foreground: #2d4c2f;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #CCFCCB;
-  --accent-foreground: #14532d;
+  --secondary: #eefaf7;
+  --secondary-foreground: #1d7667;
+  --muted: #F4F6F6;
+  --muted-foreground: #6C757D;
+  --accent: #d4f5ee;
+  --accent-foreground: #259682;
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #568259;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #32bea6;
   --radius: 0.75rem;
 }
 
 .dark {
-  --background: #09090b;
+  --background: #0f1715;
   --foreground: #fafafa;
-  --card: #09090b;
+  --card: #141f1c;
   --card-foreground: #fafafa;
-  --popover: #09090b;
+  --popover: #141f1c;
   --popover-foreground: #fafafa;
-  --primary: #96E6B3;
+  --primary: #32bea6;
   --primary-foreground: #09090b;
-  --secondary: #1e2922;
+  --secondary: #162c26;
   --secondary-foreground: #fafafa;
-  --muted: #27272a;
+  --muted: #1e2d29;
   --muted-foreground: #a1a1aa;
-  --accent: #1e3a29;
-  --accent-foreground: #96E6B3;
+  --accent: #259682;
+  --accent-foreground: #eefaf7;
   --destructive: #7f1d1d;
   --destructive-foreground: #fafafa;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #96E6B3;
+  --border: #233732;
+  --input: #233732;
+  --ring: #32bea6;
 }
 
 @theme inline {
@@ -66,11 +66,31 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Clinic Natin Brand Tokens */
-  --color-brand-50: #F1FFFA;
-  --color-brand-100: #CCFCCB;
-  --color-brand-300: #96E6B3;
-  --color-brand-700: #568259;
+  /* Clinic Natin Official Brand Teal Tokens */
+  --color-brand: #32bea6;
+  --color-brand-DEFAULT: #32bea6;
+  --color-brand-dark: #259682;
+  --color-brand-50: #eefaf7;
+  --color-brand-100: #d4f5ee;
+  --color-brand-200: #a9ecdf;
+  --color-brand-300: #7ae1ce;
+  --color-brand-400: #4bd2bc;
+  --color-brand-500: #32bea6;
+  --color-brand-600: #2bac96;
+  --color-brand-700: #259682;
+  --color-brand-800: #1d7667;
+  --color-brand-900: #15564b;
+
+  /* Neutral Dark & Surface Tokens */
+  --color-dark: #1A1A1A;
+  --color-dark-DEFAULT: #1A1A1A;
+  --color-dark-muted: #6C757D;
+  --color-surface: #FFFFFF;
+
+  /* Status Colors */
+  --color-status-success: #10B981;
+  --color-status-warning: #F59E0B;
+  --color-status-danger: #EF4444;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

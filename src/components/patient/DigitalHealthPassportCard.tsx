@@ -88,25 +88,25 @@ export function DigitalHealthPassportCard({
         className="relative mx-auto w-full max-w-md overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-brand-950 to-slate-900 p-6 sm:p-7 text-white shadow-2xl border border-white/20 select-none print:bg-slate-900 print:text-white"
       >
         {/* Ambient lighting effects */}
-        <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-emerald-500/20 blur-2xl pointer-events-none" />
-        <div className="absolute -left-12 -bottom-12 h-44 w-44 rounded-full bg-brand-500/25 blur-2xl pointer-events-none" />
+        <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-brand/20 blur-2xl pointer-events-none" />
+        <div className="absolute -left-12 -bottom-12 h-44 w-44 rounded-full bg-brand-dark/25 blur-2xl pointer-events-none" />
 
         {/* Card Top Branding Header */}
         <div className="relative flex items-center justify-between border-b border-white/10 pb-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-white shadow-inner border border-white/10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white shadow-inner border border-white/10">
               <Stethoscope className="h-5 w-5" />
             </div>
             <div>
               <div className="text-sm font-black tracking-wide leading-none">
-                CLINIC <span className="text-emerald-400">NATIN</span>
+                CLINIC <span className="text-brand">NATIN</span>
               </div>
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mt-1">
                 Verified Patient Pass
               </div>
             </div>
           </div>
-          <Badge variant="brand" className="text-[11px] px-2.5 py-0.5 font-bold shadow-xs bg-emerald-500/20 text-emerald-300 border-emerald-400/30">
+          <Badge variant="brand" className="text-[11px] px-2.5 py-0.5 font-bold shadow-xs bg-brand/20 text-brand border-brand/30">
             {clinicTag}
           </Badge>
         </div>
@@ -120,8 +120,8 @@ export function DigitalHealthPassportCard({
             <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {patientName || 'Patient Name'}
             </div>
-            <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+            <div className="flex items-center gap-2 text-xs text-brand font-mono">
+              <ShieldCheck className="h-3.5 w-3.5 text-brand shrink-0" />
               <span>ID: {patientIdCode || 'CN-P0000'}</span>
             </div>
           </div>
@@ -139,7 +139,7 @@ export function DigitalHealthPassportCard({
         <div className="relative grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-3.5 border border-white/10 text-center text-xs backdrop-blur-xs">
           <div>
             <div className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Blood Group</div>
-            <div className="text-base font-black text-emerald-400 mt-0.5">{bloodType || '\u2014'}</div>
+            <div className="text-base font-black text-brand mt-0.5">{bloodType || '\u2014'}</div>
           </div>
           <div>
             <div className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">BMI</div>
@@ -178,7 +178,7 @@ export function DigitalHealthPassportCard({
             {allergies && allergies.length > 0 ? (
               <strong className="text-rose-400 font-bold">{allergies.join(', ')}</strong>
             ) : (
-              <strong className="text-emerald-400 font-semibold">None Reported</strong>
+              <strong className="text-brand font-semibold">None Reported</strong>
             )}
           </div>
         </div>

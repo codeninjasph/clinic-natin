@@ -36,13 +36,17 @@ import {
   DigitalHealthPassportData
 } from '@/components/patient/DigitalHealthPassportCard';
 import { DigitalHealthPassportDialog } from '@/components/patient/DigitalHealthPassportDialog';
+import { SafeZoneRadar } from '@/components/patient/safe-zone-radar';
+import { BufferGraceCard } from '@/components/patient/buffer-grace-card';
+import { hospitalChime } from '@/lib/audio/chime';
+import { formatDoctorDisplayName } from '@/lib/formatters';
 
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type AppointmentStatus = 'BOOKED' | 'WAITING' | 'SERVING' | 'COMPLETED' | 'SKIPPED' | 'CANCELLED_NO_SHOW';
+type AppointmentStatus = 'BOOKED' | 'WAITING' | 'SERVING' | 'COMPLETED' | 'SKIPPED' | 'BUFFERED' | 'CANCELLED_NO_SHOW';
 type QueueSessionStatus = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
 type ItemType = 'MEDICATION' | 'LAB_TEST' | 'IMAGING' | 'PROCEDURE';
 
@@ -578,7 +582,7 @@ export default function PatientDashboardPage() {
         title: isServing ? `It's Your Turn! Enter Room ${appt.room_number}` : `Queue Turn: Token ${appt.token_code}`,
         message: isServing
           ? `Doctor is now calling Token ${appt.token_code} (#${appt.queue_number}). Please proceed inside Room ${appt.room_number}.`
-          : `Currently serving #${appt.queue_session.current_serving_number}. You are #${appt.queue_number} for ${appt.doctor_title} ${appt.doctor_name} at ${appt.hospital_name}.`,
+          : `Currently serving #${appt.queue_session.current_serving_number}. You are #${appt.queue_number} for ${formatDoctorDisplayName(appt.doctor_name, appt.doctor_title)} at ${appt.hospital_name}.`,
         time: isServing ? 'Now Serving' : 'Active queue',
         type: 'queue',
         isRead: storedReadIds.has(notifId),
@@ -682,12 +686,13 @@ export default function PatientDashboardPage() {
         (payload) => {
           const updated = payload.new as { id: string; status: string; queue_number: number; token_code: string };
           const newStatus = updated.status as AppointmentStatus;
-          const activeStatuses: AppointmentStatus[] = ['BOOKED', 'WAITING', 'SERVING'];
+          const activeStatuses: AppointmentStatus[] = ['BOOKED', 'WAITING', 'SERVING', 'BUFFERED'];
           if (activeStatuses.includes(newStatus)) {
             setActiveAppointments((prev) =>
               prev.map((appt) => (appt.id === updated.id ? { ...appt, status: newStatus } : appt))
             );
             if (newStatus === 'SERVING') {
+              hospitalChime.playDingDong();
               const servId = `serv-${Date.now()}`;
               const storedReadIds = getStoredReadIds();
               setNotifications((prev) => [
@@ -875,66 +880,11 @@ export default function PatientDashboardPage() {
   const patientAge = computeAge(profile?.date_of_birth);
 
   return (
-    <main className="min-h-screen bg-brand-50/70 pb-20">
-      {/* ── Top Patient Navigation ── */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200">
-        <div className="mx-auto max-w-2xl px-4 py-3 flex items-center justify-between gap-3">
-          <Link href="/my-queue" className="flex items-center gap-2 group">
-            <div className="h-9 w-9 rounded-xl bg-brand-700 flex items-center justify-center text-white shadow-sm transition group-hover:scale-105">
-              <Activity className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="text-base font-bold text-brand-700 tracking-tight block leading-tight">Clinic Natin</span>
-              <span className="text-[10px] text-slate-400 font-medium leading-none">Patient Care Suite</span>
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-2">
-            {/* Find Doctor Quick Link */}
-            <Link
-              href="/discover"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
-            >
-              <Search className="h-3.5 w-3.5 text-brand-700" />
-              <span className="hidden sm:inline">Find Doctor</span>
-            </Link>
-
-            {/* Notification Bell with working dialog */}
-            <Button
-              id="patient-notifications-btn"
-              variant="outline"
-              size="icon"
-              onClick={() => setIsNotificationsOpen(true)}
-              aria-label="View notifications"
-              className="relative rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            >
-              <Bell className="h-4 w-4" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">
-                  {unreadCount}
-                </span>
-              )}
-            </Button>
-
-            {/* Settings Button with working dialog */}
-            <Button
-              id="patient-settings-btn"
-              variant="outline"
-              size="icon"
-              onClick={() => setIsSettingsOpen(true)}
-              aria-label="Open settings"
-              className="rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-7">
-        {/* ── Patient Profile Header Card ── */}
+    <main className="min-h-screen bg-brand-50/40 pb-20">
+      <div className="mx-auto max-w-7xl 2xl:max-w-[1536px] px-4 sm:px-6 lg:px-10 py-6 space-y-7">
+        {/* ── Patient Profile Header Card (Full Width) ── */}
         <Card className="border-brand-200/80 bg-white shadow-xs overflow-hidden">
-          <CardContent className="p-5">
+          <CardContent className="p-5 sm:p-6">
             {isLoadingProfile ? (
               <div className="flex items-center gap-4 animate-pulse">
                 <div className="h-14 w-14 rounded-full bg-slate-200 shrink-0" />
@@ -944,25 +894,29 @@ export default function PatientDashboardPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <Avatar className="h-14 w-14 ring-2 ring-brand-300 ring-offset-2 shrink-0">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+                <div className="flex items-center gap-4 min-w-0">
+                  <Avatar className="h-14 w-14 sm:h-16 sm:w-16 ring-2 ring-brand-300 ring-offset-2 shrink-0">
                     {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={profile.full_name} />}
-                    <AvatarFallback className="bg-gradient-to-br from-brand-300 to-brand-700 text-white font-black text-lg">
+                    <AvatarFallback className="bg-gradient-to-br from-brand-300 to-brand-700 text-white font-black text-xl">
                       {profile ? getInitials(profile.full_name) : <User className="h-6 w-6" />}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider">{greeting}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-bold text-brand-700 uppercase tracking-wider">{greeting}</p>
                       {profile?.priority_category && profile.priority_category !== 'NONE' && (
-                        <Badge variant="brand" className="text-[10px] px-2 py-0">
+                        <Badge variant="brand" className="text-[10px] px-2 py-0.5">
                           {profile.priority_category === 'SENIOR' ? 'RA 9994 Senior' : profile.priority_category}
                         </Badge>
                       )}
+                      <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                        Live Synchronized
+                      </span>
                     </div>
-                    <h1 className="text-xl font-black text-slate-900 truncate leading-tight mt-0.5">
+                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 truncate leading-tight mt-0.5">
                       {profile?.full_name ?? firstName}
                     </h1>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500">
@@ -976,30 +930,81 @@ export default function PatientDashboardPage() {
                       {profile?.blood_type && (
                         <span className="font-semibold text-slate-700">&bull; Blood {profile.blood_type}</span>
                       )}
+                      {profile?.hmo_provider && (
+                        <span className="font-medium text-brand-700">&bull; {profile.hmo_provider} HMO</span>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* CTAs: Health Passport & Account Settings */}
-                <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0 flex-wrap">
+                {/* Quick Actions Bar */}
+                <div className="flex items-center gap-2.5 self-stretch sm:self-auto shrink-0 flex-wrap">
+                  {/* Sound Toggle */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const next = !soundChimeEnabled;
+                      setSoundChimeEnabled(next);
+                      if (next) hospitalChime.playDingDong();
+                    }}
+                    className="h-9 px-3 rounded-xl border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 shadow-2xs"
+                    title={soundChimeEnabled ? 'Chime sound active' : 'Chime muted'}
+                  >
+                    {soundChimeEnabled ? (
+                      <Volume2 className="h-4 w-4 mr-1.5 text-emerald-600" />
+                    ) : (
+                      <VolumeX className="h-4 w-4 mr-1.5 text-slate-400" />
+                    )}
+                    <span className="hidden sm:inline">{soundChimeEnabled ? 'Audio Alert On' : 'Audio Muted'}</span>
+                  </Button>
+
+                  <Button
+                    id="patient-notifications-btn"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsNotificationsOpen(true)}
+                    aria-label="View notifications"
+                    className="relative h-9 w-9 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-2xs"
+                  >
+                    <Bell className="h-4 w-4" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white ring-2 ring-white">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Button>
+
+                  <Button
+                    id="patient-settings-btn"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsSettingsOpen(true)}
+                    aria-label="Open settings"
+                    className="h-9 w-9 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-2xs"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => setIsPassportOpen(true)}
-                    className="rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-bold flex-1 sm:flex-initial"
+                    className="h-9 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-dark text-xs font-bold shadow-2xs"
                   >
-                    <HeartPulse className="h-3.5 w-3.5 mr-1" />
-                    Passport
+                    <HeartPulse className="h-4 w-4 mr-1.5" />
+                    Health Passport
                   </Button>
+
                   <Button
                     asChild
-                    variant="outline"
+                    variant="brand"
                     size="sm"
-                    className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold flex-1 sm:flex-initial shadow-2xs"
+                    className="h-9 rounded-xl text-xs font-bold shadow-xs"
                   >
-                    <Link href="/account">
-                      <User className="h-3.5 w-3.5 mr-1 text-slate-500" />
-                      Account
+                    <Link href="/discover">
+                      <Search className="h-3.5 w-3.5 mr-1.5" />
+                      Find Doctor
                     </Link>
                   </Button>
                 </div>
@@ -1008,146 +1013,160 @@ export default function PatientDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* ── Active Queue Consultations ── */}
-        <section aria-label="Active queue consultations">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
-                <Ticket className="h-4 w-4 text-brand-700" />
+        {/* ── 2-Column Desktop Cockpit Layout (Active Queue Left, EMR/Records Right) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* ── Left Column (7 cols): Live Queue Telemetry & Safe Zone ── */}
+          <section className="lg:col-span-7 space-y-6" aria-label="Active queue consultations">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                  <Ticket className="h-4 w-4 text-brand-dark" />
+                </div>
+                <h2 className="text-base font-bold text-slate-900">Live Consultation Turn</h2>
+                {activeAppointments.length > 0 && (
+                  <Badge variant="brand" className="h-5 px-2 text-[11px] font-bold">
+                    {activeAppointments.length} Active
+                  </Badge>
+                )}
               </div>
-              <h2 className="text-base font-bold text-slate-900">Active Consultations</h2>
-              {activeAppointments.length > 0 && (
-                <Badge variant="brand" className="h-5 px-2 text-[11px] font-bold">
-                  {activeAppointments.length} Active
-                </Badge>
+
+              {lastUpdated && (
+                <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                  <RefreshCw className="h-3 w-3 animate-spin-once" />
+                  Updated {lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
+                </span>
               )}
             </div>
 
-            {lastUpdated && (
-              <span className="flex items-center gap-1 text-[11px] text-slate-400">
-                <RefreshCw className="h-3 w-3 animate-spin-once" />
-                {lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
-              </span>
+            {isLoadingActive ? (
+              <Card className="p-6 animate-pulse">
+                <div className="h-6 w-32 bg-slate-200 rounded-full mb-4" />
+                <div className="h-28 bg-slate-100 rounded-2xl mb-4" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                </div>
+              </Card>
+            ) : activeAppointments.length > 0 ? (
+              <div className="space-y-5">
+                {activeAppointments.map((appt) => (
+                  <ActiveTicketCard key={appt.id} appt={appt} />
+                ))}
+              </div>
+            ) : (
+              <Card className="border-slate-200 bg-white text-center py-12 px-6 rounded-2xl shadow-xs">
+                <CardContent className="flex flex-col items-center justify-center p-0">
+                  <div className="h-16 w-16 rounded-2xl bg-brand-50 ring-2 ring-brand-100 flex items-center justify-center mb-3 text-brand">
+                    <Ticket className="h-8 w-8" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-800">No Active Queue Reservation</h3>
+                  <p className="mt-1 text-xs text-slate-500 max-w-sm">
+                    {"You don't have an ongoing hospital consultation today. Search for available doctors across Cagayan de Oro to join their queue online."}
+                  </p>
+                  <Button asChild variant="brand" className="mt-4 rounded-xl text-xs font-bold h-10 px-5">
+                    <Link href="/discover">
+                      <Search className="h-3.5 w-3.5 mr-1.5" />
+                      Find a Specialist in CDO
+                      <ChevronRight className="h-3.5 w-3.5 ml-1 opacity-70" />
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             )}
-          </div>
+          </section>
 
-          {isLoadingActive ? (
-            <Card className="p-6 animate-pulse">
-              <div className="h-6 w-32 bg-slate-200 rounded-full mb-4" />
-              <div className="h-28 bg-slate-100 rounded-2xl mb-4" />
-              <div className="grid grid-cols-2 gap-3">
-                <div className="h-12 bg-slate-100 rounded-xl" />
-                <div className="h-12 bg-slate-100 rounded-xl" />
-              </div>
-            </Card>
-          ) : activeAppointments.length > 0 ? (
-            <div className="space-y-4">
-              {activeAppointments.map((appt) => (
-                <ActiveTicketCard key={appt.id} appt={appt} />
-              ))}
-            </div>
-          ) : (
-            <Card className="border-slate-200 bg-white text-center py-10 px-4">
-              <CardContent className="flex flex-col items-center justify-center p-0">
-                <div className="h-16 w-16 rounded-full bg-brand-50 ring-2 ring-brand-100 flex items-center justify-center mb-3">
-                  <Ticket className="h-7 w-7 text-brand-700" />
+          {/* ── Right Column (5 cols): Medical History & Digital Prescriptions (℞) ── */}
+          <section id="medical-history" className="lg:col-span-5 space-y-6" aria-label="Medical records and digital prescriptions">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-brand-dark" />
                 </div>
-                <h3 className="text-base font-bold text-slate-800">No Active Consultations</h3>
-                <p className="mt-1 text-xs text-slate-500 max-w-xs">
-                  {"You don't have an ongoing consultation. Search for available doctors across CDO and join their queue online."}
-                </p>
-                <Button asChild variant="brand" className="mt-4 rounded-xl text-xs font-bold">
-                  <Link href="/discover">
-                    <Search className="h-3.5 w-3.5 mr-1.5" />
-                    Find a Doctor
-                    <ChevronRight className="h-3.5 w-3.5 ml-1 opacity-70" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </section>
-
-        {/* ── Medical History & Prescriptions (100% Wired to Database) ── */}
-        <section id="medical-history" aria-label="Medical records and digital prescriptions">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-brand-100 flex items-center justify-center">
-                <FileText className="h-4 w-4 text-brand-700" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-900">Medical History &amp; Prescriptions</h2>
-                <p className="text-[11px] text-slate-400">Authenticated EMR Records &bull; RA 10173 Protected</p>
-              </div>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-              <button
-                onClick={() => setRecordFilter('ALL')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                All ({medicalRecords.length})
-              </button>
-              <button
-                onClick={() => setRecordFilter('MEDICATION')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'MEDICATION' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                Rx Only
-              </button>
-              <button
-                onClick={() => setRecordFilter('LAB_TEST')}
-                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'LAB_TEST' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                Lab Tests
-              </button>
-            </div>
-          </div>
-
-          {isLoadingRecords ? (
-            <div className="space-y-3">
-              {[...Array(2)].map((_, i) => (
-                <Card key={i} className="p-5 animate-pulse">
-                  <div className="h-4 w-48 bg-slate-200 rounded-full mb-2" />
-                  <div className="h-3 w-32 bg-slate-100 rounded-full" />
-                </Card>
-              ))}
-            </div>
-          ) : filteredRecords.length > 0 ? (
-            <div className="space-y-4">
-              {filteredRecords.map((record) => (
-                <MedicalRecordCard
-                  key={record.id}
-                  record={record}
-                  onViewRx={() => setSelectedRxRecord(record)}
-                />
-              ))}
-            </div>
-          ) : (
-            <Card className="border border-dashed border-slate-300 bg-white py-10 px-4 text-center">
-              <CardContent className="flex flex-col items-center justify-center p-0">
-                <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-2.5 text-slate-400">
-                  <FileText className="h-6 w-6" />
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Medical Records &amp; ℞</h2>
+                  <p className="text-[11px] text-slate-400">Authenticated EMR Records &bull; RA 10173 Protected</p>
                 </div>
-                <p className="text-sm font-bold text-slate-700">No Medical Records Found</p>
-                <p className="mt-1 text-xs text-slate-400 max-w-xs">
-                  Your consultation summaries, digital prescriptions, and laboratory orders will automatically synchronize here once your doctor finishes your consultation.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </section>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                <button
+                  onClick={() => setRecordFilter('ALL')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                  All ({medicalRecords.length})
+                </button>
+                <button
+                  onClick={() => setRecordFilter('MEDICATION')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'MEDICATION' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                  Rx Only
+                </button>
+                <button
+                  onClick={() => setRecordFilter('LAB_TEST')}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition ${recordFilter === 'LAB_TEST' ? 'bg-white text-purple-700 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                  Labs
+                </button>
+              </div>
+            </div>
+
+            {isLoadingRecords ? (
+              <div className="space-y-3">
+                {[...Array(2)].map((_, i) => (
+                  <Card key={i} className="p-5 animate-pulse rounded-2xl">
+                    <div className="h-4 w-48 bg-slate-200 rounded-full mb-2" />
+                    <div className="h-3 w-32 bg-slate-100 rounded-full" />
+                  </Card>
+                ))}
+              </div>
+            ) : filteredRecords.length > 0 ? (
+              <div className="space-y-4 max-h-[750px] overflow-y-auto pr-1">
+                {filteredRecords.map((record) => (
+                  <MedicalRecordCard
+                    key={record.id}
+                    record={record}
+                    onViewRx={() => setSelectedRxRecord(record)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card className="border border-dashed border-slate-300 bg-white py-10 px-4 text-center rounded-2xl">
+                <CardContent className="flex flex-col items-center justify-center p-0">
+                  <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-2.5 text-slate-400">
+                    <FileText className="h-6 w-6" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-700">No Medical Records Found</p>
+                  <p className="mt-1 text-xs text-slate-400 max-w-xs">
+                    Your consultation summaries and digital prescriptions will automatically synchronize here once your doctor completes your consultation.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Quick Link to Full Records Vault */}
+            <div className="pt-2">
+              <Button asChild variant="outline" className="w-full rounded-xl text-xs font-bold text-slate-700 border-slate-200 bg-white hover:bg-slate-50 shadow-2xs">
+                <Link href="/records">
+                  <FileText className="h-3.5 w-3.5 mr-1.5 text-brand-700" />
+                  Open Full Digital Health Vault (Pharmacist Mode)
+                  <ChevronRight className="h-3.5 w-3.5 ml-auto opacity-70" />
+                </Link>
+              </Button>
+            </div>
+          </section>
+        </div>
 
         {/* Footer info */}
-        <div className="pt-2 text-center text-xs text-slate-400 space-y-1">
+        <div className="pt-4 text-center text-xs text-slate-400 space-y-1 border-t border-slate-200/60">
           <p className="flex items-center justify-center gap-1.5 font-medium">
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
             Clinic Natin &bull; Compliant with Philippine Data Privacy Act (RA 10173)
           </p>
-          <p className="text-[11px] text-slate-300">Cagayan de Oro Pilot Clinics &bull; Maria Reyna XU &bull; CUMC &bull; Polymedic</p>
+          <p className="text-[11px] text-slate-400">Cagayan de Oro Pilot Clinics &bull; Maria Reyna XU &bull; CUMC &bull; Polymedic Plaza &bull; NMMC</p>
         </div>
       </div>
 
@@ -1593,7 +1612,7 @@ export default function PatientDashboardPage() {
               {/* Rx Header */}
               <div className="border-b-2 border-slate-800 pb-3 text-center">
                 <h3 className="text-lg font-black text-slate-900 tracking-tight">
-                  {selectedRxRecord.doctor_title} {selectedRxRecord.doctor_name}
+                  {formatDoctorDisplayName(selectedRxRecord.doctor_name, selectedRxRecord.doctor_title)}
                 </h3>
                 <p className="text-xs font-semibold text-brand-700">{selectedRxRecord.doctor_specialty}</p>
                 <p className="text-[11px] text-slate-500">
@@ -1676,7 +1695,7 @@ export default function PatientDashboardPage() {
                 <div className="text-center">
                   <div className="w-36 border-b border-slate-800 mb-1" />
                   <p className="text-xs font-bold text-slate-800">
-                    {selectedRxRecord.doctor_title} {selectedRxRecord.doctor_name}
+                    {formatDoctorDisplayName(selectedRxRecord.doctor_name, selectedRxRecord.doctor_title)}
                   </p>
                   <p className="text-[10px] text-slate-500">Attending Physician</p>
                 </div>
@@ -1756,7 +1775,7 @@ function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
             <Stethoscope className="h-6 w-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-slate-900 truncate text-base">{appt.doctor_title} {appt.doctor_name}</p>
+            <p className="font-bold text-slate-900 truncate text-base">{formatDoctorDisplayName(appt.doctor_name, appt.doctor_title)}</p>
             <p className="text-xs text-brand-700 font-semibold">{appt.doctor_specialty}</p>
             <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500">
               <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
@@ -1822,6 +1841,26 @@ function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
             </>
           )}
         </div>
+
+        {/* Buffer Lane Grace Period Recovery (If skipped/buffered) */}
+        {appt.status === 'BUFFERED' && (
+          <BufferGraceCard
+            appointmentId={appt.id}
+            tokenCode={appt.token_code}
+            onRestored={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+          />
+        )}
+
+        {/* CDO Wait Anywhere Safe Zone Radar */}
+        <SafeZoneRadar
+          queueNumber={mine}
+          currentServingNumber={serving}
+          hospitalName={appt.hospital_name}
+          roomNumber={appt.room_number}
+          isServing={isServing}
+        />
 
         {/* Doctor announcement banner if any */}
         {appt.queue_session.announcement_notice && (

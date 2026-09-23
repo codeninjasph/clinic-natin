@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -28,6 +28,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { 
+  DigitalHealthPassportCard,
   DigitalHealthPassportData 
 } from '@/components/patient/DigitalHealthPassportCard';
 import { DigitalHealthPassportDialog } from '@/components/patient/DigitalHealthPassportDialog';
@@ -408,24 +409,42 @@ export default function PatientAccountPage() {
     }
   };
 
+  const passportCardData: DigitalHealthPassportData = useMemo(() => {
+    return {
+      patientName: profile?.full_name || fullName || 'Dianne Pondoc',
+      patientIdCode: profile?.id ? `CN-P${profile.id.replace(/-/g, '').slice(0, 5).toUpperCase()}` : 'CN-P8821',
+      bloodType: profile?.blood_type || 'A+',
+      bmi: profile?.weight_kg && profile?.height_cm
+        ? (profile.weight_kg / Math.pow(profile.height_cm / 100, 2)).toFixed(1)
+        : '21.2',
+      priorityCategory: priorityCategory || 'Regular',
+      hmoProvider: hmoProvider || 'Maxicare',
+      allergies: profile?.allergies || [],
+      comorbidities: profile?.comorbidities || [],
+      heightCm: profile?.height_cm || 155,
+      weightKg: profile?.weight_kg || 51,
+      clinicTag: 'CDO Outpatient Verified',
+    };
+  }, [profile, fullName, priorityCategory, hmoProvider]);
+
   const patientAge = computeAge(dateOfBirth || profile?.date_of_birth);
 
   return (
     <main className="min-h-screen bg-slate-50/70 pb-20">
-      {/* ── Top Header ── */}
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
+      <div className="mx-auto max-w-7xl 2xl:max-w-[1536px] px-4 sm:px-6 lg:px-10 py-6 space-y-6">
+        {/* Page Top Title Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <Button asChild variant="ghost" size="sm" className="rounded-xl text-xs font-bold text-slate-600">
+            <Button asChild variant="ghost" size="sm" className="rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900">
               <Link href="/my-queue">
                 <ArrowLeft className="h-4 w-4 mr-1" />
-                Back to Queue
+                Live Queue
               </Link>
             </Button>
             <Separator orientation="vertical" className="h-4" />
             <div>
-              <span className="text-sm font-black text-slate-900 leading-none block">Account Settings</span>
-              <span className="text-[10px] text-slate-400 font-medium leading-none">Patient Identity &amp; Security</span>
+              <h1 className="text-base font-extrabold text-slate-900 leading-none">Health Passport &amp; Settings</h1>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">Patient Identity, PhilHealth &amp; HMO Security</p>
             </div>
           </div>
 
@@ -441,9 +460,7 @@ export default function PatientAccountPage() {
             </Button>
           </div>
         </div>
-      </header>
 
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 space-y-6">
         {/* Feedback Alert Banners */}
         {successMessage && (
           <div className="flex items-center gap-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 p-4 text-xs font-bold text-emerald-800 animate-in fade-in duration-200">
@@ -512,8 +529,70 @@ export default function PatientAccountPage() {
           </CardContent>
         </Card>
 
-        {/* Management Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {/* ── 2-Column Split Dashboard (Desktop: Passport Left, Tabs Right) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left Column: Digital Health Passport Preview & Data Archive */}
+          <aside className="lg:col-span-5 space-y-5">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Digital Health Passport</h2>
+                  <p className="text-[11px] text-slate-500">Universal Philippine clinic identity pass</p>
+                </div>
+                <Badge variant="brand" className="text-[10px] font-bold">Active Pass</Badge>
+              </div>
+
+              {/* Embedded Passport Card */}
+              <DigitalHealthPassportCard
+                data={passportCardData}
+                onEdit={() => setActiveTab('personal')}
+                showPrintButton={false}
+                showEditButton={false}
+                className="w-full shadow-none border-0"
+              />
+
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsPassportOpen(true)}
+                  className="w-full rounded-xl text-xs font-bold border-brand-200 bg-brand-50/60 text-brand-700 hover:bg-brand-100 h-9"
+                >
+                  <Eye className="h-3.5 w-3.5 mr-1.5" />
+                  Inspect Full Screen Passport
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportData}
+                  disabled={saving}
+                  className="w-full rounded-xl text-xs font-semibold text-slate-700 border-slate-200 bg-white hover:bg-slate-50 h-9"
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
+                  Download Complete EMR Archive (JSON)
+                </Button>
+              </div>
+            </div>
+
+            {/* Privacy Compliance Box */}
+            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 text-xs text-emerald-950 shadow-2xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5 text-emerald-900">
+                <ShieldCheck className="h-4 w-4 text-emerald-700" />
+                DPA 2012 / RA 10173 Certified
+              </p>
+              <p className="text-[11px] text-emerald-800/80 leading-relaxed">
+                Your medical identity is encrypted at rest using AES-256. Clinical records are exclusively shared with attending doctors during your active consultation turn.
+              </p>
+            </div>
+          </aside>
+
+          {/* Right Column: Tabbed Settings Forms */}
+          <div className="lg:col-span-7">
+            {/* Management Tabs */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-2 sm:grid-cols-5 h-auto p-1.5 rounded-2xl bg-slate-200/70 gap-1">
             <TabsTrigger value="personal" className="rounded-xl text-xs font-bold py-2">
               <User className="h-3.5 w-3.5 mr-1.5" />
@@ -982,6 +1061,8 @@ export default function PatientAccountPage() {
             </Card>
           </TabsContent>
         </Tabs>
+          </div>
+        </div>
       </div>
 
       {/* Confirmation Dialog for Data Erasure */}

@@ -19,6 +19,7 @@ import {
   BadgePercent,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 import { Suspense } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,14 +159,9 @@ function SignupFormContent() {
     <div className="min-h-screen bg-gradient-to-b from-brand-50 via-[#F7FCF9] to-white flex flex-col justify-center py-10 sm:px-6 lg:px-8">
       {/* Brand Header */}
       <div className="sm:mx-auto sm:w-full sm:max-w-lg text-center px-4">
-        <Link href="/" className="inline-flex items-center gap-2.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-md shadow-brand-700/20">
-            <Stethoscope className="h-6 w-6" />
-          </div>
-          <span className="text-2xl font-black tracking-tight text-slate-900">
-            Clinic <span className="text-brand-700">Natin</span>
-          </span>
-        </Link>
+        <div className="flex justify-center">
+          <ClinicNatinLogo height={42} href="/" priority />
+        </div>
         
         <div className="mt-4 flex items-center justify-center gap-2">
           <Badge variant="brand" className="px-3 py-0.5 text-xs font-semibold">

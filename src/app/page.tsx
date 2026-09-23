@@ -69,6 +69,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 
 // ---------------------------------------------------------------------------
 // Doctor Data Types & Sample Records (Cagayan de Oro focused)
@@ -310,24 +311,12 @@ export default function HomePage() {
       {/* ----------------------------------------------------------------- */}
       <header className="sticky top-0 z-40 w-full border-b border-brand-100/80 bg-white/90 backdrop-blur-md transition-all">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 h-20">
-          {/* Brand Logo */}
+          {/* Official Brand Logo */}
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-700 text-brand-50 shadow-md shadow-brand-700/20">
-              <Stethoscope className="h-6 w-6 stroke-[2.2]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-bold tracking-tight text-slate-900">
-                  Clinic <span className="text-brand-700">Natin</span>
-                </span>
-                <span className="hidden sm:inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
-                  CDO Pilot
-                </span>
-              </div>
-              <p className="text-[11px] font-medium text-slate-500">
-                Medical Queue Management
-              </p>
-            </div>
+            <ClinicNatinLogo height={38} href="/" priority />
+            <span className="hidden sm:inline-flex items-center rounded-full bg-brand-100 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
+              CDO Pilot
+            </span>
           </div>
 
           {/* Center Links */}
@@ -1281,12 +1270,7 @@ export default function HomePage() {
             {/* Brand column */}
             <div className="md:col-span-5 space-y-4">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-white">
-                  <Stethoscope className="h-5 w-5" />
-                </div>
-                <span className="text-xl font-bold tracking-tight text-slate-900">
-                  Clinic <span className="text-brand-700">Natin</span>
-                </span>
+                <ClinicNatinLogo height={32} href="/" />
               </div>
               <p className="text-sm text-slate-600 max-w-sm leading-relaxed">
                 Empowering Filipino patients and clinics through smart, transparent medical queueing. Ending the dawn waiting room lines in Cagayan de Oro.

@@ -19,7 +19,7 @@ const badgeVariants = cva(
         warning:
           'border-amber-200 bg-amber-50 text-amber-800 font-bold',
         brand:
-          'border-brand-300 bg-brand-100 text-brand-700 font-bold',
+          'border-brand-200 bg-brand-50 text-brand-dark font-bold',
       },
     },
     defaultVariants: {
