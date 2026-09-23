@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
       floor_number,
       room_number,
       address,
+      street,
+      barangay,
       city,
       province,
       contact_phone,
@@ -29,6 +31,11 @@ export async function GET(req: NextRequest) {
         code,
         name,
         short_name,
+        address,
+        street,
+        barangay,
+        city,
+        province,
         doh_license_number,
         contact_phone,
         has_er
@@ -153,6 +160,8 @@ export async function POST(req: NextRequest) {
       floorNumber = '2nd Floor',
       roomNumber,
       address,
+      street,
+      barangay,
       city = 'Cagayan de Oro',
       province = 'Misamis Oriental',
       contactPhone,
@@ -193,6 +202,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // If street/barangay not provided, look up from affiliated hospital
+    let finalStreet = street?.trim() || null;
+    let finalBarangay = barangay?.trim() || null;
+    let finalCity = city?.trim() || 'Cagayan de Oro';
+    let finalProvince = province?.trim() || 'Misamis Oriental';
+
+    if (hospitalId && (!finalStreet || !finalBarangay)) {
+      const { data: hospData } = await supabase
+        .from('hospitals')
+        .select('street, barangay, city, province')
+        .eq('id', hospitalId)
+        .maybeSingle();
+
+      if (hospData) {
+        if (!finalStreet) finalStreet = hospData.street || null;
+        if (!finalBarangay) finalBarangay = hospData.barangay || null;
+        if (!city || city === 'Cagayan de Oro') finalCity = hospData.city || finalCity;
+        if (!province || province === 'Misamis Oriental') finalProvince = hospData.province || finalProvince;
+      }
+    }
+
+    const derivedAddress = address?.trim() || [finalStreet, finalBarangay, finalCity, finalProvince].filter(Boolean).join(', ') || `${hospitalName.trim()}, Cagayan de Oro`;
+
     // Insert Clinic Record
     const insertPayload: Record<string, any> = {
       name: name.trim(),
@@ -201,9 +233,11 @@ export async function POST(req: NextRequest) {
       building_name: buildingName?.trim() || null,
       floor_number: floorNumber?.trim() || null,
       room_number: roomNumber.trim(),
-      address: address?.trim() || `${hospitalName.trim()}, Cagayan de Oro`,
-      city: city.trim(),
-      province: province.trim(),
+      address: derivedAddress,
+      street: finalStreet,
+      barangay: finalBarangay,
+      city: finalCity,
+      province: finalProvince,
       contact_phone: contactPhone?.trim() || null,
       operating_hours: operatingHours.trim(),
       status,
@@ -269,6 +303,8 @@ export async function PUT(req: NextRequest) {
       floorNumber,
       roomNumber,
       address,
+      street,
+      barangay,
       city,
       province,
       contactPhone,
@@ -307,6 +343,8 @@ export async function PUT(req: NextRequest) {
     if (floorNumber !== undefined) updatePayload.floor_number = floorNumber.trim();
     if (roomNumber !== undefined) updatePayload.room_number = roomNumber.trim();
     if (address !== undefined) updatePayload.address = address.trim();
+    if (street !== undefined) updatePayload.street = street?.trim() || null;
+    if (barangay !== undefined) updatePayload.barangay = barangay?.trim() || null;
     if (city !== undefined) updatePayload.city = city.trim();
     if (province !== undefined) updatePayload.province = province.trim();
     if (contactPhone !== undefined) updatePayload.contact_phone = contactPhone.trim();

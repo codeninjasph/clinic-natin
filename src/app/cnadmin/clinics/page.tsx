@@ -30,6 +30,7 @@ import {
   RefreshCw,
   Power,
   Wrench,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +56,8 @@ export interface ClinicRecord {
   floor_number?: string | null;
   room_number: string;
   address: string;
+  street?: string | null;
+  barangay?: string | null;
   city: string;
   province: string;
   contact_phone?: string | null;
@@ -67,6 +70,11 @@ export interface ClinicRecord {
     code: string;
     name: string;
     short_name: string;
+    address?: string | null;
+    street?: string | null;
+    barangay?: string | null;
+    city?: string | null;
+    province?: string | null;
     contact_phone: string;
     has_er: boolean;
   } | null;
@@ -109,6 +117,8 @@ export interface LookupHospital {
   name: string;
   short_name: string;
   address: string;
+  street?: string | null;
+  barangay?: string | null;
   city: string;
   province: string;
   doh_license_number: string;
@@ -169,8 +179,80 @@ export default function ClinicsAndRoomsPage() {
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [provinceFilter, setProvinceFilter] = React.useState('ALL');
+  const [cityFilter, setCityFilter] = React.useState('ALL');
   const [hospitalFilter, setHospitalFilter] = React.useState('ALL');
   const [statusFilter, setStatusFilter] = React.useState('ALL');
+
+  // Hospital Facility Management Modal State
+  const [addHospitalModalOpen, setAddHospitalModalOpen] = React.useState(false);
+  const [hospitalTab, setHospitalTab] = React.useState<'single' | 'bulk'>('single');
+  const [isSubmittingHospital, setIsSubmittingHospital] = React.useState(false);
+  const [hospitalModalError, setHospitalModalError] = React.useState<string | null>(null);
+
+  const [hospitalForm, setHospitalForm] = React.useState({
+    name: '',
+    shortName: '',
+    street: '',
+    barangay: '',
+    city: 'Cagayan de Oro',
+    province: 'Misamis Oriental',
+    contactPhone: '',
+    dohLicenseNumber: '',
+    hasEr: true,
+  });
+
+  const [rawText, setRawText] = React.useState('');
+  const [bulkParsedItems, setBulkParsedItems] = React.useState<
+    Array<{
+      name: string;
+      street: string;
+      barangay: string;
+      city: string;
+      province: string;
+    }>
+  >([]);
+
+  // Parse bulk text whenever rawText changes
+  React.useEffect(() => {
+    if (!rawText.trim()) {
+      setBulkParsedItems([]);
+      return;
+    }
+
+    const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsed: Array<{
+      name: string;
+      street: string;
+      barangay: string;
+      city: string;
+      province: string;
+    }> = [];
+
+    for (const line of lines) {
+      if (line.startsWith('#') || line.startsWith('//')) continue;
+      if (/facility\s*name/i.test(line) && /province/i.test(line)) continue;
+
+      let parts: string[];
+      if (line.includes('\t')) {
+        parts = line.split('\t').map((p) => p.trim());
+      } else {
+        parts = line.split(',').map((p) => p.trim());
+      }
+
+      if (!parts[0]) continue;
+
+      parsed.push({
+        name: parts[0],
+        street: parts[1] || '',
+        barangay: parts[2] || '',
+        city: parts[3] || 'Cagayan de Oro',
+        province: parts[4] || 'Misamis Oriental',
+      });
+    }
+
+    setBulkParsedItems(parsed);
+  }, [rawText]);
 
   // Notification Banner
   const [bannerAlert, setBannerAlert] = React.useState<{
@@ -198,6 +280,8 @@ export default function ClinicsAndRoomsPage() {
     floorNumber: '2nd Floor',
     roomNumber: '',
     address: '',
+    street: '',
+    barangay: '',
     city: 'Cagayan de Oro',
     province: 'Misamis Oriental',
     contactPhone: '',
@@ -222,6 +306,8 @@ export default function ClinicsAndRoomsPage() {
     floorNumber: '',
     roomNumber: '',
     address: '',
+    street: '',
+    barangay: '',
     city: '',
     province: '',
     contactPhone: '',
@@ -326,9 +412,11 @@ export default function ClinicsAndRoomsPage() {
         ...prev,
         hospitalId: selected.id,
         hospitalName: selected.short_name || selected.name,
-        address: selected.address,
+        street: selected.street || '',
+        barangay: selected.barangay || '',
         city: selected.city || 'Cagayan de Oro',
         province: selected.province || 'Misamis Oriental',
+        address: selected.address,
         contactPhone: selected.contact_phone || prev.contactPhone,
       }));
     } else {
@@ -351,8 +439,10 @@ export default function ClinicsAndRoomsPage() {
       floorNumber: '2nd Floor',
       roomNumber: '',
       address: defaultHosp ? defaultHosp.address : 'Cagayan de Oro',
-      city: 'Cagayan de Oro',
-      province: 'Misamis Oriental',
+      street: defaultHosp ? (defaultHosp.street || '') : '',
+      barangay: defaultHosp ? (defaultHosp.barangay || '') : '',
+      city: defaultHosp ? (defaultHosp.city || 'Cagayan de Oro') : 'Cagayan de Oro',
+      province: defaultHosp ? (defaultHosp.province || 'Misamis Oriental') : 'Misamis Oriental',
       contactPhone: defaultHosp ? defaultHosp.contact_phone : '+63 (88) 857-4000',
       operatingHours: 'Mon–Fri 8:00 AM – 5:00 PM',
       status: 'ACTIVE',
@@ -363,6 +453,86 @@ export default function ClinicsAndRoomsPage() {
     });
     setAddModalError(null);
     setAddModalOpen(true);
+  };
+
+  // ── Hospital Facility Operations ──
+  const handleCreateSingleHospital = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setHospitalModalError(null);
+    if (!hospitalForm.name.trim() || !hospitalForm.city.trim() || !hospitalForm.province.trim()) {
+      setHospitalModalError('Facility Name, City/Municipality, and Province are required.');
+      return;
+    }
+    setIsSubmittingHospital(true);
+    try {
+      const res = await fetch('/api/admin/hospitals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hospitalForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to register facility');
+
+      await fetchSupportingData();
+      setAddHospitalModalOpen(false);
+      setBannerAlert({
+        type: 'success',
+        title: 'Hospital Facility Registered',
+        message: `${hospitalForm.name} (${hospitalForm.city}, ${hospitalForm.province}) added to official master catalog.`,
+      });
+
+      if (data.hospital?.id) {
+        handleAddHospitalSelect(data.hospital.id);
+      }
+
+      setHospitalForm({
+        name: '',
+        shortName: '',
+        street: '',
+        barangay: '',
+        city: 'Cagayan de Oro',
+        province: 'Misamis Oriental',
+        contactPhone: '',
+        dohLicenseNumber: '',
+        hasEr: true,
+      });
+    } catch (err: any) {
+      setHospitalModalError(err.message || 'Error creating facility');
+    } finally {
+      setIsSubmittingHospital(false);
+    }
+  };
+
+  const handleImportBulkHospitals = async () => {
+    setHospitalModalError(null);
+    if (bulkParsedItems.length === 0) {
+      setHospitalModalError('Please enter at least one valid facility row.');
+      return;
+    }
+    setIsSubmittingHospital(true);
+    try {
+      const res = await fetch('/api/admin/hospitals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: bulkParsedItems }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to bulk import facilities');
+
+      await fetchSupportingData();
+      setAddHospitalModalOpen(false);
+      setRawText('');
+      setBulkParsedItems([]);
+      setBannerAlert({
+        type: 'success',
+        title: 'Bulk Facility Ingestion Successful',
+        message: `Successfully recorded ${data.count ?? bulkParsedItems.length} medical facilities from raw dataset into master catalog.`,
+      });
+    } catch (err: any) {
+      setHospitalModalError(err.message || 'Error importing facilities');
+    } finally {
+      setIsSubmittingHospital(false);
+    }
   };
 
   // Submit Add Clinic Form
@@ -411,6 +581,8 @@ export default function ClinicsAndRoomsPage() {
         hospitalId: selected.id,
         hospitalName: selected.short_name || selected.name,
         address: selected.address,
+        street: selected.street || '',
+        barangay: selected.barangay || '',
         city: selected.city || 'Cagayan de Oro',
         province: selected.province || 'Misamis Oriental',
         contactPhone: selected.contact_phone || prev.contactPhone,
@@ -436,6 +608,8 @@ export default function ClinicsAndRoomsPage() {
       floorNumber: clinic.floor_number || '',
       roomNumber: clinic.room_number,
       address: clinic.address,
+      street: clinic.street || clinic.hospitals?.street || '',
+      barangay: clinic.barangay || clinic.hospitals?.barangay || '',
       city: clinic.city,
       province: clinic.province,
       contactPhone: clinic.contact_phone || '',
@@ -582,6 +756,25 @@ export default function ClinicsAndRoomsPage() {
     setTimeout(() => setCopiedUrl(false), 2000);
   };
 
+  // Derived unique provinces and cities for cascading location filters
+  const uniqueProvinces = React.useMemo(() => {
+    const set = new Set<string>();
+    hospitals.forEach((h) => h.province && set.add(h.province));
+    clinics.forEach((c) => c.province && set.add(c.province));
+    return Array.from(set).sort();
+  }, [hospitals, clinics]);
+
+  const uniqueCities = React.useMemo(() => {
+    const set = new Set<string>();
+    hospitals
+      .filter((h) => provinceFilter === 'ALL' || h.province === provinceFilter)
+      .forEach((h) => h.city && set.add(h.city));
+    clinics
+      .filter((c) => provinceFilter === 'ALL' || c.province === provinceFilter)
+      .forEach((c) => c.city && set.add(c.city));
+    return Array.from(set).sort();
+  }, [hospitals, clinics, provinceFilter]);
+
   // Filtered clinics
   const filteredClinics = clinics.filter((c) => {
     const q = searchQuery.toLowerCase();
@@ -592,8 +785,14 @@ export default function ClinicsAndRoomsPage() {
       c.hospital_name.toLowerCase().includes(q) ||
       c.room_number.toLowerCase().includes(q) ||
       (c.building_name && c.building_name.toLowerCase().includes(q)) ||
+      (c.street && c.street.toLowerCase().includes(q)) ||
+      (c.barangay && c.barangay.toLowerCase().includes(q)) ||
+      (c.city && c.city.toLowerCase().includes(q)) ||
+      (c.province && c.province.toLowerCase().includes(q)) ||
       primaryDoctor.includes(q);
 
+    const matchesProvince = provinceFilter === 'ALL' || c.province === provinceFilter;
+    const matchesCity = cityFilter === 'ALL' || c.city === cityFilter;
     const matchesHospital =
       hospitalFilter === 'ALL' ||
       c.hospital_name.toLowerCase().includes(hospitalFilter.toLowerCase()) ||
@@ -601,7 +800,7 @@ export default function ClinicsAndRoomsPage() {
       (c.hospitals?.short_name && c.hospitals.short_name.toLowerCase().includes(hospitalFilter.toLowerCase()));
     const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
 
-    return matchesSearch && matchesHospital && matchesStatus;
+    return matchesSearch && matchesProvince && matchesCity && matchesHospital && matchesStatus;
   });
 
   // Calculate Executive Metrics
@@ -636,6 +835,19 @@ export default function ClinicsAndRoomsPage() {
           >
             <RefreshCw className={`h-3.5 w-3.5 text-slate-600 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setHospitalModalError(null);
+              setAddHospitalModalOpen(true);
+            }}
+            className="h-9 text-xs font-bold gap-1.5 border-brand-200 text-brand-800 bg-brand-50/60 hover:bg-brand-100/60 shadow-2xs"
+          >
+            <Building2 className="h-4 w-4 text-brand-700" />
+            Add Hospital / Facility
           </Button>
 
           <Button
@@ -770,22 +982,62 @@ export default function ClinicsAndRoomsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Province Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Province:</span>
+              <select
+                value={provinceFilter}
+                onChange={(e) => {
+                  setProvinceFilter(e.target.value);
+                  setCityFilter('ALL');
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
+              >
+                <option value="ALL">All Provinces</option>
+                {uniqueProvinces.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* City Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">City:</span>
+              <select
+                value={cityFilter}
+                onChange={(e) => setCityFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
+              >
+                <option value="ALL">All Cities ({uniqueCities.length})</option>
+                {uniqueCities.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Hospital Complex Filter */}
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Hospital:</span>
               <select
                 value={hospitalFilter}
                 onChange={(e) => setHospitalFilter(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700"
+                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
               >
                 <option value="ALL">All Hospital Complexes ({hospitals.length || affiliatedHospitalsCount})</option>
-                {hospitals.map((h) => {
-                  const label = h.short_name || h.name;
-                  return (
-                    <option key={h.id} value={label}>
-                      {label}
-                    </option>
-                  );
-                })}
+                {hospitals
+                  .filter((h) => (provinceFilter === 'ALL' || h.province === provinceFilter) && (cityFilter === 'ALL' || h.city === cityFilter))
+                  .map((h) => {
+                    const label = h.short_name || h.name;
+                    return (
+                      <option key={h.id} value={label}>
+                        {label}
+                      </option>
+                    );
+                  })}
               </select>
             </div>
 
@@ -864,9 +1116,14 @@ export default function ClinicsAndRoomsPage() {
                         <CardTitle className="text-base font-bold text-slate-900 leading-tight">
                           {clinic.room_number} &bull; {clinic.name}
                         </CardTitle>
-                        <CardDescription className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
-                          <MapPin className="h-3 w-3 text-slate-400" />
-                          {clinic.building_name || 'Medical Arts Complex'}, {clinic.floor_number || 'Room Level'}
+                        <CardDescription className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                          <span>{clinic.building_name || 'Medical Arts Complex'}, {clinic.floor_number || 'Room Level'}</span>
+                          {(clinic.barangay || clinic.city) && (
+                            <span className="text-[11px] text-slate-400">
+                              &bull; {[clinic.street, clinic.barangay, clinic.city].filter(Boolean).join(', ')}
+                            </span>
+                          )}
                         </CardDescription>
                       </div>
 
@@ -994,6 +1251,288 @@ export default function ClinicsAndRoomsPage() {
         )}
       </div>
 
+      {/* ── MODAL 0: ADD / BULK IMPORT HOSPITAL FACILITY ── */}
+      <Dialog open={addHospitalModalOpen} onOpenChange={setAddHospitalModalOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white border border-slate-200 max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-brand-700" />
+              Register Hospital / Facility Complex
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Add a new medical center, hospital complex, or polyclinic to the official master catalog. Supports both single registration and bulk raw data paste (Province down to Barangay).
+            </DialogDescription>
+          </DialogHeader>
+
+          {hospitalModalError && (
+            <Alert variant="destructive" className="py-2.5">
+              <AlertTitle className="text-xs font-bold">Error</AlertTitle>
+              <AlertDescription className="text-xs">{hospitalModalError}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <button
+              type="button"
+              onClick={() => setHospitalTab('single')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                hospitalTab === 'single'
+                  ? 'bg-brand text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Single Facility Entry
+            </button>
+            <button
+              type="button"
+              onClick={() => setHospitalTab('bulk')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                hospitalTab === 'bulk'
+                  ? 'bg-brand text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Bulk Paste / CSV Import
+              {bulkParsedItems.length > 0 && (
+                <span className="ml-1 rounded-full bg-emerald-500 text-white text-[10px] px-1.5 py-0.2">
+                  {bulkParsedItems.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {hospitalTab === 'single' ? (
+            <form onSubmit={handleCreateSingleHospital} className="space-y-3.5 py-1 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Official Facility Name <span className="text-rose-500">*</span>
+                  </label>
+                  <Input
+                    value={hospitalForm.name}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, name: e.target.value })}
+                    placeholder="e.g. Cagayan de Oro Polymedic Medical Plaza"
+                    className="text-xs bg-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Short Display Name
+                  </label>
+                  <Input
+                    value={hospitalForm.shortName}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, shortName: e.target.value })}
+                    placeholder="e.g. Polymedic Plaza"
+                    className="text-xs bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Province <span className="text-rose-500">*</span>
+                  </label>
+                  <Input
+                    value={hospitalForm.province}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, province: e.target.value })}
+                    placeholder="e.g. Misamis Oriental"
+                    className="text-xs bg-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    City / Municipality <span className="text-rose-500">*</span>
+                  </label>
+                  <Input
+                    value={hospitalForm.city}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, city: e.target.value })}
+                    placeholder="e.g. Cagayan de Oro"
+                    className="text-xs bg-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Barangay
+                  </label>
+                  <Input
+                    value={hospitalForm.barangay}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, barangay: e.target.value })}
+                    placeholder="e.g. Kauswagan or Carmen"
+                    className="text-xs bg-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Street / Compound Address
+                  </label>
+                  <Input
+                    value={hospitalForm.street}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, street: e.target.value })}
+                    placeholder="e.g. National Highway"
+                    className="text-xs bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Direct Hospital Trunkline
+                  </label>
+                  <Input
+                    value={hospitalForm.contactPhone}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, contactPhone: e.target.value })}
+                    placeholder="e.g. (088) 858-5858"
+                    className="text-xs bg-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    DOH License Number (Optional)
+                  </label>
+                  <Input
+                    value={hospitalForm.dohLicenseNumber}
+                    onChange={(e) => setHospitalForm({ ...hospitalForm, dohLicenseNumber: e.target.value })}
+                    placeholder="e.g. DOH-10-H-0038"
+                    className="text-xs bg-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="has-er-checkbox"
+                  checked={hospitalForm.hasEr}
+                  onChange={(e) => setHospitalForm({ ...hospitalForm, hasEr: e.target.checked })}
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+                <label htmlFor="has-er-checkbox" className="text-xs text-slate-700 font-semibold cursor-pointer">
+                  Has 24/7 Emergency Room (ER) Services
+                </label>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0 pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddHospitalModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="brand"
+                  size="sm"
+                  disabled={isSubmittingHospital}
+                  className="text-xs font-bold"
+                >
+                  {isSubmittingHospital ? 'Saving Facility...' : 'Save Hospital Complex'}
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
+            <div className="space-y-4 py-1 text-xs">
+              <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-3 text-slate-700 space-y-1">
+                <p className="font-bold text-brand-900 flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-4 w-4 text-brand-700" />
+                  Format: Facility Name, Street, Barangay, City/Municipality, Province
+                </p>
+                <p className="text-[11px] text-slate-600">
+                  Paste rows directly from a spreadsheet (tab-separated) or CSV. One facility per line.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Raw Records Input
+                </label>
+                <textarea
+                  rows={6}
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder={`Polymedic Medical Plaza, National Highway, Kauswagan, Cagayan de Oro, Misamis Oriental\nMaria Reyna XU Hospital, Hayes Street, Camaman-an, Cagayan de Oro, Misamis Oriental\nCebu Doctors Hospital, Osmeña Blvd, Capitol Site, Cebu City, Cebu`}
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-mono text-xs focus:outline-none focus:border-brand-700"
+                />
+              </div>
+
+              {/* Live Preview Table */}
+              {bulkParsedItems.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">
+                      Parsed Facilities Preview ({bulkParsedItems.length})
+                    </span>
+                    <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Ready to Import
+                    </span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="border-b border-slate-200 bg-slate-100 text-slate-600 font-bold sticky top-0">
+                        <tr>
+                          <th className="p-2">#</th>
+                          <th className="p-2">Facility Name</th>
+                          <th className="p-2">Street</th>
+                          <th className="p-2">Barangay</th>
+                          <th className="p-2">City/Municipality</th>
+                          <th className="p-2">Province</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {bulkParsedItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-white transition">
+                            <td className="p-2 font-mono text-slate-400">{idx + 1}</td>
+                            <td className="p-2 font-bold text-slate-900">{item.name}</td>
+                            <td className="p-2 text-slate-600">{item.street || '—'}</td>
+                            <td className="p-2 text-slate-600">{item.barangay || '—'}</td>
+                            <td className="p-2 text-slate-700 font-semibold">{item.city}</td>
+                            <td className="p-2 text-slate-700">{item.province}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddHospitalModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="brand"
+                  size="sm"
+                  onClick={handleImportBulkHospitals}
+                  disabled={isSubmittingHospital || bulkParsedItems.length === 0}
+                  className="text-xs font-bold"
+                >
+                  {isSubmittingHospital
+                    ? 'Importing Facilities...'
+                    : `Import ${bulkParsedItems.length} Facilit${bulkParsedItems.length === 1 ? 'y' : 'ies'}`}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* ── MODAL 1: ADD CLINIC SUITE ── */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="sm:max-w-xl bg-white border border-slate-200">
@@ -1017,9 +1556,22 @@ export default function ClinicsAndRoomsPage() {
           <form onSubmit={handleSubmitAdd} className="space-y-4 py-1 text-xs">
             {/* Hospital Master Dropdown */}
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                Hospital Facility Complex <span className="text-rose-500">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  Hospital Facility Complex <span className="text-rose-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHospitalModalError(null);
+                    setAddHospitalModalOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-brand-700 hover:text-brand-800 flex items-center gap-1 hover:underline"
+                >
+                  <Plus className="h-3 w-3" />
+                  New Facility Complex
+                </button>
+              </div>
               <select
                 value={addForm.hospitalId}
                 onChange={(e) => handleAddHospitalSelect(e.target.value)}
@@ -1029,13 +1581,30 @@ export default function ClinicsAndRoomsPage() {
                 <option value="">Select Official Hospital Facility</option>
                 {hospitals.map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.short_name || h.name} &bull; {h.city}
+                    {h.short_name || h.name} &bull; {h.barangay ? `${h.barangay}, ` : ''}{h.city} ({h.province})
                   </option>
                 ))}
               </select>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Linked to the official DOH licensed hospital master catalog.
-              </p>
+              {addForm.hospitalId && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 flex-wrap">
+                  <MapPin className="h-3 w-3 text-brand-600 shrink-0" />
+                  <span className="font-bold text-slate-700">{addForm.province}</span>
+                  <span className="text-slate-400">&rsaquo;</span>
+                  <span className="font-semibold text-slate-700">{addForm.city}</span>
+                  {addForm.barangay && (
+                    <>
+                      <span className="text-slate-400">&rsaquo;</span>
+                      <span className="font-medium text-slate-600">{addForm.barangay}</span>
+                    </>
+                  )}
+                  {addForm.street && (
+                    <>
+                      <span className="text-slate-400">&rsaquo;</span>
+                      <span className="text-slate-500">{addForm.street}</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

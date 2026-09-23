@@ -31,6 +31,11 @@ export interface ClinicRoom {
   clinicName: string;
   room: string;
   schedule: string;
+  street?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  address?: string | null;
   dayOfWeek?: number;
   startTime?: string;
   endTime?: string;
@@ -230,6 +235,11 @@ export function DoctorProvider({ children }: { children: React.ReactNode }) {
               clinicName: clinic?.name || 'Outpatient Suite',
               room: clinic?.room_number || `Room ${idx + 101}`,
               schedule: `${distinctDays} · ${timeSpan}`,
+              street: clinic?.street || null,
+              barangay: clinic?.barangay || null,
+              city: clinic?.city || null,
+              province: clinic?.province || null,
+              address: clinic?.address || null,
               dayOfWeek: firstSched?.day_of_week,
               startTime: firstSched?.start_time,
               endTime: firstSched?.end_time,

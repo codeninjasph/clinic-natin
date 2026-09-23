@@ -32,8 +32,10 @@ export async function GET(req: NextRequest) {
     if (type === 'hospitals') {
       const { data, error } = await supabase
         .from('hospitals')
-        .select('id, code, name, short_name, address, city, province, doh_license_number, contact_phone, has_er, is_partner')
+        .select('id, code, name, short_name, address, street, barangay, city, province, doh_license_number, contact_phone, has_er, is_partner')
         .eq('is_active', true)
+        .order('province', { ascending: true })
+        .order('city', { ascending: true })
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -83,8 +85,10 @@ export async function GET(req: NextRequest) {
 
       supabase
         .from('hospitals')
-        .select('id, code, name, short_name, address, city, province, doh_license_number, contact_phone, has_er, is_partner')
+        .select('id, code, name, short_name, address, street, barangay, city, province, doh_license_number, contact_phone, has_er, is_partner')
         .eq('is_active', true)
+        .order('province', { ascending: true })
+        .order('city', { ascending: true })
         .order('name', { ascending: true }),
 
       supabase

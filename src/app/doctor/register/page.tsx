@@ -80,6 +80,26 @@ export default function DoctorRegisterPage() {
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [successData, setSuccessData] = React.useState<any | null>(null);
+  const [hospitalsList, setHospitalsList] = React.useState<Array<{ name: string; city?: string; province?: string }>>([]);
+
+  React.useEffect(() => {
+    fetch('/api/admin/lookups?type=hospitals')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hospitals && Array.isArray(data.hospitals) && data.hospitals.length > 0) {
+          setHospitalsList(
+            data.hospitals.map((h: any) => ({
+              name: h.name,
+              city: h.city,
+              province: h.province,
+            }))
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch hospitals lookup, using static fallback:', err);
+      });
+  }, []);
 
   const toggleHmo = (hmo: string) => {
     setSelectedHmos((prev) =>
@@ -486,9 +506,9 @@ export default function DoctorRegisterPage() {
                       onChange={(e) => setHospitalAffiliation(e.target.value)}
                       className="w-full h-9 rounded-md border border-slate-300 bg-white px-2.5 text-xs focus:ring-1 focus:ring-brand-700"
                     >
-                      {HOSPITALS.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
+                      {(hospitalsList.length > 0 ? hospitalsList : HOSPITALS.map((h) => ({ name: h, city: 'Cagayan de Oro' }))).map((h) => (
+                        <option key={h.name} value={h.name}>
+                          {h.name} {h.city ? `(${h.city})` : ''}
                         </option>
                       ))}
                     </select>

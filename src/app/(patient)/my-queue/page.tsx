@@ -98,6 +98,11 @@ interface ActiveAppointment {
   doctor_name: string;
   hospital_name: string;
   room_number: string;
+  street?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  address?: string | null;
 }
 
 interface Prescription {
@@ -166,7 +171,15 @@ type RawActiveAppointment = {
       specialty: string;
       profiles: { full_name: string } | null;
     } | null;
-    clinics: { hospital_name: string; room_number: string } | null;
+    clinics: {
+      hospital_name: string;
+      room_number: string;
+      street?: string | null;
+      barangay?: string | null;
+      city?: string | null;
+      province?: string | null;
+      address?: string | null;
+    } | null;
   } | null;
 };
 
@@ -353,6 +366,11 @@ export default function PatientDashboardPage() {
       doctor_name: qs.doctors?.profiles?.full_name ?? 'Attending Doctor',
       hospital_name: qs.clinics?.hospital_name ?? 'Maria Reyna XU Hospital',
       room_number: qs.clinics?.room_number ?? '304',
+      street: qs.clinics?.street ?? null,
+      barangay: qs.clinics?.barangay ?? null,
+      city: qs.clinics?.city ?? null,
+      province: qs.clinics?.province ?? null,
+      address: qs.clinics?.address ?? null,
     };
   }
 
@@ -424,7 +442,7 @@ export default function PatientDashboardPage() {
           queue_sessions!queue_session_id (
             id, status, current_serving_number, session_date, announcement_notice,
             doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
-            clinics!clinic_id ( hospital_name, room_number )
+            clinics!clinic_id ( hospital_name, room_number, street, barangay, city, province, address )
           )
         `)
         .eq('patient_id', profileId)
@@ -534,7 +552,7 @@ export default function PatientDashboardPage() {
               queue_sessions!queue_session_id (
                 id, status, current_serving_number, session_date, announcement_notice,
                 doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
-                clinics!clinic_id ( hospital_name, room_number )
+                clinics!clinic_id ( hospital_name, room_number, street, barangay, city, province, address )
               )
             `)
             .eq('token_code', tokenQuery)

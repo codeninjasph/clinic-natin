@@ -59,6 +59,10 @@ interface ClinicSchedule {
     hospital_name: string;
     room_number: string;
     address: string;
+    street?: string | null;
+    barangay?: string | null;
+    city?: string | null;
+    province?: string | null;
   };
 }
 
@@ -95,6 +99,10 @@ type RawRow = {
       hospital_name: string | null;
       room_number: string | null;
       address: string;
+      street?: string | null;
+      barangay?: string | null;
+      city?: string | null;
+      province?: string | null;
     } | null;
     queue_sessions: Array<{
       id: string;
@@ -154,6 +162,10 @@ function transformRows(rows: RawRow[]): DoctorCard[] {
           hospital_name: s.clinics?.hospital_name || 'Hospital Medical Center',
           room_number: s.clinics?.room_number || '',
           address: s.clinics?.address ?? '',
+          street: s.clinics?.street,
+          barangay: s.clinics?.barangay,
+          city: s.clinics?.city,
+          province: s.clinics?.province,
         },
       })),
     activeSession: extractActiveSession(row.doctor_clinic_schedules || []),
@@ -463,7 +475,10 @@ export default function DiscoverPage() {
   const router = useRouter();
   const [doctors, setDoctors] = useState<DoctorCard[]>([]);
   const [query, setQuery] = useState('');
-  const [hospitalFilter, setHospitalFilter] = useState<'ALL' | 'MARIA_REYNA' | 'CUMC' | 'POLYMEDIC' | 'NMMC'>('ALL');
+  const [provinceFilter, setProvinceFilter] = useState<string>('Misamis Oriental');
+  const [cityFilter, setCityFilter] = useState<string>('Cagayan de Oro');
+  const [barangayFilter, setBarangayFilter] = useState<string>('ALL');
+  const [facilityFilter, setFacilityFilter] = useState<string>('ALL');
   const [selectedSymptomTag, setSelectedSymptomTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -497,7 +512,11 @@ export default function DiscoverPage() {
             name,
             hospital_name,
             room_number,
-            address
+            address,
+            street,
+            barangay,
+            city,
+            province
           ),
           queue_sessions (
             id,
@@ -542,33 +561,114 @@ export default function DiscoverPage() {
     };
   }, [fetchDoctors]);
 
+  // Extract dynamic location options from loaded doctors and schedules
+  const availableProvinces = useMemo(() => {
+    const set = new Set<string>();
+    doctors.forEach((d) =>
+      d.schedules.forEach((s) => {
+        if (s.clinic.province) set.add(s.clinic.province);
+      })
+    );
+    set.add('Misamis Oriental');
+    return Array.from(set).sort();
+  }, [doctors]);
+
+  const availableCities = useMemo(() => {
+    const set = new Set<string>();
+    doctors.forEach((d) =>
+      d.schedules.forEach((s) => {
+        if (
+          (provinceFilter === 'ALL' || s.clinic.province?.toLowerCase() === provinceFilter.toLowerCase()) &&
+          s.clinic.city
+        ) {
+          set.add(s.clinic.city);
+        }
+      })
+    );
+    if (provinceFilter === 'Misamis Oriental' || provinceFilter === 'ALL') {
+      set.add('Cagayan de Oro');
+    }
+    return Array.from(set).sort();
+  }, [doctors, provinceFilter]);
+
+  const availableBarangays = useMemo(() => {
+    const set = new Set<string>();
+    doctors.forEach((d) =>
+      d.schedules.forEach((s) => {
+        const matchesProv = provinceFilter === 'ALL' || s.clinic.province?.toLowerCase() === provinceFilter.toLowerCase();
+        const matchesCity = cityFilter === 'ALL' || s.clinic.city?.toLowerCase() === cityFilter.toLowerCase();
+        if (matchesProv && matchesCity && s.clinic.barangay) {
+          set.add(s.clinic.barangay);
+        }
+      })
+    );
+    return Array.from(set).sort();
+  }, [doctors, provinceFilter, cityFilter]);
+
+  const availableFacilities = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    doctors.forEach((d) =>
+      d.schedules.forEach((s) => {
+        const matchesProv = provinceFilter === 'ALL' || s.clinic.province?.toLowerCase() === provinceFilter.toLowerCase();
+        const matchesCity = cityFilter === 'ALL' || s.clinic.city?.toLowerCase() === cityFilter.toLowerCase();
+        const matchesBgy = barangayFilter === 'ALL' || s.clinic.barangay?.toLowerCase() === barangayFilter.toLowerCase();
+        if (matchesProv && matchesCity && matchesBgy && s.clinic.hospital_name) {
+          const key = s.clinic.hospital_name;
+          if (!map.has(key)) {
+            map.set(key, { id: key, name: key });
+          }
+        }
+      })
+    );
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [doctors, provinceFilter, cityFilter, barangayFilter]);
+
   // ---- Symptom mapping & search filtering ----
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     const symptomSpecialties = matchSymptomsToSpecialties(q);
 
     return doctors.filter((doc) => {
-      // 1. Hospital Filter
-      if (hospitalFilter !== 'ALL') {
-        const matchesHospital = doc.schedules.some((s) => {
-          const hName = s.clinic.hospital_name.toLowerCase();
-          if (hospitalFilter === 'MARIA_REYNA') return hName.includes('maria reyna');
-          if (hospitalFilter === 'CUMC') return hName.includes('capitol') || hName.includes('cumc');
-          if (hospitalFilter === 'POLYMEDIC') return hName.includes('polymedic');
-          if (hospitalFilter === 'NMMC') return hName.includes('northern mindanao') || hName.includes('nmmc');
-          return true;
-        });
-        if (!matchesHospital) return false;
+      // 1. Province Filter
+      if (provinceFilter !== 'ALL') {
+        const matchesProv = doc.schedules.some(
+          (s) => s.clinic.province?.toLowerCase() === provinceFilter.toLowerCase()
+        );
+        if (!matchesProv) return false;
       }
 
-      // 2. Symptom Tag Selected
+      // 2. City / Municipality Filter
+      if (cityFilter !== 'ALL') {
+        const matchesCity = doc.schedules.some(
+          (s) => s.clinic.city?.toLowerCase() === cityFilter.toLowerCase()
+        );
+        if (!matchesCity) return false;
+      }
+
+      // 3. Barangay Filter
+      if (barangayFilter !== 'ALL') {
+        const matchesBgy = doc.schedules.some(
+          (s) => s.clinic.barangay?.toLowerCase() === barangayFilter.toLowerCase()
+        );
+        if (!matchesBgy) return false;
+      }
+
+      // 4. Hospital / Facility Filter
+      if (facilityFilter !== 'ALL') {
+        const matchesHosp = doc.schedules.some(
+          (s) => s.clinic.hospital_name.toLowerCase() === facilityFilter.toLowerCase()
+        );
+        if (!matchesHosp) return false;
+      }
+
+      // 5. Symptom Tag Selected
       if (selectedSymptomTag) {
         if (!doc.specialty.toLowerCase().includes(selectedSymptomTag.toLowerCase())) {
           return false;
         }
       }
 
-      // 3. Search query
+      // 6. Search query
       if (!q) return true;
 
       const directMatch =
@@ -579,7 +679,11 @@ export default function DiscoverPage() {
             s.clinic.name.toLowerCase().includes(q) ||
             s.clinic.hospital_name.toLowerCase().includes(q) ||
             s.clinic.room_number.toLowerCase().includes(q) ||
-            s.clinic.address.toLowerCase().includes(q)
+            s.clinic.address.toLowerCase().includes(q) ||
+            (s.clinic.street && s.clinic.street.toLowerCase().includes(q)) ||
+            (s.clinic.barangay && s.clinic.barangay.toLowerCase().includes(q)) ||
+            (s.clinic.city && s.clinic.city.toLowerCase().includes(q)) ||
+            (s.clinic.province && s.clinic.province.toLowerCase().includes(q))
         );
 
       if (directMatch) return true;
@@ -591,7 +695,7 @@ export default function DiscoverPage() {
 
       return false;
     });
-  }, [doctors, query, hospitalFilter, selectedSymptomTag]);
+  }, [doctors, query, provinceFilter, cityFilter, barangayFilter, facilityFilter, selectedSymptomTag]);
 
   // ---- Handle Open Booking Modal ----
   const manilaNow = getManilaNow();
@@ -621,14 +725,6 @@ export default function DiscoverPage() {
         : undefined,
     });
   };
-
-  const hospitalsList = [
-    { id: 'ALL', label: 'All CDO Facilities', short: 'All CDO' },
-    { id: 'MARIA_REYNA', label: 'Maria Reyna XU Hospital', short: 'Maria Reyna XU' },
-    { id: 'CUMC', label: 'Capitol University Medical Center', short: 'CUMC' },
-    { id: 'POLYMEDIC', label: 'Polymedic Medical Plaza', short: 'Polymedic' },
-    { id: 'NMMC', label: 'Northern Mindanao Med Center OPD', short: 'NMMC OPD' },
-  ];
 
   return (
     <main className="min-h-screen bg-slate-50/70 pb-20">
@@ -663,22 +759,73 @@ export default function DiscoverPage() {
           />
         </div>
 
-        {/* Hospital Horizontal Carousel */}
-        <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {hospitalsList.map((tab) => (
+        {/* Mobile Location Carousel: Barangay & Facility */}
+        <div className="mt-2 space-y-1.5">
+          {/* Barangay Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+              Barangay:
+            </span>
             <button
-              key={tab.id}
               type="button"
-              onClick={() => setHospitalFilter(tab.id as any)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition ${
-                hospitalFilter === tab.id
+              onClick={() => setBarangayFilter('ALL')}
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition ${
+                barangayFilter === 'ALL'
                   ? 'bg-brand-700 text-white shadow-2xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
               }`}
             >
-              {tab.short}
+              All Barangays
             </button>
-          ))}
+            {availableBarangays.map((bgy) => (
+              <button
+                key={bgy}
+                type="button"
+                onClick={() => setBarangayFilter(bgy)}
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition ${
+                  barangayFilter === bgy
+                    ? 'bg-brand-700 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {bgy}
+              </button>
+            ))}
+          </div>
+
+          {/* Facility Carousel */}
+          {availableFacilities.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+                Facility:
+              </span>
+              <button
+                type="button"
+                onClick={() => setFacilityFilter('ALL')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition ${
+                  facilityFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                All Facilities
+              </button>
+              {availableFacilities.map((fac) => (
+                <button
+                  key={fac.id}
+                  type="button"
+                  onClick={() => setFacilityFilter(fac.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition ${
+                    facilityFilter === fac.id
+                      ? 'bg-brand-700 text-white shadow-2xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {fac.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Symptoms Carousel */}
@@ -750,31 +897,161 @@ export default function DiscoverPage() {
                 )}
               </div>
 
-              {/* Hospital Location Filters */}
-              <div>
-                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-                  Hospital / Medical Center
-                </label>
-                <div className="space-y-1.5">
-                  {hospitalsList.map((h) => {
-                    const isSelected = hospitalFilter === h.id;
-                    return (
+              {/* Location Hierarchy: Province -> City -> Barangay -> Facility */}
+              <div className="space-y-3 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Geographic Filter
+                  </label>
+                  {(provinceFilter !== 'Misamis Oriental' || cityFilter !== 'Cagayan de Oro' || barangayFilter !== 'ALL' || facilityFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProvinceFilter('Misamis Oriental');
+                        setCityFilter('Cagayan de Oro');
+                        setBarangayFilter('ALL');
+                        setFacilityFilter('ALL');
+                      }}
+                      className="text-[10px] text-brand-700 hover:underline font-semibold"
+                    >
+                      Reset Filter
+                    </button>
+                  )}
+                </div>
+
+                {/* Province & City dropdowns */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Province
+                    </label>
+                    <select
+                      value={provinceFilter}
+                      onChange={(e) => {
+                        setProvinceFilter(e.target.value);
+                        setCityFilter('ALL');
+                        setBarangayFilter('ALL');
+                        setFacilityFilter('ALL');
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
+                    >
+                      <option value="ALL">All Provinces</option>
+                      {availableProvinces.map((prov) => (
+                        <option key={prov} value={prov}>
+                          {prov}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      City / Muni
+                    </label>
+                    <select
+                      value={cityFilter}
+                      onChange={(e) => {
+                        setCityFilter(e.target.value);
+                        setBarangayFilter('ALL');
+                        setFacilityFilter('ALL');
+                      }}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
+                    >
+                      <option value="ALL">All Cities ({availableCities.length})</option>
+                      {availableCities.map((city) => (
+                        <option key={city} value={city}>
+                          {city}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Barangay Selection Chips */}
+                {availableBarangays.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">
+                      Barangay ({cityFilter})
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
                       <button
-                        key={h.id}
                         type="button"
-                        onClick={() => setHospitalFilter(h.id as any)}
-                        className={`flex w-full items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition ${
-                          isSelected
-                            ? 'bg-brand text-white font-bold shadow-xs'
+                        onClick={() => {
+                          setBarangayFilter('ALL');
+                          setFacilityFilter('ALL');
+                        }}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                          barangayFilter === 'ALL'
+                            ? 'bg-brand-700 text-white shadow-2xs font-bold'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                        }`}
+                      >
+                        All
+                      </button>
+                      {availableBarangays.map((bgy) => {
+                        const isSelected = barangayFilter === bgy;
+                        return (
+                          <button
+                            key={bgy}
+                            type="button"
+                            onClick={() => {
+                              setBarangayFilter(isSelected ? 'ALL' : bgy);
+                              setFacilityFilter('ALL');
+                            }}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                              isSelected
+                                ? 'bg-brand-700 text-white shadow-2xs font-bold'
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                            }`}
+                          >
+                            {bgy}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Facility List Selector */}
+                {availableFacilities.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">
+                      Facility / Medical Center
+                    </label>
+                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                      <button
+                        type="button"
+                        onClick={() => setFacilityFilter('ALL')}
+                        className={`flex w-full items-center justify-between px-3 py-1.5 rounded-xl text-xs text-left transition ${
+                          facilityFilter === 'ALL'
+                            ? 'bg-slate-900 text-white font-bold shadow-2xs'
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/60'
                         }`}
                       >
-                        <span className="truncate pr-2">{h.label}</span>
-                        {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white shrink-0" />}
+                        <span>All Facilities in Area</span>
+                        {facilityFilter === 'ALL' && <CheckCircle2 className="h-3.5 w-3.5 text-white shrink-0" />}
                       </button>
-                    );
-                  })}
-                </div>
+                      {availableFacilities.map((fac) => {
+                        const isSelected = facilityFilter === fac.id;
+                        return (
+                          <button
+                            key={fac.id}
+                            type="button"
+                            onClick={() => setFacilityFilter(isSelected ? 'ALL' : fac.id)}
+                            className={`flex w-full items-center justify-between px-3 py-1.5 rounded-xl text-xs text-left transition ${
+                              isSelected
+                                ? 'bg-brand text-white font-bold shadow-2xs'
+                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/60'
+                            }`}
+                          >
+                            <span className="truncate pr-1">{fac.name}</span>
+                            {isSelected && <CheckCircle2 className="h-3.5 w-3.5 text-white shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Bisaya / Tagalog Symptom Tags */}
@@ -812,14 +1089,17 @@ export default function DiscoverPage() {
               </div>
 
               {/* Reset All Filters Button */}
-              {(query || hospitalFilter !== 'ALL' || selectedSymptomTag) && (
+              {(query || facilityFilter !== 'ALL' || barangayFilter !== 'ALL' || cityFilter !== 'Cagayan de Oro' || provinceFilter !== 'Misamis Oriental' || selectedSymptomTag) && (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => {
                     setQuery('');
-                    setHospitalFilter('ALL');
+                    setProvinceFilter('Misamis Oriental');
+                    setCityFilter('Cagayan de Oro');
+                    setBarangayFilter('ALL');
+                    setFacilityFilter('ALL');
                     setSelectedSymptomTag(null);
                   }}
                   className="w-full text-xs font-bold text-brand-700 hover:bg-brand-50 rounded-xl"
@@ -848,7 +1128,12 @@ export default function DiscoverPage() {
               <div>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">Available Specialists</h1>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Showing {filtered.length} verified physician{filtered.length !== 1 ? 's' : ''} across Cagayan de Oro
+                  Showing {filtered.length} verified physician{filtered.length !== 1 ? 's' : ''} in{' '}
+                  <span className="font-semibold text-slate-700">
+                    {[barangayFilter !== 'ALL' && barangayFilter, cityFilter !== 'ALL' ? cityFilter : 'All Cities', provinceFilter !== 'ALL' ? provinceFilter : 'Philippines']
+                      .filter(Boolean)
+                      .join(', ')}
+                  </span>
                   {selectedSymptomTag ? ` matching "${selectedSymptomTag}"` : ''}
                 </p>
               </div>
@@ -895,7 +1180,8 @@ export default function DiscoverPage() {
                   onClear={() => {
                     setQuery('');
                     setSelectedSymptomTag(null);
-                    setHospitalFilter('ALL');
+                    setBarangayFilter('ALL');
+                    setFacilityFilter('ALL');
                   }}
                 />
               </div>

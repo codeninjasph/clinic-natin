@@ -75,6 +75,11 @@ interface ClinicOption {
   name: string;
   hospital_name: string;
   room_number: string;
+  street?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  address?: string | null;
 }
 
 const DAYS = [
@@ -132,7 +137,7 @@ export default function DoctorSchedulePage() {
       // 1. Fetch all clinics
       const { data: clinicsData } = await supabase
         .from('clinics')
-        .select('id, name, hospital_name, room_number')
+        .select('id, name, hospital_name, room_number, street, barangay, city, province, address')
         .order('hospital_name', { ascending: true });
 
       setAllClinics(clinicsData || []);
@@ -665,7 +670,7 @@ export default function DoctorSchedulePage() {
                   <div>
                     <p className="font-bold text-slate-900">{c.hospital_name} — {c.name}</p>
                     <p className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
-                      <MapPin className="h-3 w-3 text-slate-400" /> Room {c.room_number}, Cagayan de Oro City
+                      <MapPin className="h-3 w-3 text-slate-400" /> Room {c.room_number}, {[c.barangay, c.city || 'Cagayan de Oro City'].filter(Boolean).join(', ')}
                     </p>
                   </div>
                 </div>

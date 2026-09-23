@@ -24,6 +24,11 @@ export interface ClinicRoom {
   name: string;
   hospital_name: string;
   room_number: string;
+  street?: string | null;
+  barangay?: string | null;
+  city?: string | null;
+  province?: string | null;
+  address?: string | null;
   schedule?: string;
 }
 
@@ -342,7 +347,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
             last_updated_at,
             clinic_id,
             doctor_id,
-            clinics:clinic_id ( id, name, hospital_name, room_number )
+            clinics:clinic_id ( id, name, hospital_name, room_number, street, barangay, city, province, address )
           `)
           .eq('doctor_id', doctorId)
           .eq('session_date', todayStr)
@@ -367,7 +372,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
               last_updated_at,
               clinic_id,
               doctor_id,
-              clinics:clinic_id ( id, name, hospital_name, room_number )
+              clinics:clinic_id ( id, name, hospital_name, room_number, street, barangay, city, province, address )
             `)
             .eq('doctor_id', doctorId)
             .eq('session_date', todayStr)
@@ -402,6 +407,11 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
             name: sd.clinics.name,
             hospital_name: sd.clinics.hospital_name,
             room_number: sd.clinics.room_number,
+            street: sd.clinics.street || null,
+            barangay: sd.clinics.barangay || null,
+            city: sd.clinics.city || null,
+            province: sd.clinics.province || null,
+            address: sd.clinics.address || null,
           });
         }
 
@@ -416,7 +426,7 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
           const dayOfWeek = new Date().getDay() === 0 ? 7 : new Date().getDay();
           const { data: schedData } = await supabase
             .from('doctor_clinic_schedules')
-            .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number )')
+            .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number, street, barangay, city, province, address )')
             .eq('doctor_id', doctorId)
             .eq('day_of_week', dayOfWeek)
             .eq('is_active', true)
@@ -430,11 +440,16 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
               name: c.name,
               hospital_name: c.hospital_name,
               room_number: c.room_number,
+              street: c.street || null,
+              barangay: c.barangay || null,
+              city: c.city || null,
+              province: c.province || null,
+              address: c.address || null,
             });
           } else {
             const { data: anySched } = await supabase
               .from('doctor_clinic_schedules')
-              .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number )')
+              .select('clinic_id, clinics:clinic_id ( id, name, hospital_name, room_number, street, barangay, city, province, address )')
               .eq('doctor_id', doctorId)
               .eq('is_active', true)
               .limit(1)
@@ -448,6 +463,11 @@ export function SecretaryProvider({ children }: { children: React.ReactNode }) {
                 name: c.name,
                 hospital_name: c.hospital_name,
                 room_number: c.room_number,
+                street: c.street || null,
+                barangay: c.barangay || null,
+                city: c.city || null,
+                province: c.province || null,
+                address: c.address || null,
               });
             }
           }

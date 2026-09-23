@@ -71,7 +71,7 @@ export default function PatientRecordsPage() {
               token_code,
               created_at,
               queue_sessions!queue_session_id (
-                clinics!clinic_id ( name, hospital_name, room_number )
+                clinics!clinic_id ( name, hospital_name, room_number, street, barangay, city, province, address )
               )
             ),
             prescriptions_lab_requests (
