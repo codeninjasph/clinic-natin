@@ -480,7 +480,7 @@ export default function WalkInRegistrationPage() {
                       setOriginalPhoneNumber(null);
                     }
                   }}
-                  placeholder="e.g. Juan Carlos dela Cruz or Bongbong Marcos"
+                  placeholder="e.g. Juan Carlos dela Cruz"
                   className="h-12 text-sm sm:text-base font-semibold border-slate-300 focus:border-brand-700 rounded-2xl bg-white"
                   autoFocus
                 />
@@ -541,9 +541,9 @@ export default function WalkInRegistrationPage() {
                       {searchSuggestions.map((prof) => {
                         const age = prof.date_of_birth
                           ? Math.floor(
-                              (Date.now() - new Date(prof.date_of_birth).getTime()) /
-                                (365.25 * 24 * 3600 * 1000)
-                            )
+                            (Date.now() - new Date(prof.date_of_birth).getTime()) /
+                            (365.25 * 24 * 3600 * 1000)
+                          )
                           : null;
 
                         return (
@@ -653,22 +653,20 @@ export default function WalkInRegistrationPage() {
                     <button
                       type="button"
                       onClick={() => setGender('FEMALE')}
-                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${
-                        gender === 'FEMALE'
+                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${gender === 'FEMALE'
                           ? 'bg-rose-50 text-rose-900 border-rose-300 shadow-xs ring-2 ring-rose-200'
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       Female
                     </button>
                     <button
                       type="button"
                       onClick={() => setGender('MALE')}
-                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${
-                        gender === 'MALE'
+                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${gender === 'MALE'
                           ? 'bg-blue-50 text-blue-900 border-blue-300 shadow-xs ring-2 ring-blue-200'
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       Male
                     </button>
@@ -707,11 +705,10 @@ export default function WalkInRegistrationPage() {
                         key={p.id}
                         type="button"
                         onClick={() => setPriority(p.id as PriorityCategory)}
-                        className={`p-3 rounded-2xl text-left border transition-all ${
-                          isSelected
+                        className={`p-3 rounded-2xl text-left border transition-all ${isSelected
                             ? 'bg-brand-700 text-white border-brand-700 shadow-sm ring-2 ring-brand-300/40'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
+                          }`}
                       >
                         <span className="text-xs font-bold block leading-tight">{p.label}</span>
                         <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-slate-400'} block mt-0.5`}>
