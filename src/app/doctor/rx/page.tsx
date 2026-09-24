@@ -25,6 +25,7 @@ import { searchFormulary, type PhDrug } from '@/data/ph-formulary';
 import { useDoctor } from '../doctor-context';
 import QRCode from 'qrcode';
 import { DiagnosticRequisitionPad, type DiagnosticOrder } from '@/components/doctor/diagnostic-requisition-pad';
+import { PatientSearchAutocomplete, type PatientSearchResult } from '@/components/doctor/patient-search-autocomplete';
 import { generateRxVerificationHash } from '@/lib/crypto/rx-security';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -775,6 +776,7 @@ function RxPadContent() {
   const [activePatientId, setActivePatientId] = useState<string | null>(patientIdParam || null);
   const [patientName, setPatientName] = useState(patientNameParam);
   const [patientAge, setPatientAge] = useState('');
+  const [patientAllergies, setPatientAllergies] = useState<string[]>([]);
   const [tokenCode, setTokenCode] = useState(tokenCodeParam);
   const [isServingAutoLinked, setIsServingAutoLinked] = useState(false);
 
@@ -810,6 +812,49 @@ function RxPadContent() {
     clinicPhone: '+63 88 850 3000',
   };
 
+  // ── Patient Selection Handlers for Autocomplete ─────────────────────────────
+  const handleSelectPatient = useCallback((p: PatientSearchResult) => {
+    setActivePatientId(p.id);
+    setPatientName(p.fullName);
+    if (p.appointmentId) {
+      setActiveAppointmentId(p.appointmentId);
+      setTokenCode(p.tokenCode || '');
+      setIsServingAutoLinked(p.queueStatus === 'SERVING');
+    } else {
+      setActiveAppointmentId('');
+      setTokenCode('');
+      setIsServingAutoLinked(false);
+    }
+    if (p.age !== null) {
+      setPatientAge(`${p.age} yrs ${p.gender ? `· ${p.gender}` : ''}`);
+    } else if (p.gender) {
+      setPatientAge(p.gender);
+    } else {
+      setPatientAge('');
+    }
+    setPatientAllergies(p.allergies || []);
+  }, []);
+
+  const handleSelectWalkIn = useCallback((name: string) => {
+    setActivePatientId(null);
+    setActiveAppointmentId('');
+    setTokenCode('');
+    setIsServingAutoLinked(false);
+    setPatientName(name);
+    setPatientAge('');
+    setPatientAllergies([]);
+  }, []);
+
+  const handleClearPatient = useCallback(() => {
+    setActivePatientId(null);
+    setActiveAppointmentId('');
+    setTokenCode('');
+    setIsServingAutoLinked(false);
+    setPatientName('');
+    setPatientAge('');
+    setPatientAllergies([]);
+  }, []);
+
   // ── Auto-resolve patient details & existing prescriptions ──────────────────
   useEffect(() => {
     let isCancelled = false;
@@ -819,10 +864,10 @@ function RxPadContent() {
         let apptIdToLoad = activeAppointmentId;
 
         // If no appointmentId was passed in query, find the currently SERVING patient in the queue
-        if (!apptIdToLoad) {
+        if (!apptIdToLoad && !patientIdParam) {
           const { data: servingAppt } = await supabase
             .from('appointments')
-            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender)')
+            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender, allergies)')
             .eq('status', 'SERVING')
             .order('served_at', { ascending: false })
             .limit(1)
@@ -843,12 +888,13 @@ function RxPadContent() {
               const age = Math.floor((Date.now() - new Date(prof.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000));
               setPatientAge(`${age} yrs ${prof.gender ? `· ${prof.gender}` : ''}`);
             }
+            if (prof?.allergies) setPatientAllergies(prof.allergies);
           }
-        } else {
+        } else if (apptIdToLoad) {
           // If appointmentId was provided, fetch complete demographics
           const { data: appt } = await supabase
             .from('appointments')
-            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender)')
+            .select('id, token_code, queue_number, walk_in_name, booking_channel, patient_id, profiles:patient_id(full_name, date_of_birth, gender, allergies)')
             .eq('id', apptIdToLoad)
             .maybeSingle();
 
@@ -863,12 +909,36 @@ function RxPadContent() {
               const age = Math.floor((Date.now() - new Date(prof.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000));
               setPatientAge(`${age} yrs ${prof.gender ? `· ${prof.gender}` : ''}`);
             }
+            if (prof?.allergies) setPatientAllergies(prof.allergies);
+          }
+        } else if (patientIdParam && !patientName) {
+          // Patient ID directly provided in URL
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('id, full_name, date_of_birth, gender, allergies')
+            .eq('id', patientIdParam)
+            .maybeSingle();
+
+          if (prof && !isCancelled) {
+            setPatientName(prof.full_name);
+            setActivePatientId(prof.id);
+            if (prof.date_of_birth) {
+              const age = Math.floor((Date.now() - new Date(prof.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000));
+              setPatientAge(`${age} yrs ${prof.gender ? `· ${prof.gender}` : ''}`);
+            }
+            if (prof.allergies) setPatientAllergies(prof.allergies);
           }
         }
 
         // Auto-load already saved prescriptions from Supabase (if not already parsed from plan)
-        if (apptIdToLoad && !planParam) {
-          const res = await fetch(`/api/doctor/prescriptions?appointmentId=${apptIdToLoad}`);
+        const loadEndpoint = apptIdToLoad
+          ? `/api/doctor/prescriptions?appointmentId=${apptIdToLoad}`
+          : activePatientId
+          ? `/api/doctor/prescriptions?patientId=${activePatientId}`
+          : null;
+
+        if (loadEndpoint && !planParam) {
+          const res = await fetch(loadEndpoint);
           const data = await res.json();
           if (data?.prescriptions && data.prescriptions.length > 0 && !isCancelled) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -904,7 +974,7 @@ function RxPadContent() {
     return () => {
       isCancelled = true;
     };
-  }, [activeAppointmentId, supabase, patientName, tokenCode, planParam]);
+  }, [activeAppointmentId, activePatientId, patientIdParam, supabase, patientName, tokenCode, planParam]);
 
   // Check if any item is S2
   const hasS2Items = rxItems.some((i) => i.isS2 && i.genericName);
@@ -1093,9 +1163,9 @@ function RxPadContent() {
                 variant="brand"
                 size="sm"
                 onClick={() => handleSave(true)}
-                disabled={!hasValidItems || isSaving || !activeAppointmentId}
+                disabled={!hasValidItems || isSaving || (!activeAppointmentId && !activePatientId)}
                 className="text-xs font-semibold"
-                title={!activeAppointmentId ? 'No active appointment — cannot save to EMR' : ''}
+                title={!activeAppointmentId && !activePatientId ? 'Please select or search a patient to save and push' : ''}
               >
                 {isSaving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
@@ -1131,7 +1201,7 @@ function RxPadContent() {
           patientName={patientName}
           patientAge={patientAge}
           doctorProfile={doctorProfile}
-          onSaveOrders={activeAppointmentId ? handleSaveLabOrders : undefined}
+          onSaveOrders={activeAppointmentId || activePatientId ? handleSaveLabOrders : undefined}
           isSaving={isSaving}
         />
       ) : (
@@ -1207,44 +1277,61 @@ function RxPadContent() {
             </CardHeader>
             <Separator />
             <CardContent className="pt-4 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Patient Name *
-                  </label>
-                  <Input
-                    value={patientName}
-                    onChange={(e) => setPatientName(e.target.value)}
-                    placeholder="Full name (e.g. Juan dela Cruz)"
-                    className="text-xs"
-                  />
-                </div>
+              <div className="space-y-3">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Age / Sex
+                    Patient Lookup &amp; Digital Passport Link *
                   </label>
-                  <Input
-                    value={patientAge}
-                    onChange={(e) => setPatientAge(e.target.value)}
-                    placeholder="e.g. 45 M / 32 F"
-                    className="text-xs"
+                  <PatientSearchAutocomplete
+                    selectedPatientId={activePatientId}
+                    patientName={patientName}
+                    patientAge={patientAge}
+                    tokenCode={tokenCode}
+                    allergies={patientAllergies}
+                    onSelect={handleSelectPatient}
+                    onSelectWalkIn={handleSelectWalkIn}
+                    onClear={handleClearPatient}
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Clinical Notes / Indication (Optional)
-                </label>
-                <Input
-                  value={doctorNotes}
-                  onChange={(e) => setDoctorNotes(e.target.value)}
-                  placeholder="e.g., Acute bacterial rhinosinusitis, Uncontrolled hypertension"
-                  className="text-xs"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      Age / Sex
+                    </label>
+                    <Input
+                      value={patientAge}
+                      onChange={(e) => setPatientAge(e.target.value)}
+                      placeholder="e.g. 28 yrs · Female"
+                      className="text-xs"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      Clinical Notes / Indication (Optional)
+                    </label>
+                    <Input
+                      value={doctorNotes}
+                      onChange={(e) => setDoctorNotes(e.target.value)}
+                      placeholder="e.g., Acute bacterial rhinosinusitis, Uncontrolled hypertension"
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* ── Documented Drug Allergy Alert ─────────────────────────────────── */}
+          {patientAllergies.length > 0 && (
+            <Alert variant="warning" className="border-amber-300 bg-amber-50 text-amber-900 no-print py-2.5">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-xs font-bold">Documented Drug Allergy Alert</AlertTitle>
+              <AlertDescription className="text-xs mt-0.5">
+                Patient has documented allergies to: <strong className="text-amber-950 font-bold">{patientAllergies.join(', ')}</strong>. Please verify prescribed medications to prevent adverse reactions.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* ── Medication Line Items ────────────────────────────────────────── */}
           <div className="space-y-3">
@@ -1305,7 +1392,7 @@ function RxPadContent() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleSave(false)}
-                    disabled={!hasValidItems || isSaving || !activeAppointmentId}
+                    disabled={!hasValidItems || isSaving || (!activeAppointmentId && !activePatientId)}
                     className="text-xs border-brand-300 text-brand-700 hover:bg-brand-50"
                   >
                     {isSaving ? (

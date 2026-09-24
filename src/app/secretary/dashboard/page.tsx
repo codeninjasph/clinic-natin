@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { playHospitalChime, announcePatientCall } from '@/lib/audio/queue-chime';
 import Link from 'next/link';
 import {
@@ -19,14 +19,13 @@ import {
   Activity,
   AlertCircle,
   Loader2,
-  ChevronRight,
-  AlertTriangle,
   Clock3,
   Users,
   Timer,
   PhoneCall,
   BadgeCheck,
   Bell,
+  Phone,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSecretary, type Appointment, type PriorityCategory } from '../secretary-context';
@@ -53,22 +52,22 @@ function PriorityBadge({ category }: { category: PriorityCategory }) {
   const config = {
     SENIOR: {
       label: 'Senior • 20% Off',
-      className: 'bg-amber-100 text-amber-800 border-amber-300 ring-1 ring-amber-200',
+      className: 'bg-amber-100 text-amber-900 border-amber-300 ring-1 ring-amber-200/50',
     },
     PWD: {
       label: 'PWD • 20% Off',
-      className: 'bg-blue-100 text-blue-800 border-blue-300 ring-1 ring-blue-200',
+      className: 'bg-sky-100 text-sky-900 border-sky-300 ring-1 ring-sky-200/50',
     },
     PREGNANT: {
       label: 'Pregnant • Express',
-      className: 'bg-rose-100 text-rose-800 border-rose-300 ring-1 ring-rose-200',
+      className: 'bg-rose-100 text-rose-900 border-rose-300 ring-1 ring-rose-200/50',
     },
   }[category];
 
   if (!config) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${config.className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold border ${config.className}`}
     >
       {config.label}
     </span>
@@ -78,17 +77,43 @@ function PriorityBadge({ category }: { category: PriorityCategory }) {
 // ── Status Pill ────────────────────────────────────────────────────────────
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { label: string; className: string }> = {
-    WAITING:           { label: 'Waiting',    className: 'bg-sky-100 text-sky-800 border-sky-300' },
-    BOOKED:            { label: 'Booked',     className: 'bg-slate-100 text-slate-700 border-slate-300' },
-    SERVING:           { label: '▶ In Room',  className: 'bg-blue-600 text-white border-blue-600 animate-pulse' },
-    BUFFERED:          { label: '⏳ Buffer',   className: 'bg-amber-100 text-amber-900 border-amber-300' },
-    SKIPPED:           { label: 'Skipped',    className: 'bg-amber-100 text-amber-900 border-amber-300' },
-    COMPLETED:         { label: '✓ Done',     className: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-    CANCELLED_NO_SHOW: { label: '✗ No-Show', className: 'bg-red-100 text-red-800 border-red-300' },
+    WAITING: {
+      label: 'Waiting',
+      className: 'bg-sky-100 text-sky-900 border-sky-300 font-bold',
+    },
+    BOOKED: {
+      label: 'Reserved',
+      className: 'bg-slate-100 text-slate-800 border-slate-300 font-medium',
+    },
+    SERVING: {
+      label: '▶ In Room',
+      className: 'bg-emerald-600 text-white border-emerald-700 shadow-sm animate-pulse font-bold',
+    },
+    BUFFERED: {
+      label: '⏳ Buffer Lane',
+      className: 'bg-amber-100 text-amber-950 border-amber-300 font-bold',
+    },
+    SKIPPED: {
+      label: 'Skipped',
+      className: 'bg-amber-100 text-amber-950 border-amber-300 font-medium',
+    },
+    COMPLETED: {
+      label: '✓ Completed',
+      className: 'bg-slate-100 text-slate-700 border-slate-300 font-medium',
+    },
+    CANCELLED_NO_SHOW: {
+      label: '✗ No-Show',
+      className: 'bg-red-100 text-red-900 border-red-300 font-medium',
+    },
   };
-  const cfg = map[status] ?? { label: status, className: 'bg-slate-100 text-slate-700 border-slate-200' };
+  const cfg = map[status] ?? {
+    label: status,
+    className: 'bg-slate-100 text-slate-700 border-slate-200',
+  };
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${cfg.className}`}>
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ${cfg.className}`}
+    >
       {cfg.label}
     </span>
   );
@@ -98,21 +123,20 @@ function StatusPill({ status }: { status: string }) {
 function ChannelBadge({ channel }: { channel: string }) {
   if (channel === 'ONLINE') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 text-[10px] font-bold">
-        <span className="h-1.5 w-1.5 rounded-full bg-violet-500 inline-block" />
-        Online
+      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-800 border border-violet-200 px-2 py-0.5 text-[10px] font-bold">
+        <span className="h-1.5 w-1.5 rounded-full bg-violet-600 inline-block" />
+        Online Booking
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
       <span className="h-1.5 w-1.5 rounded-full bg-slate-400 inline-block" />
       Walk-In
     </span>
   );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────
 export default function SecretaryDashboardPage() {
   const supabase = createClient();
   const {
@@ -125,28 +149,30 @@ export default function SecretaryDashboardPage() {
     dismissDoctorCallAlert,
   } = useSecretary();
 
-  const [viewMode, setViewMode] = useState<'logbook' | 'cards'>('logbook');
+  const [viewMode, setViewMode] = useState<'cards' | 'logbook'>('cards');
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('WAITING');
   const [selectedApptForVitals, setSelectedApptForVitals] = useState<Appointment | null>(null);
   const [selectedApptForBuffer, setSelectedApptForBuffer] = useState<Appointment | null>(null);
   const [confirmCallInsideAppt, setConfirmCallInsideAppt] = useState<Appointment | null>(null);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{
+    text: string;
+    type: 'success' | 'error';
+  } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // UX-01: Auto chime and timeout for doctor call alert
-  React.useEffect(() => {
+  useEffect(() => {
     if (doctorCallAlert) {
       playHospitalChime().catch(() => {});
       const timer = setTimeout(() => {
         dismissDoctorCallAlert();
-      }, 12000);
+      }, 14000);
       return () => clearTimeout(timer);
     }
   }, [doctorCallAlert, dismissDoctorCallAlert]);
@@ -163,38 +189,37 @@ export default function SecretaryDashboardPage() {
 
       if (!matchesSearch) return false;
 
-      if (statusFilter === 'WAITING') return appt.status === 'WAITING' || appt.status === 'BOOKED';
+      if (statusFilter === 'WAITING')
+        return appt.status === 'WAITING' || appt.status === 'BOOKED';
       if (statusFilter === 'SERVING') return appt.status === 'SERVING';
-      if (statusFilter === 'BUFFERED') return appt.status === 'BUFFERED' || appt.status === 'SKIPPED';
-      if (statusFilter === 'COMPLETED') return appt.status === 'COMPLETED' || appt.status === 'CANCELLED_NO_SHOW';
-      return true;
+      if (statusFilter === 'BUFFERED')
+        return appt.status === 'BUFFERED' || appt.status === 'SKIPPED';
+      if (statusFilter === 'COMPLETED')
+        return appt.status === 'COMPLETED' || appt.status === 'CANCELLED_NO_SHOW';
+      return true; // 'ALL'
     });
   }, [appointments, searchTerm, statusFilter]);
 
-  const waitingPatients = appointments.filter((a) => a.status === 'WAITING' || a.status === 'BOOKED');
-  const bufferedPatients = appointments.filter((a) => a.status === 'BUFFERED' || a.status === 'SKIPPED');
-  const servingPatients = appointments.filter((a) => a.status === 'SERVING');
-  const completedPatients = appointments.filter((a) => a.status === 'COMPLETED' || a.status === 'CANCELLED_NO_SHOW');
+  const waitingPatients = useMemo(
+    () => appointments.filter((a) => a.status === 'WAITING' || a.status === 'BOOKED'),
+    [appointments]
+  );
+  const bufferedPatients = useMemo(
+    () => appointments.filter((a) => a.status === 'BUFFERED' || a.status === 'SKIPPED'),
+    [appointments]
+  );
+  const servingPatients = useMemo(
+    () => appointments.filter((a) => a.status === 'SERVING'),
+    [appointments]
+  );
+  const completedPatients = useMemo(
+    () =>
+      appointments.filter(
+        (a) => a.status === 'COMPLETED' || a.status === 'CANCELLED_NO_SHOW'
+      ),
+    [appointments]
+  );
 
-  // ── Queue Actions ────────────────────────────────────────────────────────
-  const handleCheckInArrived = async (apptId: string) => {
-    setActionLoadingId(apptId);
-    try {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: 'WAITING' })
-        .eq('id', apptId);
-      if (error) throw error;
-      showToast('Patient marked as waiting in lobby.');
-      await refreshData();
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not check in patient.', 'error');
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  // UX-06: Configurable Buffer Lane Handler
   const handleOpenBufferModal = async (appt: Appointment) => {
     const newCount = (appt.skip_count || 0) + 1;
     if (newCount >= 3) {
@@ -204,17 +229,24 @@ export default function SecretaryDashboardPage() {
           .update({ status: 'CANCELLED_NO_SHOW', skip_count: newCount })
           .eq('id', appt.id);
         if (error) throw error;
-        showToast(`Patient #${appt.queue_number} reached 3 missed calls — marked as No-Show.`, 'error');
+        showToast(
+          `Patient #${appt.queue_number} exceeded 3 missed calls — marked as No-Show.`,
+          'error'
+        );
         await refreshData();
       } catch {
-        showToast('Failed to mark patient as no-show.', 'error');
+        showToast('Failed to update patient status.', 'error');
       }
     } else {
       setSelectedApptForBuffer(appt);
     }
   };
 
-  const handleConfirmBuffer = async (apptId: string, graceMinutes: number, reason: string) => {
+  const handleConfirmBuffer = async (
+    apptId: string,
+    graceMinutes: number,
+    reason: string
+  ) => {
     setActionLoadingId(apptId);
     try {
       const res = await fetch('/api/queue/buffer-patient', {
@@ -229,11 +261,16 @@ export default function SecretaryDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to place patient in buffer lane.');
 
-      showToast(data.message || `Patient moved to Buffer Lane (${graceMinutes}m grace period).`);
+      showToast(
+        data.message || `Patient moved to Buffer Lane (${graceMinutes}m grace period).`
+      );
       setSelectedApptForBuffer(null);
       await refreshData();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Failed to place patient in buffer lane.', 'error');
+      showToast(
+        err instanceof Error ? err.message : 'Could not place patient in buffer lane.',
+        'error'
+      );
     } finally {
       setActionLoadingId(null);
     }
@@ -252,74 +289,96 @@ export default function SecretaryDashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to restore patient.');
-      showToast('Patient checked in and restored +2 slots ahead in the active line.');
-      await refreshData();
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not restore patient.', 'error');
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  /**
-   * Routes through /api/queue/call-next — the same authoritative endpoint the
-   * Doctor Cockpit uses. This ensures:
-   *   • served_at / completed_at timestamps are stamped server-side
-   *   • The 2-ahead Semaphore SMS advance warning fires when credits are loaded
-   *   • Hospital chime + voice callout play on the lobby TV/speaker
-   *
-   * SMS errors are caught inside the API route so the queue advance always
-   * succeeds even when Semaphore credits are zero — it degrades gracefully.
-   */
-  const handleCallInside = useCallback(async (appt: Appointment) => {
-    if (!activeSession) return;
-    setActionLoadingId(appt.id);
-    try {
-      const currentServing = appointments.find((a) => a.status === 'SERVING');
-
-      const res = await fetch('/api/queue/call-next', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          queueSessionId: activeSession.id,
-          currentAppointmentId: currentServing?.id ?? null,
-          nextAppointmentId: appt.id,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not advance patient turn.');
-
-      // Fire the lobby audio experience (non-blocking — errors are swallowed)
-      playHospitalChime().catch(() => {});
-      announcePatientCall({
-        tokenCode: appt.token_code,
-        displayName: appt.display_name,
-        roomNumber: undefined, // clinic room shown on the TV display already
-      });
-
-      // Primary confirmation toast
-      showToast(`Token ${appt.token_code} — ${appt.display_name} is now inside with the doctor!`);
-
-      // Secondary SMS dispatch notice (only when Semaphore actually sent it)
-      if (data.advanceWarningSent && data.recipientToken) {
-        setTimeout(() => {
-          showToast(`📱 2-ahead SMS dispatched to token ${data.recipientToken}.`);
-        }, 1800);
-      }
-
+      showToast('Patient restored to the active line (+2 slots ahead).');
       await refreshData();
     } catch (err: unknown) {
       showToast(
-        err instanceof Error ? err.message : 'Could not advance patient turn.',
+        err instanceof Error ? err.message : 'Could not restore patient.',
         'error'
       );
     } finally {
       setActionLoadingId(null);
     }
-  }, [activeSession, appointments, refreshData]);
+  };
 
-  // UX-03: Safe Call Inside with confirmation if another patient is currently SERVING
+  const handleReturnToWaiting = async (appt: Appointment) => {
+    setActionLoadingId(appt.id);
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'WAITING', served_at: null })
+        .eq('id', appt.id);
+      if (error) throw error;
+
+      if (activeSession && activeSession.current_serving_number === appt.queue_number) {
+        await supabase
+          .from('queue_sessions')
+          .update({ current_serving_number: 0 })
+          .eq('id', activeSession.id);
+      }
+
+      showToast(`Token ${appt.token_code} (${appt.display_name}) returned back to Waiting.`);
+      await refreshData();
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not return patient to waiting.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleCallInside = useCallback(
+    async (appt: Appointment) => {
+      if (!activeSession) {
+        showToast('No active session started by doctor yet.', 'error');
+        return;
+      }
+      setActionLoadingId(appt.id);
+      try {
+        const currentServing = appointments.find((a) => a.status === 'SERVING');
+
+        const res = await fetch('/api/queue/call-next', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            queueSessionId: activeSession.id,
+            currentAppointmentId: currentServing?.id ?? null,
+            nextAppointmentId: appt.id,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not advance patient turn.');
+
+        playHospitalChime().catch(() => {});
+        announcePatientCall({
+          tokenCode: appt.token_code,
+          displayName: appt.display_name,
+          roomNumber: undefined,
+        });
+
+        showToast(
+          `Admitted ${appt.display_name} (#${appt.queue_number}) into consultation room!`
+        );
+
+        if (data.advanceWarningSent && data.recipientToken) {
+          setTimeout(() => {
+            showToast(`📱 2-ahead SMS alert sent to ticket ${data.recipientToken}.`);
+          }, 1800);
+        }
+
+        await refreshData();
+      } catch (err: unknown) {
+        showToast(
+          err instanceof Error ? err.message : 'Could not call patient inside.',
+          'error'
+        );
+      } finally {
+        setActionLoadingId(null);
+      }
+    },
+    [activeSession, appointments, refreshData]
+  );
+
   const handleInitiateCallInside = (appt: Appointment) => {
     const currentServing = appointments.find((a) => a.status === 'SERVING');
     if (currentServing && currentServing.id !== appt.id) {
@@ -329,51 +388,59 @@ export default function SecretaryDashboardPage() {
     }
   };
 
-  // ── Stats Bar ──────────────────────────────────────────────────────────
+  // ── Stats Config ─────────────────────────────────────────────────────────
   const stats = [
     {
-      label: 'Waiting',
+      id: 'WAITING',
+      label: 'Waiting in Lobby',
+      sublabel: 'Active queue line',
       value: waitingPatients.length,
       icon: Users,
       color: 'text-sky-700',
-      bg: 'bg-sky-50 border-sky-200',
-      iconBg: 'bg-sky-100',
+      activeColor: 'bg-sky-600 text-white border-sky-600',
+      bg: 'bg-sky-50/80 border-sky-200 text-sky-950',
     },
     {
+      id: 'SERVING',
       label: 'In Room',
+      sublabel: 'Currently with doctor',
       value: servingPatients.length,
       icon: Activity,
-      color: 'text-blue-700',
-      bg: 'bg-blue-50 border-blue-200',
-      iconBg: 'bg-blue-100',
+      color: 'text-emerald-700',
+      activeColor: 'bg-emerald-600 text-white border-emerald-600',
+      bg: 'bg-emerald-50/80 border-emerald-200 text-emerald-950',
     },
     {
+      id: 'BUFFERED',
       label: 'Buffer Lane',
+      sublabel: 'Grace period holds',
       value: bufferedPatients.length,
       icon: Timer,
       color: 'text-amber-700',
-      bg: 'bg-amber-50 border-amber-200',
-      iconBg: 'bg-amber-100',
+      activeColor: 'bg-amber-600 text-white border-amber-600',
+      bg: 'bg-amber-50/80 border-amber-200 text-amber-950',
     },
     {
-      label: 'Completed',
+      id: 'COMPLETED',
+      label: 'Completed Today',
+      sublabel: 'Consultation finished',
       value: completedPatients.length,
       icon: BadgeCheck,
-      color: 'text-emerald-700',
-      bg: 'bg-emerald-50 border-emerald-200',
-      iconBg: 'bg-emerald-100',
+      color: 'text-slate-700',
+      activeColor: 'bg-slate-700 text-white border-slate-700',
+      bg: 'bg-slate-100/80 border-slate-200 text-slate-800',
     },
   ];
 
   return (
-    <div className="space-y-4">
-      {/* ── Toast Notice ── */}
+    <div className="space-y-4 w-full">
+      {/* ── Toast Notification ── */}
       {toastMessage && (
         <div
-          className={`fixed top-5 right-5 z-50 rounded-2xl p-4 shadow-2xl text-sm font-bold flex items-center gap-3 border backdrop-blur-sm ${
+          className={`fixed top-4 right-4 z-50 rounded-2xl p-4 shadow-2xl text-sm font-bold flex items-center gap-3 border backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200 max-w-[90vw] sm:max-w-md ${
             toastMessage.type === 'success'
-              ? 'bg-emerald-600 text-white border-emerald-500'
-              : 'bg-red-600 text-white border-red-500'
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-emerald-900/20'
+              : 'bg-red-600 text-white border-red-500 shadow-red-900/20'
           }`}
         >
           {toastMessage.type === 'success' ? (
@@ -381,155 +448,183 @@ export default function SecretaryDashboardPage() {
           ) : (
             <AlertCircle className="h-5 w-5 shrink-0" />
           )}
-          <span>{toastMessage.text}</span>
+          <span className="flex-1 leading-snug">{toastMessage.text}</span>
         </div>
       )}
 
-      {/* ── PAGE TITLE BAR ── */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <TableIcon className="h-5 w-5 text-brand-700" />
-            Queue & Triage Logbook
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5 font-medium">
-            Real-time patient registry for today&apos;s consultation session
-          </p>
-        </div>
-        {/* Primary Action Buttons */}
-        <div className="flex items-center gap-2">
-          <Link href="/secretary/walk-in">
-            <Button
-              size="default"
-              className="h-10 px-5 text-sm font-bold bg-brand-700 hover:bg-brand-700/90 text-white rounded-xl shadow-sm gap-2"
-            >
-              <UserPlus className="h-4 w-4" />
-              Register Walk-In
-            </Button>
-          </Link>
-          <Button
-            variant="outline"
-            size="default"
-            onClick={() => setIsQRScannerOpen(true)}
-            className="h-10 px-4 text-sm font-bold border-slate-200 hover:bg-white hover:border-slate-300 text-slate-700 rounded-xl shadow-xs gap-2"
-          >
-            <QrCode className="h-4 w-4 text-brand-700" />
-            <span className="hidden sm:inline">Scan Pass</span>
-          </Button>
-          {/* View Toggle */}
-          <div className="hidden sm:flex bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode('logbook')}
-              title="Logbook Table View"
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold transition-all ${
-                viewMode === 'logbook'
-                  ? 'bg-brand-700 text-white'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <TableIcon className="h-3.5 w-3.5" />
-              <span>Logbook</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              title="Cards Board View"
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold transition-all border-l border-slate-200 ${
-                viewMode === 'cards'
-                  ? 'bg-brand-700 text-white'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              <span>Cards</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── UX-01: DOCTOR CALLED ALERT BANNER ── */}
+      {/* ── DOCTOR CALL ALERT BANNER ── */}
       {doctorCallAlert && (
-        <div className="rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-4 shadow-md flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-100 p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3 duration-300 ring-4 ring-emerald-200/50">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm ring-4 ring-emerald-100 animate-pulse">
-              <Bell className="h-5 w-5" />
+            <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md ring-4 ring-emerald-200 animate-bounce">
+              <Bell className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 text-white px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
-                  Doctor Called Next Patient
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 text-white px-3 py-0.5 text-xs font-black uppercase tracking-wider shadow-xs">
+                  DOCTOR CALLED NEXT PATIENT
                 </span>
-                <span className="text-xs text-emerald-800 font-semibold">
-                  Queue #{doctorCallAlert.queueNumber}
+                <span className="text-xs sm:text-sm font-black text-emerald-900">
+                  Ticket #{doctorCallAlert.queueNumber}
                 </span>
               </div>
-              <p className="text-sm font-black text-slate-900 mt-0.5">
-                Token <span className="font-mono text-emerald-700">{doctorCallAlert.tokenCode}</span> — {doctorCallAlert.displayName} is now being called inside room!
+              <p className="text-base sm:text-lg font-black text-slate-900 mt-1 leading-tight">
+                Admit{' '}
+                <span className="text-emerald-700 underline decoration-2">
+                  {doctorCallAlert.displayName}
+                </span>{' '}
+                (Token:{' '}
+                <span className="font-mono text-emerald-800">{doctorCallAlert.tokenCode}</span>) into room!
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={dismissDoctorCallAlert}
-            className="rounded-xl border border-emerald-300 bg-white px-3.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition-colors shadow-xs shrink-0"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button
+              type="button"
+              onClick={dismissDoctorCallAlert}
+              className="flex-1 sm:flex-initial h-11 px-5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-bold shadow-sm"
+            >
+              Patient Admitted / Dismiss
+            </Button>
+          </div>
         </div>
       )}
 
-      {/* ── UX-04: SESSION STATUS DIRECTION BANNER ── */}
+      {/* ── SESSION STATUS HELPER BANNER ── */}
       {(!activeSession || activeSession.status !== 'ACTIVE') && (
-        <div className={`rounded-2xl border p-4 shadow-xs flex items-start gap-3.5 ${
-          activeSession?.status === 'PAUSED'
-            ? 'border-amber-200 bg-amber-50/90 text-amber-900'
-            : 'border-blue-200 bg-blue-50/90 text-blue-900'
-        }`}>
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-            activeSession?.status === 'PAUSED' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-          }`}>
+        <div
+          className={`rounded-2xl border p-3.5 sm:p-4 shadow-xs flex items-start gap-3.5 ${
+            activeSession?.status === 'PAUSED'
+              ? 'border-amber-300 bg-amber-50/90 text-amber-950'
+              : 'border-blue-200 bg-blue-50/90 text-blue-950'
+          }`}
+        >
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+              activeSession?.status === 'PAUSED'
+                ? 'bg-amber-200 text-amber-900'
+                : 'bg-blue-200 text-blue-900'
+            }`}
+          >
             <Clock3 className="h-5 w-5" />
           </div>
-          <div className="flex-1">
-            <h4 className="text-xs font-bold uppercase tracking-wider">
+          <div className="flex-1 text-xs sm:text-sm">
+            <p className="font-bold">
               {activeSession?.status === 'PAUSED'
-                ? 'Doctor On Hospital Rounds / Surgery Break'
+                ? 'Doctor is On Hospital Rounds or Surgical Procedure'
                 : 'Clinic Session Awaiting Doctor to Start'}
-            </h4>
-            <p className="text-xs mt-1 leading-relaxed opacity-90">
+            </p>
+            <p className="mt-0.5 leading-relaxed text-slate-600 text-xs">
               {activeSession?.status === 'PAUSED'
-                ? activeSession.announcement_notice || 'The doctor has paused consultation rounds. The queue will automatically resume when the doctor clicks Resume in their cockpit.'
-                : `Dr. ${doctor?.name || 'the doctor'} has not yet started today's queue session. You can continue registering walk-in patients and recording triage vitals. Ask the doctor to click "Start Clinic Session" in their Doctor Cockpit when ready to call patients.`}
+                ? activeSession.announcement_notice ||
+                  'Consultation calls are paused temporarily. You may still register walk-in patients.'
+                : `Dr. ${doctor?.name || 'the doctor'} has not yet opened today's queue session. You can continue registering walk-in patients and recording triage vitals in the meantime.`}
             </p>
           </div>
         </div>
       )}
 
-      {/* ── STATS BAR ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* ── TOP ACTION BAR (WIDESCREEN FLUID) ── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+            <Users className="h-5 w-5 text-brand-700" />
+            Queue &amp; Triage Logbook
+          </h2>
+          <p className="text-xs text-slate-500 font-medium">
+            Active patient registry for today&apos;s clinic session &bull;{' '}
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            })}
+          </p>
+        </div>
+
+        {/* Quick Action Buttons */}
+        <div className="flex items-center gap-2">
+          <Link href="/secretary/walk-in" className="flex-1 sm:flex-initial">
+            <Button
+              size="default"
+              className="w-full sm:w-auto h-11 px-4 text-xs sm:text-sm font-bold bg-brand-700 hover:bg-brand-800 text-white rounded-2xl shadow-sm gap-2"
+            >
+              <UserPlus className="h-4.5 w-4.5" />
+              <span>+ Register Walk-In</span>
+            </Button>
+          </Link>
+
+          <Button
+            variant="outline"
+            size="default"
+            onClick={() => setIsQRScannerOpen(true)}
+            className="h-11 px-3 sm:px-4 text-xs sm:text-sm font-bold border-slate-300 hover:bg-white text-slate-700 rounded-2xl shadow-xs gap-1.5"
+            title="Scan QR Ticket Pass"
+          >
+            <QrCode className="h-4 w-4 text-brand-700" />
+            <span className="hidden xs:inline">Scan QR</span>
+          </Button>
+
+          {/* Desktop View Switcher (Cards vs Table) */}
+          <div className="hidden md:flex bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              title="Card View (Responsive)"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                viewMode === 'cards'
+                  ? 'bg-brand-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('logbook')}
+              title="Table View (Spreadsheet)"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                viewMode === 'logbook'
+                  ? 'bg-brand-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <TableIcon className="h-3.5 w-3.5" />
+              <span>Logbook</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── QUICK STATS & TAP-TO-FILTER ROW ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
         {stats.map((s) => {
+          const isSelected = statusFilter === s.id;
           const Icon = s.icon;
           return (
             <button
-              key={s.label}
+              key={s.id}
               type="button"
-              onClick={() => setStatusFilter(s.label === 'Waiting' ? 'WAITING' : s.label === 'In Room' ? 'SERVING' : s.label === 'Buffer Lane' ? 'BUFFERED' : 'COMPLETED')}
-              className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-all hover:shadow-sm active:scale-[0.98] ${s.bg} ${
-                (statusFilter === 'WAITING' && s.label === 'Waiting') ||
-                (statusFilter === 'SERVING' && s.label === 'In Room') ||
-                (statusFilter === 'BUFFERED' && s.label === 'Buffer Lane') ||
-                (statusFilter === 'COMPLETED' && s.label === 'Completed')
-                  ? 'ring-2 ring-offset-1 ring-current shadow-sm'
-                  : ''
+              onClick={() => setStatusFilter(s.id)}
+              className={`rounded-2xl border p-3.5 text-left transition-all active:scale-[0.98] ${
+                isSelected
+                  ? `${s.activeColor} shadow-md ring-2 ring-offset-2 ring-brand-500`
+                  : `${s.bg} hover:border-slate-300`
               }`}
             >
-              <div className={`flex h-9 w-9 items-center justify-center rounded-xl shrink-0 ${s.iconBg}`}>
-                <Icon className={`h-4.5 w-4.5 ${s.color}`} />
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-tight">
+                  {s.label}
+                </span>
+                <Icon className={`h-4 w-4 ${isSelected ? 'text-white' : s.color}`} />
               </div>
-              <div>
-                <p className={`text-2xl font-black leading-none ${s.color}`}>{s.value}</p>
-                <p className={`text-[10px] font-bold mt-0.5 ${s.color} opacity-70`}>{s.label}</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl sm:text-3xl font-black font-mono leading-none">
+                  {s.value}
+                </span>
+                <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-slate-500'} font-medium`}>
+                  patients
+                </span>
               </div>
             </button>
           );
@@ -537,42 +632,44 @@ export default function SecretaryDashboardPage() {
       </div>
 
       {/* ── SEARCH & FILTER ROW ── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-3 flex flex-col sm:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 space-y-2">
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
           <Input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, 09XX mobile number, or token..."
-            className="h-11 pl-10 text-sm font-semibold border-slate-200 focus:border-brand-700 bg-slate-50/60 rounded-xl placeholder:text-slate-400 placeholder:font-normal"
+            placeholder="Search by patient name, 09XX mobile number, or ticket #..."
+            className="h-12 pl-11 pr-10 text-sm font-semibold border-slate-200 focus:border-brand-700 bg-slate-50/70 rounded-2xl placeholder:text-slate-400 placeholder:font-normal"
           />
           {searchTerm && (
             <button
               type="button"
               onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
             >
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+
+        {/* Filter status pill selector */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
           {[
-            { id: 'ALL', label: `All (${appointments.length})` },
             { id: 'WAITING', label: `Waiting (${waitingPatients.length})` },
             { id: 'SERVING', label: `In Room (${servingPatients.length})` },
-            { id: 'BUFFERED', label: `Buffer (${bufferedPatients.length})` },
-            { id: 'COMPLETED', label: `Done (${completedPatients.length})` },
+            { id: 'BUFFERED', label: `Buffer Lane (${bufferedPatients.length})` },
+            { id: 'COMPLETED', label: `Completed (${completedPatients.length})` },
+            { id: 'ALL', label: `All Records (${appointments.length})` },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setStatusFilter(tab.id)}
-              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all border whitespace-nowrap ${
+              className={`rounded-xl px-3 py-1.5 font-bold transition-all border whitespace-nowrap text-xs ${
                 statusFilter === tab.id
-                  ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-white hover:border-slate-300'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
               }`}
             >
               {tab.label}
@@ -581,107 +678,353 @@ export default function SecretaryDashboardPage() {
         </div>
       </div>
 
-      {/* ── EMPTY STATE ── */}
+      {/* ── LOADING STATE ── */}
       {loading && (
-        <div className="flex items-center justify-center h-40 text-slate-400">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          <span className="text-sm font-semibold">Loading patient registry...</span>
+        <div className="flex flex-col items-center justify-center h-48 text-slate-400 bg-white rounded-2xl border border-slate-200">
+          <Loader2 className="h-7 w-7 animate-spin text-brand-700 mb-2" />
+          <span className="text-sm font-bold text-slate-600">Loading patient registry...</span>
         </div>
       )}
 
-      {/* ── VIEW MODE 1: LOGBOOK TABLE ── */}
-      {!loading && viewMode === 'logbook' && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-          {/* Table Header Bar */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/60">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">Daily Consultation Logbook</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                {filteredAppointments.length} patient record{filteredAppointments.length !== 1 ? 's' : ''} shown
-              </p>
+      {/* ── VIEW 1: PATIENT CARDS (WIDESCREEN FLUID GRID) ── */}
+      {!loading && (viewMode === 'cards' || typeof window !== 'undefined' && window.innerWidth < 768) && (
+        <div className="space-y-3 w-full">
+          {filteredAppointments.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-dashed border-slate-300 p-8 text-center space-y-3">
+              <div className="h-12 w-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <Users className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-base font-bold text-slate-800">No Patients in this Category</p>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {searchTerm
+                    ? `No matches found for "${searchTerm}". Try clearing your search.`
+                    : statusFilter === 'WAITING'
+                    ? 'All waiting patients have been called, or no new patients have arrived yet.'
+                    : 'Choose another status filter above.'}
+                </p>
+              </div>
+              <Link href="/secretary/walk-in">
+                <Button className="h-10 text-xs font-bold rounded-xl bg-brand-700 text-white gap-2">
+                  <UserPlus className="h-4 w-4" />
+                  Register New Walk-In
+                </Button>
+              </Link>
             </div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 w-full">
+              {filteredAppointments.map((appt) => {
+                const isServing = appt.status === 'SERVING';
+                const isBuffered = appt.status === 'BUFFERED' || appt.status === 'SKIPPED';
+                const isDone = appt.status === 'COMPLETED';
+                const isNoShow = appt.status === 'CANCELLED_NO_SHOW';
+                const isWaiting = appt.status === 'WAITING' || appt.status === 'BOOKED';
+                const isLoading = actionLoadingId === appt.id;
 
+                return (
+                  <Card
+                    key={appt.id}
+                    className={`rounded-3xl border transition-all duration-200 overflow-hidden shadow-xs hover:shadow-md ${
+                      isServing
+                        ? 'border-2 border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-400/30'
+                        : isBuffered
+                        ? 'border-amber-300 bg-amber-50/40'
+                        : isDone || isNoShow
+                        ? 'border-slate-200 bg-slate-50/60 opacity-80'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <CardContent className="p-4 space-y-3.5">
+                      {/* Top Header: Queue Number + Token + Priority */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`flex h-10 w-10 items-center justify-center rounded-2xl text-base font-black font-mono shadow-xs ${
+                              isServing
+                                ? 'bg-emerald-600 text-white'
+                                : isBuffered
+                                ? 'bg-amber-500 text-white'
+                                : isDone
+                                ? 'bg-slate-200 text-slate-700'
+                                : 'bg-brand-700 text-white'
+                            }`}
+                          >
+                            #{appt.queue_number}
+                          </span>
+                          <div>
+                            <span className="font-mono text-xs font-bold tracking-wide text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg inline-block">
+                              {appt.token_code}
+                            </span>
+                            <div className="mt-0.5">
+                              <ChannelBadge channel={appt.booking_channel} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right flex flex-col items-end gap-1">
+                          <StatusPill status={appt.status} />
+                          <PriorityBadge category={appt.priority_category} />
+                        </div>
+                      </div>
+
+                      {/* Middle: Patient Name & Contact */}
+                      <div className="pt-0.5">
+                        <h3 className="text-base font-bold text-slate-900 leading-snug">
+                          {appt.display_name}
+                        </h3>
+                        {appt.phone_number && (
+                          <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5 font-mono">
+                            <Phone className="h-3 w-3 text-slate-400" />
+                            <span>{appt.phone_number}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Badges Bar: Vitals & Payment Status */}
+                      <div className="flex items-center gap-2 pt-1 border-t border-slate-100 flex-wrap">
+                        {/* Vitals Indicator */}
+                        {appt.has_vitals ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold">
+                            <Check className="h-3 w-3" />
+                            Vitals Recorded
+                          </span>
+                        ) : isWaiting || isBuffered ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedApptForVitals(appt)}
+                            className="inline-flex items-center gap-1 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-900 border border-orange-300 px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
+                          >
+                            <Stethoscope className="h-3 w-3 text-orange-700" />
+                            + Record Vitals
+                          </button>
+                        ) : null}
+
+                        {/* Payment Indicator */}
+                        {appt.is_paid_to_clinic ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold">
+                            <Receipt className="h-3 w-3" />
+                            Paid ({appt.clinic_payment_method || 'Cash'})
+                          </span>
+                        ) : (
+                          <Link href={`/secretary/cashier?appointmentId=${appt.id}`}>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2.5 py-0.5 text-[11px] font-semibold transition-colors">
+                              ₱ Settle Fee (₱{appt.consultation_fee || doctor?.consultation_fee || 600})
+                            </span>
+                          </Link>
+                        )}
+                      </div>
+
+                      {/* Bottom Action Buttons */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                        {isWaiting && (
+                          <>
+                            {/* Primary: Call Inside */}
+                            <Button
+                              size="default"
+                              onClick={() => handleInitiateCallInside(appt)}
+                              disabled={isLoading}
+                              className="flex-1 h-11 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs gap-1.5"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <PhoneCall className="h-4 w-4" />
+                              )}
+                              <span>Call Inside</span>
+                            </Button>
+
+                            {/* Secondary: Vitals */}
+                            <Button
+                              variant="outline"
+                              size="default"
+                              onClick={() => setSelectedApptForVitals(appt)}
+                              className="h-11 w-11 p-0 rounded-2xl border-slate-300 text-slate-700 hover:bg-slate-100 shrink-0"
+                              title="Record Vitals / Triage"
+                            >
+                              <Stethoscope className="h-4.5 w-4.5 text-brand-700" />
+                            </Button>
+
+                            {/* Tertiary: Buffer */}
+                            <Button
+                              variant="outline"
+                              size="default"
+                              onClick={() => handleOpenBufferModal(appt)}
+                              disabled={isLoading}
+                              className="h-11 w-11 p-0 rounded-2xl border-slate-300 text-slate-500 hover:text-amber-700 hover:bg-amber-50 shrink-0"
+                              title="Move to Buffer Lane"
+                            >
+                              <Hourglass className="h-4.5 w-4.5" />
+                            </Button>
+                          </>
+                        )}
+
+                        {isBuffered && (
+                          <>
+                            <Button
+                              size="default"
+                              onClick={() => handleRestoreFromBuffer(appt.id)}
+                              disabled={isLoading}
+                              className="flex-1 h-11 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs gap-1.5"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-4 w-4" />
+                              )}
+                              <span>Restore (+2 Ahead)</span>
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="default"
+                              onClick={() => handleInitiateCallInside(appt)}
+                              disabled={isLoading}
+                              className="h-11 px-3 rounded-2xl border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-bold text-xs"
+                            >
+                              Admit
+                            </Button>
+                          </>
+                        )}
+
+                        {isServing && (
+                          <div className="w-full space-y-2">
+                            <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                              <span className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full bg-emerald-600 animate-ping inline-block" />
+                                In Room / Called
+                              </span>
+                              <span className="text-[11px] text-slate-500 font-normal">Slot #{appt.queue_number}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Link href={`/secretary/cashier?appointmentId=${appt.id}`} className="flex-1">
+                                <Button
+                                  size="default"
+                                  className="w-full h-10 rounded-2xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-bold gap-1.5 shadow-xs"
+                                >
+                                  <Receipt className="h-4 w-4" />
+                                  <span>Prepare Receipt</span>
+                                </Button>
+                              </Link>
+                              <Button
+                                variant="outline"
+                                size="default"
+                                onClick={() => handleOpenBufferModal(appt)}
+                                disabled={isLoading}
+                                className="h-10 px-3 rounded-2xl border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-amber-900 font-bold text-xs gap-1.5 shrink-0"
+                                title="Patient not in room? Move to Buffer Lane"
+                              >
+                                <Hourglass className="h-4 w-4 text-amber-700" />
+                                <span>Buffer</span>
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="default"
+                                onClick={() => handleReturnToWaiting(appt)}
+                                disabled={isLoading}
+                                className="h-10 px-2.5 rounded-2xl border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs shrink-0"
+                                title="Return patient back to Waiting"
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {(isDone || isNoShow) && (
+                          <div className="w-full flex items-center justify-between text-xs text-slate-500 font-medium">
+                            <span>Status: {isNoShow ? 'No-Show' : 'Completed'}</span>
+                            <Link href={`/secretary/cashier?appointmentId=${appt.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-9 rounded-xl border-slate-300 text-xs font-bold"
+                              >
+                                View in Cashier
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── VIEW 2: LOGBOOK TABLE (FULL WIDESCREEN TABLE) ── */}
+      {!loading && viewMode === 'logbook' && (
+        <div className="hidden md:block bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden w-full">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="bg-slate-50/60 border-b border-slate-100 hover:bg-slate-50">
-                  <TableHead className="w-12 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">#</TableHead>
-                  <TableHead className="w-32 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Token</TableHead>
-                  <TableHead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Patient</TableHead>
-                  <TableHead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Channel</TableHead>
-                  <TableHead className="text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">Vitals</TableHead>
-                  <TableHead className="text-center text-[11px] font-bold text-slate-500 uppercase tracking-wider">Payment</TableHead>
-                  <TableHead className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</TableHead>
-                  <TableHead className="text-right pr-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actions</TableHead>
+                <TableRow className="bg-slate-50/80 border-b border-slate-200">
+                  <TableHead className="w-12 text-center text-[11px] font-bold uppercase text-slate-500">
+                    #
+                  </TableHead>
+                  <TableHead className="w-28 text-[11px] font-bold uppercase text-slate-500">
+                    Ticket
+                  </TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase text-slate-500">
+                    Patient Name
+                  </TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase text-slate-500">
+                    Channel
+                  </TableHead>
+                  <TableHead className="text-center text-[11px] font-bold uppercase text-slate-500">
+                    Vitals
+                  </TableHead>
+                  <TableHead className="text-center text-[11px] font-bold uppercase text-slate-500">
+                    Fee Status
+                  </TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase text-slate-500">
+                    Status
+                  </TableHead>
+                  <TableHead className="text-right pr-4 text-[11px] font-bold uppercase text-slate-500">
+                    Actions
+                  </TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
                 {filteredAppointments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-48 text-center">
-                      <div className="flex flex-col items-center gap-2 text-slate-400">
-                        <Search className="h-8 w-8 opacity-30" />
-                        <p className="text-sm font-semibold">No patients found</p>
-                        <p className="text-xs">Try clearing your search or changing the filter</p>
-                      </div>
+                    <TableCell colSpan={8} className="h-44 text-center text-slate-400 font-medium">
+                      No patients found in this category.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredAppointments.map((appt, idx) => {
+                  filteredAppointments.map((appt) => {
                     const isServing = appt.status === 'SERVING';
                     const isBuffered = appt.status === 'BUFFERED' || appt.status === 'SKIPPED';
-                    const isDone = appt.status === 'COMPLETED';
-                    const isNoShow = appt.status === 'CANCELLED_NO_SHOW';
                     const isLoading = actionLoadingId === appt.id;
 
                     return (
                       <TableRow
                         key={appt.id}
-                        className={`transition-colors border-b border-slate-50 ${
+                        className={`transition-colors border-b border-slate-100 ${
                           isServing
-                            ? 'bg-blue-50/60 hover:bg-blue-50'
+                            ? 'bg-emerald-50/60 font-medium'
                             : isBuffered
-                            ? 'bg-amber-50/40 hover:bg-amber-50/60'
-                            : isDone || isNoShow
-                            ? 'opacity-60 hover:opacity-80 hover:bg-slate-50/40'
-                            : idx % 2 === 1
-                            ? 'bg-slate-50/30 hover:bg-slate-50'
+                            ? 'bg-amber-50/50'
                             : 'hover:bg-slate-50/60'
                         }`}
                       >
-                        {/* 1. Queue Number */}
-                        <TableCell className="text-center">
-                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-xs font-black text-slate-600">
-                            {appt.queue_number}
-                          </span>
+                        <TableCell className="text-center font-mono font-bold text-slate-700">
+                          {appt.queue_number}
                         </TableCell>
-
-                        {/* 2. Token Code */}
                         <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-lg px-2.5 py-1 font-mono text-xs font-black tracking-wide border ${
-                              isServing
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                                : isBuffered
-                                ? 'bg-amber-100 text-amber-800 border-amber-300'
-                                : 'bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                          >
+                          <span className="font-mono text-xs font-bold bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
                             {appt.token_code}
                           </span>
                         </TableCell>
-
-                        {/* 3. Patient */}
-                        <TableCell className="max-w-[200px]">
-                          <p className="font-extrabold text-sm text-slate-900 leading-snug truncate">
+                        <TableCell>
+                          <div className="font-bold text-slate-900 leading-tight">
                             {appt.display_name}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
                             {appt.phone_number && (
                               <span className="text-[10px] text-slate-400 font-mono">
                                 {appt.phone_number}
@@ -690,156 +1033,104 @@ export default function SecretaryDashboardPage() {
                             <PriorityBadge category={appt.priority_category} />
                           </div>
                         </TableCell>
-
-                        {/* 4. Channel */}
                         <TableCell>
                           <ChannelBadge channel={appt.booking_channel} />
                         </TableCell>
-
-                        {/* 5. Vitals */}
                         <TableCell className="text-center">
                           {appt.has_vitals ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold">
-                              <Check className="h-3 w-3" />
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
                               Done
                             </span>
-                          ) : ['COMPLETED', 'CANCELLED_NO_SHOW'].includes(appt.status) ? (
-                            <span className="text-slate-300 text-xs font-medium">—</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 text-[10px] font-bold">
-                              <AlertTriangle className="h-3 w-3" />
-                              Needed
-                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedApptForVitals(appt)}
+                              className="h-7 text-[11px] font-bold text-orange-700 hover:bg-orange-50 px-2"
+                            >
+                              + Record
+                            </Button>
                           )}
                         </TableCell>
-
-                        {/* 6. Payment */}
                         <TableCell className="text-center">
                           {appt.is_paid_to_clinic ? (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-                                appt.clinic_payment_method === 'GCASH' || appt.clinic_payment_method === 'MAYA'
-                                  ? 'bg-violet-100 text-violet-700 border-violet-200'
-                                  : appt.clinic_payment_method === 'HMO'
-                                  ? 'bg-blue-100 text-blue-700 border-blue-200'
-                                  : appt.clinic_payment_method === 'FREE_FOLLOWUP'
-                                  ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                  : 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                              }`}
-                              title={
-                                appt.clinic_payment_method === 'GCASH'
-                                  ? 'Paid via GCash e-wallet'
-                                  : appt.clinic_payment_method === 'MAYA'
-                                  ? 'Paid via Maya e-wallet'
-                                  : appt.clinic_payment_method === 'HMO'
-                                  ? 'Covered by HMO Guarantee Letter'
-                                  : appt.clinic_payment_method === 'FREE_FOLLOWUP'
-                                  ? 'Free Follow-up'
-                                  : 'Paid in Cash'
-                              }
-                            >
-                              <Check className="h-3 w-3" />
-                              {appt.clinic_payment_method === 'GCASH'
-                                ? 'GCash'
-                                : appt.clinic_payment_method === 'MAYA'
-                                ? 'Maya'
-                                : appt.clinic_payment_method === 'HMO'
-                                ? 'HMO'
-                                : appt.clinic_payment_method === 'FREE_FOLLOWUP'
-                                ? 'Free'
-                                : 'Paid (Cash)'}
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Paid
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
+                            <span className="text-[11px] font-bold text-slate-500">
                               ₱{appt.consultation_fee || doctor?.consultation_fee || 600}
                             </span>
                           )}
                         </TableCell>
-
-                        {/* 7. Status */}
                         <TableCell>
                           <StatusPill status={appt.status} />
                         </TableCell>
-
-                        {/* 8. Actions */}
                         <TableCell className="text-right pr-4">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Vitals (UX-02: Only show for active queue states) */}
-                            {['WAITING', 'BOOKED', 'BUFFERED'].includes(appt.status) && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSelectedApptForVitals(appt)}
-                                className="h-8 text-xs font-bold text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300 gap-1.5 px-2.5 rounded-lg"
-                                title="Record vital signs"
-                              >
-                                <Stethoscope className="h-3.5 w-3.5 text-brand-700" />
-                                <span>Vitals</span>
-                              </Button>
-                            )}
-
-                            {/* Payment */}
-                            <Link href={`/secretary/cashier?appointmentId=${appt.id}`}>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 text-xs font-bold text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 gap-1.5 px-2.5 rounded-lg"
-                                title="Settle consultation fee"
-                              >
-                                <Receipt className="h-3.5 w-3.5" />
-                                <span>Pay</span>
-                              </Button>
-                            </Link>
-
-                            {/* Buffer/Restore/Skip */}
-                            {isBuffered ? (
-                              <Button
-                                size="sm"
-                                onClick={() => handleRestoreFromBuffer(appt.id)}
-                                disabled={isLoading}
-                                className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white gap-1.5 px-2.5 rounded-lg shadow-xs"
-                              >
-                                {isLoading ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                )}
-                                <span>Restore</span>
-                              </Button>
-                            ) : !isDone && !isNoShow && !isServing ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenBufferModal(appt)}
-                                disabled={isLoading}
-                                className="h-8 w-8 p-0 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-lg"
-                                title="Move to Buffer Lane (Configurable Grace)"
-                              >
-                                {isLoading ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Hourglass className="h-3.5 w-3.5" />
-                                )}
-                              </Button>
-                            ) : null}
-
-                            {/* Call Inside (UX-03: Safe Call Inside) */}
                             {(appt.status === 'WAITING' || appt.status === 'BOOKED') && (
                               <Button
                                 size="sm"
                                 onClick={() => handleInitiateCallInside(appt)}
                                 disabled={isLoading}
-                                className="h-8 text-xs font-bold bg-brand-700 hover:bg-brand-700/90 text-white gap-1.5 px-3 rounded-lg shadow-xs"
-                                title="Call patient into consultation room"
+                                className="h-8 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl gap-1 px-3 shadow-xs"
                               >
                                 {isLoading ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
-                                  <PhoneCall className="h-3.5 w-3.5" />
+                                  <PhoneCall className="h-3 w-3" />
                                 )}
                                 <span>Call In</span>
                               </Button>
                             )}
+
+                            {isBuffered && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleRestoreFromBuffer(appt.id)}
+                                disabled={isLoading}
+                                className="h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl gap-1 px-2.5 shadow-xs"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                <span>Restore</span>
+                              </Button>
+                            )}
+
+                            {appt.status === 'SERVING' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleOpenBufferModal(appt)}
+                                  disabled={isLoading}
+                                  className="h-8 text-xs font-bold border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 rounded-xl gap-1 px-2.5 shadow-xs"
+                                  title="Patient not in room? Move to Buffer Lane"
+                                >
+                                  <Hourglass className="h-3 w-3 text-amber-700" />
+                                  <span>Buffer</span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleReturnToWaiting(appt)}
+                                  disabled={isLoading}
+                                  className="h-8 text-xs font-bold border-slate-200 text-slate-600 hover:bg-slate-100 rounded-xl px-2"
+                                  title="Return back to Waiting"
+                                >
+                                  <RotateCcw className="h-3 w-3" />
+                                </Button>
+                              </>
+                            )}
+
+                            <Link href={`/secretary/cashier?appointmentId=${appt.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs font-bold rounded-xl border-slate-200"
+                              >
+                                Settle Fee
+                              </Button>
+                            </Link>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -852,205 +1143,6 @@ export default function SecretaryDashboardPage() {
         </div>
       )}
 
-      {/* ── VIEW MODE 2: 4-COLUMN CARDS BOARD ── */}
-      {!loading && viewMode === 'cards' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Col 1: Waiting */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-sky-600 px-3.5 py-2.5 text-white shadow-sm">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                <span className="text-xs font-black uppercase tracking-wide">Waiting in Lobby</span>
-              </div>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-black font-mono">
-                {waitingPatients.length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {waitingPatients.length === 0 && (
-                <div className="rounded-xl border-2 border-dashed border-sky-200 bg-sky-50/40 p-6 text-center">
-                  <p className="text-xs text-sky-400 font-semibold">Lobby is clear</p>
-                </div>
-              )}
-              {waitingPatients.map((appt) => (
-                <Card key={appt.id} className="border-slate-200 bg-white shadow-xs hover:shadow-sm transition-shadow rounded-2xl overflow-hidden">
-                  <CardContent className="p-3.5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-black text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
-                        {appt.token_code}
-                      </span>
-                      <PriorityBadge category={appt.priority_category} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-900">{appt.display_name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <ChannelBadge channel={appt.booking_channel} />
-                        <span className="text-[10px] text-slate-400">#{appt.queue_number}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelectedApptForVitals(appt)}
-                        className="h-8 text-xs font-bold flex-1 rounded-xl border-slate-200"
-                      >
-                        <Stethoscope className="h-3.5 w-3.5 text-brand-700 mr-1" />
-                        Vitals
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleInitiateCallInside(appt)}
-                        disabled={actionLoadingId === appt.id}
-                        className="h-8 text-xs font-bold flex-1 bg-brand-700 hover:bg-brand-700/90 text-white rounded-xl"
-                      >
-                        {actionLoadingId === appt.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                        ) : (
-                          <ChevronRight className="h-3.5 w-3.5 mr-1" />
-                        )}
-                        Call In
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Col 2: Buffer Lane */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-amber-500 px-3.5 py-2.5 text-white shadow-sm">
-              <div className="flex items-center gap-2">
-                <Timer className="h-4 w-4" />
-                <span className="text-xs font-black uppercase tracking-wide">Buffer Lane</span>
-              </div>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-black font-mono">
-                {bufferedPatients.length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {bufferedPatients.length === 0 && (
-                <div className="rounded-xl border-2 border-dashed border-amber-200 bg-amber-50/40 p-6 text-center">
-                  <p className="text-xs text-amber-500 font-semibold">No patients in buffer</p>
-                </div>
-              )}
-              {bufferedPatients.map((appt) => (
-                <Card key={appt.id} className="border-amber-300 bg-amber-50/60 shadow-xs rounded-2xl overflow-hidden">
-                  <CardContent className="p-3.5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-black text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg">
-                        {appt.token_code}
-                      </span>
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 rounded-full px-2 py-0.5 border border-amber-200">
-                        45-min grace
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-extrabold text-slate-900">{appt.display_name}</p>
-                      <p className="text-[10px] text-amber-700 font-semibold mt-0.5">Missed turn — waiting for arrival</p>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => handleRestoreFromBuffer(appt.id)}
-                      disabled={actionLoadingId === appt.id}
-                      className="w-full h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl gap-2"
-                    >
-                      {actionLoadingId === appt.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      )}
-                      Restore (+2 Slots Ahead)
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Col 3: In Room */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-blue-600 px-3.5 py-2.5 text-white shadow-sm">
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                <span className="text-xs font-black uppercase tracking-wide">In Doctor Room</span>
-              </div>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-black font-mono">
-                {servingPatients.length}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {servingPatients.length === 0 && (
-                <div className="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/40 p-6 text-center">
-                  <p className="text-xs text-blue-400 font-semibold">No one inside yet</p>
-                </div>
-              )}
-              {servingPatients.map((appt) => (
-                <Card key={appt.id} className="border-2 border-blue-300 bg-white shadow-md rounded-2xl overflow-hidden">
-                  <div className="bg-blue-600 px-3.5 py-2 flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                    <span className="font-mono text-sm font-black text-white">NOW SERVING: {appt.token_code}</span>
-                  </div>
-                  <CardContent className="p-3.5 space-y-3">
-                    <div>
-                      <p className="text-base font-extrabold text-slate-900">{appt.display_name}</p>
-                      <p className="text-xs text-slate-400">Currently in consultation with physician</p>
-                    </div>
-                    <Link href={`/secretary/cashier?appointmentId=${appt.id}`} className="block">
-                      <Button variant="outline" size="sm" className="w-full h-9 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl gap-2">
-                        <Receipt className="h-3.5 w-3.5" />
-                        Prepare Receipt & Payment
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Col 4: Completed */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-slate-700 px-3.5 py-2.5 text-white shadow-sm">
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4" />
-                <span className="text-xs font-black uppercase tracking-wide">Completed Today</span>
-              </div>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-black font-mono">
-                {completedPatients.length}
-              </span>
-            </div>
-            <div className="space-y-1.5 max-h-[520px] overflow-y-auto pr-0.5">
-              {completedPatients.length === 0 && (
-                <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/40 p-6 text-center">
-                  <p className="text-xs text-slate-400 font-semibold">No consultations done yet</p>
-                </div>
-              )}
-              {completedPatients.map((appt) => (
-                <div
-                  key={appt.id}
-                  className="flex items-center justify-between rounded-xl bg-white border border-slate-200 px-3 py-2.5 text-xs gap-2"
-                >
-                  <div className="min-w-0">
-                    <span className="font-mono font-bold text-slate-400 text-[10px] block">{appt.token_code}</span>
-                    <p className="font-bold text-slate-700 truncate">{appt.display_name}</p>
-                  </div>
-                  {appt.status === 'CANCELLED_NO_SHOW' ? (
-                    <span className="shrink-0 rounded-full bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold px-2 py-0.5">
-                      No-Show
-                    </span>
-                  ) : (
-                    <span className="shrink-0 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5">
-                      Done
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── MODALS ── */}
       {selectedApptForVitals && (
         <VitalSignsTriageModal
@@ -1059,7 +1151,7 @@ export default function SecretaryDashboardPage() {
           appointment={selectedApptForVitals}
           doctorId={doctor?.id}
           onSaveSuccess={() => {
-            showToast('Vital signs recorded and synchronized with doctor cockpit!');
+            showToast('Vital signs recorded and updated in doctor cockpit!');
             refreshData();
           }}
         />
@@ -1077,13 +1169,13 @@ export default function SecretaryDashboardPage() {
         />
       )}
 
-      {/* ── UX-03: Safe Call Inside Confirmation Dialog ── */}
+      {/* Safe Call Inside Confirmation Dialog */}
       <ConfirmDialog
         open={!!confirmCallInsideAppt}
         onOpenChange={(open) => !open && setConfirmCallInsideAppt(null)}
-        title={`Advance Turn & Call In #${confirmCallInsideAppt?.queue_number}?`}
-        description={`Patient #${appointments.find((a) => a.status === 'SERVING')?.queue_number} (${appointments.find((a) => a.status === 'SERVING')?.display_name}) is currently marked as SERVING. Calling #${confirmCallInsideAppt?.queue_number} (${confirmCallInsideAppt?.display_name}) inside will automatically mark the current patient COMPLETED.`}
-        confirmLabel={`Yes, Call In #${confirmCallInsideAppt?.queue_number}`}
+        title={`Admit Patient #${confirmCallInsideAppt?.queue_number} (${confirmCallInsideAppt?.display_name})?`}
+        description={`Patient #${appointments.find((a) => a.status === 'SERVING')?.queue_number} (${appointments.find((a) => a.status === 'SERVING')?.display_name}) is currently in the room. Admitting #${confirmCallInsideAppt?.queue_number} will conclude the current consultation as Completed.`}
+        confirmLabel={`Yes, Admit #${confirmCallInsideAppt?.queue_number}`}
         cancelLabel="Cancel"
         variant="brand"
         isLoading={actionLoadingId === confirmCallInsideAppt?.id}
@@ -1096,7 +1188,7 @@ export default function SecretaryDashboardPage() {
         }}
       />
 
-      {/* ── UX-06: Buffer Lane Configurable Modal ── */}
+      {/* Buffer Lane Configurable Modal */}
       {selectedApptForBuffer && (
         <BufferModal
           isOpen={!!selectedApptForBuffer}

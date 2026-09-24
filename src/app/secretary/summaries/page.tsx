@@ -607,7 +607,7 @@ export default function DailySummariesPage() {
       {/* ───────────────────────────────────────────────────────────────── */}
       {/* SCREEN UI VIEW                                                    */}
       {/* ───────────────────────────────────────────────────────────────── */}
-      <div className="print:hidden space-y-6 max-w-5xl mx-auto pb-12">
+      <div className="print:hidden space-y-6 w-full pb-12">
         {/* Header Bar with Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   Receipt,
   Search,
@@ -20,9 +21,12 @@ import {
   Smartphone,
   IdCard,
   AlertTriangle,
+  ArrowLeft,
+  ChevronRight,
+  Coins,
 } from 'lucide-react';
 import { useSecretary, type Appointment } from '../secretary-context';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -45,12 +49,11 @@ const HMO_PROVIDERS = [
   'Other / Company Direct Bill',
 ];
 
-// Friendly status label map
 const STATUS_LABEL: Record<string, string> = {
-  WAITING: 'Waiting',
+  WAITING: 'Waiting in Queue',
   BOOKED: 'Reserved',
-  SERVING: 'In Room',
-  COMPLETED: 'Done',
+  SERVING: 'Consulting',
+  COMPLETED: 'Completed',
   BUFFERED: 'Buffer Lane',
   SKIPPED: 'Skipped',
   CANCELLED_NO_SHOW: 'No-Show',
@@ -70,23 +73,22 @@ function CashierPageContent() {
   const [baseFee, setBaseFee] = useState<number>(600);
   const [isSeniorDiscount, setIsSeniorDiscount] = useState(false);
   const [isPwdDiscount, setIsPwdDiscount] = useState(false);
-  const [idNumber, setIdNumber] = useState('');  // Bug #7 fix: wired up
+  const [idNumber, setIdNumber] = useState('');
 
   // Payment method
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'GCASH' | 'HMO' | 'FREE'>('CASH');
   const [cashTendered, setCashTendered] = useState<string>('');
-  const [gcashRef, setGcashRef] = useState(''); // Bug #10 fix: GCash reference number
+  const [gcashRef, setGcashRef] = useState('');
   const [hmoProvider, setHmoProvider] = useState(HMO_PROVIDERS[0]);
   const [hmoApprovalCode, setHmoApprovalCode] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null); // Bug #8 fix: validation
+  const [formError, setFormError] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const receiptRef = useRef<HTMLDivElement>(null);
 
-  // Bug #3 fix: auto-dismiss toast
   const showToast = useCallback((text: string, type: 'success' | 'error' = 'success') => {
     setToastMsg({ text, type });
     setTimeout(() => setToastMsg(null), 4000);
@@ -99,7 +101,7 @@ function CashierPageContent() {
     }
   }, [doctor?.consultation_fee]);
 
-  // Handle preselection from URL query param (UX-05: Do not silently fallback)
+  // Handle preselection from URL query param
   useEffect(() => {
     if (preselectedId && appointments.length > 0) {
       const found = appointments.find((a) => a.id === preselectedId);
@@ -115,10 +117,9 @@ function CashierPageContent() {
       setSelectedAppt(firstUnpaid);
       setNotFoundPreselectedId(null);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preselectedId, appointments]);
+  }, [preselectedId, appointments]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Bug #4 fix: Sync selectedAppt from refreshed data after payment
+  // Sync selectedAppt from refreshed data after payment
   useEffect(() => {
     if (selectedAppt) {
       const updated = appointments.find((a) => a.id === selectedAppt.id);
@@ -147,7 +148,7 @@ function CashierPageContent() {
         setBaseFee(doctor.consultation_fee);
       }
     }
-  }, [selectedAppt?.id, doctor?.consultation_fee]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedAppt?.id, doctor?.consultation_fee]);
 
   // Computations
   const discountAmount = useMemo(() => {
@@ -179,13 +180,16 @@ function CashierPageContent() {
     });
   }, [appointments, searchTerm]);
 
-  // Bug #8 fix: HMO validation + pass meta to context
+  const unpaidPatients = useMemo(
+    () => appointments.filter((a) => !a.is_paid_to_clinic && a.status !== 'CANCELLED_NO_SHOW'),
+    [appointments]
+  );
+
   const handleSettlePayment = async () => {
     if (!selectedAppt) return;
 
-    // Validation
     if (paymentMethod === 'HMO' && !hmoApprovalCode.trim()) {
-      setFormError('Please enter the HMO Approval / GL Code before settling.');
+      setFormError('Please enter the HMO Approval / GL Authorization Code before saving.');
       return;
     }
     setFormError(null);
@@ -196,32 +200,34 @@ function CashierPageContent() {
         hmoProvider: paymentMethod === 'HMO' ? hmoProvider : undefined,
         hmoCode: paymentMethod === 'HMO' ? hmoApprovalCode.trim() : undefined,
         gcashRef: paymentMethod === 'GCASH' ? gcashRef.trim() : undefined,
-        idNumber: (isSeniorDiscount || isPwdDiscount) ? idNumber.trim() : undefined,
+        idNumber: isSeniorDiscount || isPwdDiscount ? idNumber.trim() : undefined,
       };
 
       const ok = await updateAppointmentPaid(selectedAppt.id, paymentMethod, netPayable, meta);
-      if (!ok) throw new Error('Payment settlement failed. Please check your connection and try again.');
+      if (!ok) throw new Error('Payment could not be saved. Please check your network connection.');
 
       showToast(`Payment of ₱${netPayable.toFixed(2)} recorded for ${selectedAppt.display_name}!`);
       setShowReceiptModal(true);
       await refreshData();
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not settle payment.', 'error');
+      showToast(err instanceof Error ? err.message : 'Could not save payment.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Bug #5 fix: print only the receipt div using iframe
   const handlePrintReceipt = () => {
     const node = receiptRef.current;
     if (!node) return;
     const printWindow = window.open('', '_blank', 'width=400,height=600');
-    if (!printWindow) { window.print(); return; }
+    if (!printWindow) {
+      window.print();
+      return;
+    }
     printWindow.document.write(`
       <html>
         <head>
-          <title>Clinic Natin Receipt</title>
+          <title>Clinic Natin Official Receipt</title>
           <style>
             body { font-family: 'Courier New', monospace; font-size: 12px; margin: 16px; color: #111; }
             .center { text-align: center; }
@@ -237,15 +243,18 @@ function CashierPageContent() {
     `);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 300);
   };
 
   return (
-    <div className="space-y-5">
-      {/* Toast Alert — Bug #3 fix: auto-dismissed via showToast */}
+    <div className="space-y-4">
+      {/* Toast Alert */}
       {toastMsg && (
         <div
-          className={`fixed top-5 right-5 z-50 rounded-2xl p-4 shadow-xl text-sm font-bold flex items-center gap-3 border ${
+          className={`fixed top-4 right-4 z-50 rounded-2xl p-4 shadow-xl text-sm font-black flex items-center gap-3 border ${
             toastMsg.type === 'success'
               ? 'bg-emerald-600 text-white border-emerald-500'
               : 'bg-red-600 text-white border-red-500'
@@ -257,33 +266,81 @@ function CashierPageContent() {
             <AlertCircle className="h-5 w-5 shrink-0" />
           )}
           <span>{toastMsg.text}</span>
-          <button type="button" onClick={() => setToastMsg(null)} className="ml-2 opacity-70 hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => setToastMsg(null)}
+            className="ml-2 opacity-70 hover:opacity-100"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2.5">
-            <Receipt className="h-5 w-5 text-brand-700" />
-            Cashier & Fee Settlement Terminal
+          <h2 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-emerald-700" />
+            Cashier &amp; Fee Settlement
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5 font-medium">
-            Settle physician fees, apply RA 9994/RA 7277 discounts, and issue official receipts
+          <p className="text-xs text-slate-500 font-medium">
+            Collect professional consultation fees, apply statutory discounts, and issue official receipts.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* ── LEFT: Patient Billing Ledger ── */}
-        <div className="lg:col-span-4 space-y-3">
-          <Card className="border-slate-200/80 shadow-xs bg-white rounded-2xl overflow-hidden">
+      {/* ── MOBILE QUICK UNPAID PATIENTS SCROLLBAR ── */}
+      {unpaidPatients.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200/90 p-3 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Coins className="h-4 w-4 text-emerald-600" />
+              Unpaid Invoices ({unpaidPatients.length})
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium">Select patient to settle:</span>
+          </div>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {unpaidPatients.map((p) => {
+              const isSel = selectedAppt?.id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSelectedAppt(p)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-left border shrink-0 transition-all ${
+                    isSel
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                  }`}
+                >
+                  <span
+                    className={`font-mono text-xs font-black px-1.5 py-0.5 rounded ${
+                      isSel ? 'bg-white/20 text-white' : 'bg-white border border-slate-200'
+                    }`}
+                  >
+                    #{p.queue_number}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black truncate max-w-[130px]">{p.display_name}</p>
+                    <p className={`text-[10px] ${isSel ? 'text-white/80' : 'text-slate-400'}`}>
+                      ₱{p.consultation_fee || doctor?.consultation_fee || 600}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        {/* ── LEFT: Patient Billing Ledger (Hidden on small mobile when patient selected, visible on desktop) ── */}
+        <div className="hidden lg:block lg:col-span-4 space-y-3">
+          <Card className="border-slate-200/90 shadow-xs bg-white rounded-3xl overflow-hidden">
             <CardHeader className="p-4 pb-3 border-b border-slate-100 bg-slate-50/60">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-black text-slate-900">
-                  Today&apos;s Billing Ledger
+                  Patient Billing Ledger
                 </CardTitle>
                 <Badge variant="outline" className="font-bold text-slate-500 text-[10px] border-slate-200">
                   {appointments.length} Patients
@@ -295,8 +352,8 @@ function CashierPageContent() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search name or token..."
-                  className="h-9 pl-9 text-xs border-slate-200 bg-white rounded-xl"
+                  placeholder="Search patient name or ticket token..."
+                  className="h-10 pl-9 text-xs border-slate-200 bg-white rounded-xl"
                 />
                 {searchTerm && (
                   <button
@@ -314,7 +371,7 @@ function CashierPageContent() {
               {filteredAppointments.length === 0 ? (
                 <div className="p-8 text-center">
                   <User className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-                  <p className="text-xs text-slate-400 font-semibold">No patient records found.</p>
+                  <p className="text-xs text-slate-400 font-semibold">No patients found matching your search.</p>
                 </div>
               ) : (
                 filteredAppointments.map((appt) => {
@@ -329,9 +386,9 @@ function CashierPageContent() {
                         setSelectedAppt(appt);
                         setNotFoundPreselectedId(null);
                       }}
-                      className={`w-full text-left p-3 rounded-xl border transition-all ${
+                      className={`w-full text-left p-3 rounded-2xl border transition-all ${
                         isSelected
-                          ? 'bg-brand-50 border-brand-700 ring-2 ring-brand-300/30 shadow-xs'
+                          ? 'bg-emerald-50 border-emerald-600 ring-2 ring-emerald-300/30 shadow-xs'
                           : isPaid
                           ? 'bg-slate-50/50 border-slate-100 opacity-60 hover:opacity-80'
                           : 'bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300'
@@ -341,30 +398,29 @@ function CashierPageContent() {
                         <span
                           className={`font-mono text-xs font-black px-2 py-0.5 rounded-lg border ${
                             isSelected
-                              ? 'bg-brand-700 text-white border-brand-700'
+                              ? 'bg-emerald-700 text-white border-emerald-700'
                               : 'bg-slate-100 text-slate-700 border-slate-200'
                           }`}
                         >
                           {appt.token_code}
                         </span>
                         {isPaid ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold">
                             <Check className="h-3 w-3" />
                             Paid
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 text-[10px] font-bold">
+                          <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black">
                             Unpaid
                           </span>
                         )}
                       </div>
-                      <p className="text-sm font-extrabold text-slate-900 truncate leading-snug">
+                      <p className="text-sm font-black text-slate-900 truncate leading-snug">
                         {appt.display_name}
                       </p>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 mt-0.5 font-medium">
-                        {/* Bug #9 fix: readable status labels */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-0.5 font-medium">
                         <span>#{appt.queue_number} · {STATUS_LABEL[appt.status] ?? appt.status}</span>
-                        <span className="font-bold text-slate-600">
+                        <span className="font-bold text-slate-700">
                           ₱{(appt.consultation_fee || doctor?.consultation_fee || 600).toFixed(2)}
                         </span>
                       </div>
@@ -379,58 +435,68 @@ function CashierPageContent() {
         {/* ── RIGHT: Cashier Terminal ── */}
         <div className="lg:col-span-8">
           {selectedAppt ? (
-            <Card className="border-slate-200/80 shadow-xs bg-white rounded-2xl overflow-hidden">
-              {/* Transaction Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+            <Card className="border-slate-200 shadow-xs bg-white rounded-3xl overflow-hidden">
+              {/* Transaction Header Banner */}
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/70">
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
-                    Active Transaction
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    Active Patient Transaction
                   </span>
-                  <p className="text-base font-black text-slate-900 mt-0.5">{selectedAppt.display_name}</p>
+                  <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">
+                    {selectedAppt.display_name}
+                  </p>
                 </div>
                 <div className="text-right">
-                  <span className="inline-block bg-brand-700 text-white font-mono font-black text-sm px-3 py-1 rounded-lg">
+                  <span className="inline-block bg-brand-700 text-white font-mono font-black text-sm px-3 py-1 rounded-xl shadow-xs">
                     {selectedAppt.token_code}
                   </span>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Slot #{selectedAppt.queue_number}</p>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                    Queue #{selectedAppt.queue_number}
+                  </p>
                 </div>
               </div>
 
-              <CardContent className="p-5 space-y-5">
-                {/* Already Paid Banner */}
+              <CardContent className="p-4 sm:p-6 space-y-4">
+                {/* Already Paid Notice Banner */}
                 {selectedAppt.is_paid_to_clinic && (
-                  <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                    <div>
-                      <p className="text-sm font-bold text-emerald-800">Payment Already Settled</p>
-                      <p className="text-xs text-emerald-600">This patient&apos;s consultation fee has been collected.</p>
+                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 border border-emerald-300 p-4 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-black text-emerald-950">Patient Consultation Already Paid</p>
+                        <p className="text-xs text-emerald-700">
+                          The professional consultation fee has been settled and recorded for this patient.
+                        </p>
+                      </div>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setShowReceiptModal(true)}
-                      className="ml-auto h-8 text-xs font-bold border-emerald-300 text-emerald-700 hover:bg-emerald-50 gap-1.5 rounded-lg"
+                      className="h-10 text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl"
                     >
-                      <Printer className="h-3.5 w-3.5" />
-                      Reprint
+                      <Printer className="h-4 w-4 mr-1" />
+                      Receipt
                     </Button>
                   </div>
                 )}
 
-                {/* 1. Fee Breakdown */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
-                    <span>Doctor&apos;s Professional Fee:</span>
-                    <span className="font-mono text-sm text-slate-900 font-bold">₱{baseFee.toFixed(2)}</span>
+                {/* 1. Fee Breakdown & Discounts */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3.5">
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-bold text-slate-700">
+                    <span>Consultation Fee (Physician Professional Fee):</span>
+                    <span className="font-mono text-base text-slate-900 font-black">
+                      ₱{baseFee.toFixed(2)}
+                    </span>
                   </div>
 
                   {/* Statutory Discounts */}
-                  <div className="pt-2.5 border-t border-slate-200 space-y-2.5">
-                    <span className="text-[10px] font-bold text-slate-600 block uppercase tracking-widest">
-                      Statutory Privilege Discounts (Philippine Laws)
+                  <div className="pt-3 border-t border-slate-200 space-y-2.5">
+                    <span className="text-[10px] font-black text-slate-500 block uppercase tracking-wider">
+                      Statutory Discounts (Philippine Republic Acts)
                     </span>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200 flex-1 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="flex items-center gap-3 text-xs font-bold text-slate-800 bg-white p-3 rounded-2xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
                         <input
                           type="checkbox"
                           checked={isSeniorDiscount}
@@ -439,11 +505,11 @@ function CashierPageContent() {
                             setIsSeniorDiscount(e.target.checked);
                             if (e.target.checked) setIsPwdDiscount(false);
                           }}
-                          className="h-4 w-4 rounded accent-brand-700"
+                          className="h-4.5 w-4.5 rounded accent-brand-700"
                         />
-                        <span>Senior Citizen (RA 9994 — 20%)</span>
+                        <span>Senior Citizen (RA 9994 — 20% Discount)</span>
                       </label>
-                      <label className="flex items-center gap-2.5 text-xs font-semibold text-slate-800 bg-white p-3 rounded-xl border border-slate-200 flex-1 cursor-pointer hover:bg-slate-50 transition-colors">
+                      <label className="flex items-center gap-3 text-xs font-bold text-slate-800 bg-white p-3 rounded-2xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
                         <input
                           type="checkbox"
                           checked={isPwdDiscount}
@@ -452,31 +518,30 @@ function CashierPageContent() {
                             setIsPwdDiscount(e.target.checked);
                             if (e.target.checked) setIsSeniorDiscount(false);
                           }}
-                          className="h-4 w-4 rounded accent-brand-700"
+                          className="h-4.5 w-4.5 rounded accent-brand-700"
                         />
-                        <span>Person with Disability (RA 7277 — 20%)</span>
+                        <span>PWD (RA 7277 — 20% Discount)</span>
                       </label>
                     </div>
 
-                    {/* Bug #7 fix: ID Number input */}
                     {(isSeniorDiscount || isPwdDiscount) && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 font-semibold text-emerald-800">
-                          <span>20% Statutory Discount Applied:</span>
+                      <div className="space-y-2 pt-1 animate-in fade-in">
+                        <div className="flex items-center justify-between text-xs bg-emerald-100/70 border border-emerald-300 rounded-xl px-3 py-2 font-black text-emerald-900">
+                          <span>20% Statutory Discount Deducted:</span>
                           <span className="font-mono font-bold">-₱{discountAmount.toFixed(2)}</span>
                         </div>
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 block mb-1">
-                            {isSeniorDiscount ? 'Senior Citizen ID / OSCA Number' : 'PWD ID Number'} (required for audit)
+                          <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                            {isSeniorDiscount ? 'Senior Citizen ID / OSCA Number' : 'PWD ID Number'}
                           </label>
                           <div className="relative">
-                            <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                            <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                             <Input
                               type="text"
                               value={idNumber}
                               onChange={(e) => setIdNumber(e.target.value)}
                               placeholder={isSeniorDiscount ? 'e.g. OSCA-12345' : 'e.g. PWD-CDO-9876'}
-                              className="h-9 pl-9 text-xs border-slate-200 bg-white rounded-xl"
+                              className="h-10 pl-9 text-xs border-slate-300 bg-white rounded-xl"
                               disabled={selectedAppt.is_paid_to_clinic}
                             />
                           </div>
@@ -485,11 +550,13 @@ function CashierPageContent() {
                     )}
                   </div>
 
-                  {/* Net Payable */}
+                  {/* Net Payable Highlight */}
                   <div className="pt-3 border-t-2 border-slate-300 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Total Amount Due</span>
-                      <span className="text-xs font-bold text-slate-600">Net Payable</span>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                        Total Amount Due
+                      </span>
+                      <span className="text-xs font-bold text-slate-700">Net Payable</span>
                     </div>
                     <span className="text-3xl font-black text-emerald-700 font-mono">
                       ₱{netPayable.toFixed(2)}
@@ -497,19 +564,19 @@ function CashierPageContent() {
                   </div>
                 </div>
 
-                {/* 2. Payment Method */}
+                {/* 2. Payment Method Selector */}
                 {!selectedAppt.is_paid_to_clinic && (
                   <>
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-700 block">
-                        Select Payment Method:
+                      <label className="text-xs sm:text-sm font-black text-slate-800 block">
+                        Payment Method:
                       </label>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {[
                           { id: 'CASH', label: 'Cash', icon: Banknote },
                           { id: 'GCASH', label: 'GCash / Maya', icon: Smartphone },
-                          { id: 'HMO', label: 'HMO / GL Letter', icon: ShieldCheck },
-                          { id: 'FREE', label: 'Free Follow-up', icon: Percent },
+                          { id: 'HMO', label: 'HMO Card / GL', icon: ShieldCheck },
+                          { id: 'FREE', label: 'Complimentary (₱0)', icon: Percent },
                         ].map((m) => {
                           const Icon = m.icon;
                           const isSel = paymentMethod === m.id;
@@ -521,59 +588,63 @@ function CashierPageContent() {
                                 setPaymentMethod(m.id as 'CASH' | 'GCASH' | 'HMO' | 'FREE');
                                 setFormError(null);
                               }}
-                              className={`p-3 rounded-xl border text-center transition-all ${
+                              className={`p-3 rounded-2xl border text-center transition-all ${
                                 isSel
-                                  ? 'bg-brand-700 text-white border-brand-700 shadow-xs'
-                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+                                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-300/40'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                               }`}
                             >
-                              <Icon className={`h-5 w-5 mx-auto mb-1 ${isSel ? 'text-white' : 'text-slate-400'}`} />
-                              <span className="text-xs font-bold block leading-tight">{m.label}</span>
+                              <Icon className={`h-5 w-5 mx-auto mb-1 ${isSel ? 'text-white' : 'text-slate-500'}`} />
+                              <span className="text-xs font-black block leading-tight">{m.label}</span>
                             </button>
                           );
                         })}
                       </div>
                     </div>
 
-                    {/* 3. Cash Calculator */}
+                    {/* 3. Cash Received & Change Calculator */}
                     {paymentMethod === 'CASH' && (
-                      <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200 space-y-3">
-                        <label className="text-xs font-bold text-slate-700 block">
-                          Cash Received & Change Calculator:
+                      <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 space-y-3">
+                        <label className="text-xs font-bold text-slate-800 block">
+                          Cash Tendered &amp; Change Due:
                         </label>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Quick:</span>
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wide">
+                            Quick Cash:
+                          </span>
                           {[
                             { label: `Exact (₱${netPayable})`, val: String(netPayable) },
-                            { label: '₱500', val: '500' },
-                            { label: '₱1,000', val: '1000' },
+                            { label: '₱500 Bill', val: '500' },
+                            { label: '₱1,000 Bill', val: '1000' },
                           ].map((q) => (
                             <button
                               key={q.val}
                               type="button"
                               onClick={() => setCashTendered(q.val)}
-                              className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-50 shadow-xs"
+                              className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-black text-emerald-900 hover:bg-emerald-50 shadow-xs"
                             >
                               {q.label}
                             </button>
                           ))}
                         </div>
-                        <div className="grid grid-cols-2 gap-3 items-center">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-500 block mb-1">Amount Tendered (₱)</span>
+                            <span className="text-[10px] font-bold text-slate-500 block mb-1">
+                              Amount Tendered by Patient (₱)
+                            </span>
                             <Input
                               type="number"
                               value={cashTendered}
                               onChange={(e) => setCashTendered(e.target.value)}
                               placeholder="e.g. 1000"
-                              className="h-12 text-lg font-black text-slate-900 border-slate-200 bg-white rounded-xl"
+                              className="h-12 text-xl font-black text-slate-900 border-emerald-200 bg-white rounded-xl"
                             />
                           </div>
-                          <div className="rounded-xl bg-emerald-600 text-white p-3 text-center shadow-xs">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-100 block">
-                              Change Due
+                          <div className="rounded-2xl bg-emerald-600 text-white p-3.5 text-center shadow-xs">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100 block">
+                              Change Due to Patient
                             </span>
-                            <span className="text-2xl font-black font-mono">
+                            <span className="text-2xl sm:text-3xl font-black font-mono">
                               ₱{changeDue.toFixed(2)}
                             </span>
                           </div>
@@ -581,49 +652,50 @@ function CashierPageContent() {
                       </div>
                     )}
 
-                    {/* GCash Reference — Bug #10 fix */}
+                    {/* GCash Reference */}
                     {paymentMethod === 'GCASH' && (
-                      <div className="bg-violet-50/60 p-4 rounded-2xl border border-violet-200 space-y-2.5">
-                        <label className="text-xs font-bold text-slate-700 block">
-                          GCash / Maya E-Wallet Payment:
+                      <div className="bg-violet-50/70 p-4 rounded-2xl border border-violet-200 space-y-2.5">
+                        <label className="text-xs font-bold text-slate-800 block">
+                          GCash / Maya E-Wallet:
                         </label>
                         <div>
                           <span className="text-[10px] font-bold text-slate-500 block mb-1">
-                            GCash / Maya Reference Number (optional but recommended)
+                            Reference Number from patient confirmation screen
                           </span>
                           <div className="relative">
-                            <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-violet-400" />
+                            <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-violet-500" />
                             <Input
                               type="text"
                               value={gcashRef}
                               onChange={(e) => setGcashRef(e.target.value)}
                               placeholder="e.g. GC-REF-2026-123456"
-                              className="h-10 pl-9 text-xs font-semibold border-violet-200 bg-white rounded-xl"
+                              className="h-11 pl-9 text-xs font-semibold border-violet-300 bg-white rounded-xl"
                             />
                           </div>
-                          <p className="text-[10px] text-violet-500 mt-1">
-                            Reference number is saved for your daily cash reconciliation records.
-                          </p>
                         </div>
                       </div>
                     )}
 
                     {/* HMO Fields */}
                     {paymentMethod === 'HMO' && (
-                      <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-200 space-y-3">
-                        <label className="text-xs font-bold text-slate-700 block">
-                          HMO Guarantee Letter (GL) Pre-Authorization:
+                      <div className="bg-blue-50/70 p-4 rounded-2xl border border-blue-200 space-y-3">
+                        <label className="text-xs font-bold text-slate-800 block">
+                          HMO Guarantee Letter (GL):
                         </label>
                         <div className="space-y-2.5">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-500 block mb-1">HMO Provider</span>
+                            <span className="text-[10px] font-bold text-slate-500 block mb-1">
+                              HMO Provider
+                            </span>
                             <select
                               value={hmoProvider}
                               onChange={(e) => setHmoProvider(e.target.value)}
-                              className="w-full h-11 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-brand-700"
+                              className="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-800 outline-none focus:border-brand-700"
                             >
                               {HMO_PROVIDERS.map((hmo) => (
-                                <option key={hmo} value={hmo}>{hmo}</option>
+                                <option key={hmo} value={hmo}>
+                                  {hmo}
+                                </option>
                               ))}
                             </select>
                           </div>
@@ -634,115 +706,107 @@ function CashierPageContent() {
                             <Input
                               type="text"
                               value={hmoApprovalCode}
-                              onChange={(e) => { setHmoApprovalCode(e.target.value); setFormError(null); }}
+                              onChange={(e) => {
+                                setHmoApprovalCode(e.target.value);
+                                setFormError(null);
+                              }}
                               placeholder="e.g. MAXI-AUTH-88219"
-                              className={`h-10 text-xs font-semibold border-slate-200 bg-white rounded-xl ${
+                              className={`h-11 text-xs font-semibold border-slate-300 bg-white rounded-xl ${
                                 formError ? 'border-red-400 focus:border-red-500' : ''
                               }`}
                             />
-                            {/* Bug #8 fix: inline error */}
-                            {formError && (
-                              <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" />
-                                {formError}
-                              </p>
-                            )}
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Free follow-up confirmation */}
+                    {/* Free confirmation */}
                     {paymentMethod === 'FREE' && (
-                      <div className="flex items-start gap-3 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
-                        <Percent className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
-                        <p className="text-xs text-slate-600 font-semibold">
-                          This consultation will be recorded as a <strong>Free Follow-up</strong> with zero payment. 
-                          The doctor may waive the fee for regular patients or post-surgery check-ups.
+                      <div className="flex items-start gap-3 rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                        <Percent className="h-5 w-5 text-slate-400 shrink-0 mt-0.5" />
+                        <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                          This consultation will be recorded as a <strong>Complimentary Follow-up (₱0)</strong>. 
                         </p>
                       </div>
                     )}
 
-                    {/* Top-level form error (non-HMO) */}
-                    {formError && paymentMethod !== 'HMO' && (
-                      <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-700 font-semibold">
-                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                        {formError}
+                    {formError && (
+                      <div className="flex items-center gap-2 rounded-2xl bg-red-50 border border-red-200 p-3 text-xs text-red-700 font-bold">
+                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                        <span>{formError}</span>
                       </div>
                     )}
 
                     <Separator />
 
-                    {/* 4. Settle Action — Bug #6 fix: Print button hidden until paid */}
+                    {/* Settle Action Button */}
                     <Button
                       onClick={handleSettlePayment}
                       disabled={isSubmitting}
-                      className="w-full h-12 text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl shadow-xs gap-2"
+                      className="w-full h-13 text-sm sm:text-base font-black bg-emerald-700 hover:bg-emerald-800 text-white rounded-2xl shadow-md gap-2"
                     >
                       {isSubmitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-5 w-5 animate-spin" />
                       ) : (
                         <Check className="h-5 w-5" />
                       )}
-                      {isSubmitting ? 'Processing Payment...' : 'Confirm Payment & Issue Receipt'}
+                      <span>
+                        {isSubmitting ? 'Recording Payment...' : 'Confirm Payment & Issue Receipt'}
+                      </span>
                     </Button>
                   </>
                 )}
 
-                {/* Bug #6 fix: Print Receipt only shown after payment is settled */}
                 {selectedAppt.is_paid_to_clinic && (
                   <Button
                     variant="outline"
                     onClick={() => setShowReceiptModal(true)}
-                    className="w-full h-10 text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl gap-2"
+                    className="w-full h-11 text-xs font-black border-slate-300 text-slate-800 hover:bg-slate-50 rounded-2xl gap-2"
                   >
-                    <Printer className="h-4 w-4 text-slate-500" />
-                    View / Print Official Receipt
+                    <Printer className="h-4 w-4 text-slate-600" />
+                    <span>View &amp; Print Receipt</span>
                   </Button>
                 )}
               </CardContent>
             </Card>
           ) : notFoundPreselectedId ? (
-            <Card className="border-2 border-amber-300 bg-amber-50/70 p-12 text-center rounded-2xl space-y-3">
+            <Card className="border-2 border-amber-300 bg-amber-50/70 p-8 text-center rounded-3xl space-y-3">
               <div className="h-12 w-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-black text-amber-950">Patient Appointment Not Found</h3>
-              <p className="text-xs text-amber-800 max-w-md mx-auto leading-relaxed">
-                The requested appointment ID (<span className="font-mono text-[11px] font-bold">{notFoundPreselectedId}</span>) does not exist in today&apos;s active clinic queue. The link may have expired or belongs to another date.
+              <h3 className="text-base font-black text-amber-950">Patient Not Found</h3>
+              <p className="text-xs text-amber-800 max-w-md mx-auto">
+                The requested appointment ID was not found in today&apos;s active queue.
               </p>
-              <div className="pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setNotFoundPreselectedId(null);
-                    const firstUnpaid = appointments.find((a) => !a.is_paid_to_clinic) || appointments[0];
-                    if (firstUnpaid) setSelectedAppt(firstUnpaid);
-                  }}
-                  className="text-xs font-bold border-amber-300 bg-white text-amber-900 hover:bg-amber-100 rounded-xl"
-                >
-                  Select First Unpaid Patient
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNotFoundPreselectedId(null);
+                  const firstUnpaid = appointments.find((a) => !a.is_paid_to_clinic) || appointments[0];
+                  if (firstUnpaid) setSelectedAppt(firstUnpaid);
+                }}
+                className="text-xs font-bold border-amber-300 bg-white text-amber-900 rounded-xl"
+              >
+                Select First Unpaid Patient
+              </Button>
             </Card>
           ) : (
-            <Card className="border-2 border-dashed border-slate-200 bg-white p-16 text-center rounded-2xl">
-              <Receipt className="h-10 w-10 text-slate-200 mx-auto mb-3" />
-              <p className="text-sm font-bold text-slate-600">No Patient Selected</p>
+            <Card className="border-2 border-dashed border-slate-200 bg-white p-12 text-center rounded-3xl">
+              <Receipt className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-black text-slate-700">No Patient Selected</p>
               <p className="text-xs text-slate-400 mt-1">
-                Select a patient from the billing ledger to settle their consultation fee
+                Select a patient from the ledger above to settle consultation fees.
               </p>
             </Card>
           )}
         </div>
       </div>
 
-      {/* ── RECEIPT MODAL — Bug #5 fix: print only receipt content ── */}
+      {/* ── RECEIPT MODAL ── */}
       {showReceiptModal && selectedAppt && (
         <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
-          <DialogContent className="max-w-md bg-white p-0 rounded-2xl shadow-2xl border-slate-200 overflow-hidden">
+          <DialogContent className="max-w-md bg-white p-0 rounded-3xl shadow-2xl border-slate-200 overflow-hidden">
             <div className="p-6 space-y-4" ref={receiptRef}>
-              {/* Header */}
               <div className="text-center border-b border-dashed border-slate-300 pb-4">
                 <p className="text-sm font-black text-slate-900 uppercase tracking-wide">
                   Clinic Natin Healthcare
@@ -751,21 +815,20 @@ function CashierPageContent() {
                   {clinic?.hospital_name || 'Maria Reyna XU Hospital'} &bull; Room {clinic?.room_number || '304'}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Attending: {doctor?.name || 'Dr. Maria Santos'} ({doctor?.title || 'MD'})
+                  Physician: {doctor?.name || 'Dr. Maria Santos'} ({doctor?.title || 'MD'})
                 </p>
                 <div className="mt-2 inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-600">
                   OFFICIAL CLINIC ACKNOWLEDGEMENT RECEIPT
                 </div>
               </div>
 
-              {/* Details */}
               <div className="text-xs space-y-1.5 text-slate-700 font-mono">
                 <div className="flex justify-between">
                   <span>Receipt No:</span>
                   <span className="font-bold">CN-REC-{selectedAppt.token_code}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Date & Time:</span>
+                  <span>Date &amp; Time:</span>
                   <span>{new Date().toLocaleString('en-PH')}</span>
                 </div>
                 <div className="flex justify-between">
@@ -773,12 +836,15 @@ function CashierPageContent() {
                   <span className="font-bold text-slate-900">{selectedAppt.display_name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Queue Token:</span>
+                  <span>Ticket Token:</span>
                   <span className="font-bold">{selectedAppt.token_code}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Payment Method:</span>
-                  <span className="font-bold">{paymentMethod}{paymentMethod === 'GCASH' && gcashRef ? ` (Ref: ${gcashRef})` : ''}</span>
+                  <span className="font-bold">
+                    {paymentMethod}
+                    {paymentMethod === 'GCASH' && gcashRef ? ` (Ref: ${gcashRef})` : ''}
+                  </span>
                 </div>
                 {paymentMethod === 'HMO' && (
                   <>
@@ -802,15 +868,14 @@ function CashierPageContent() {
 
               <Separator className="border-dashed" />
 
-              {/* Fee Breakdown */}
               <div className="text-xs space-y-1 text-slate-700 font-mono">
                 <div className="flex justify-between">
-                  <span>Outpatient Consultation:</span>
+                  <span>Consultation Fee:</span>
                   <span>₱{baseFee.toFixed(2)}</span>
                 </div>
                 {(isSeniorDiscount || isPwdDiscount) && (
-                  <div className="flex justify-between text-emerald-800">
-                    <span>Statutory 20% Discount:</span>
+                  <div className="flex justify-between text-emerald-800 font-bold">
+                    <span>20% Statutory Discount:</span>
                     <span>-₱{discountAmount.toFixed(2)}</span>
                   </div>
                 )}
@@ -825,7 +890,7 @@ function CashierPageContent() {
                       <span>₱{parseFloat(cashTendered).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-[11px] font-bold text-emerald-700">
-                      <span>Change Given:</span>
+                      <span>Change Due:</span>
                       <span>₱{changeDue.toFixed(2)}</span>
                     </div>
                   </>
@@ -833,12 +898,12 @@ function CashierPageContent() {
               </div>
 
               <div className="text-center pt-3 border-t border-dashed border-slate-300 text-[10px] text-slate-400">
-                <p>Thank you for trusting Clinic Natin.</p>
+                <p>Thank you for visiting Clinic Natin.</p>
                 <p className="mt-0.5 font-mono">Non-VAT Exempt Transaction under RA 10963</p>
               </div>
             </div>
 
-            <DialogFooter className="p-4 bg-slate-50 border-t border-slate-200">
+            <DialogFooter className="p-4 bg-slate-50 border-t border-slate-200 flex sm:justify-between gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -850,10 +915,10 @@ function CashierPageContent() {
               <Button
                 size="sm"
                 onClick={handlePrintReceipt}
-                className="text-xs font-bold bg-brand-700 hover:bg-brand-700/90 text-white gap-1.5 rounded-xl"
+                className="text-xs font-bold bg-brand-700 hover:bg-brand-800 text-white gap-1.5 rounded-xl"
               >
                 <Printer className="h-3.5 w-3.5" />
-                Print Receipt Slip
+                <span>Print Official Receipt</span>
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -868,7 +933,7 @@ export default function CashierPage() {
     <Suspense
       fallback={
         <div className="p-12 text-center text-sm font-semibold text-slate-500">
-          Loading Cashier & Fee Settlement Terminal...
+          Loading Cashier &amp; Billing Terminal...
         </div>
       }
     >

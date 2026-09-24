@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   UserPlus,
   Ticket,
@@ -13,8 +14,8 @@ import {
   User,
   ShieldCheck,
   Stethoscope,
-  ArrowRight,
-  RefreshCw,
+  ArrowLeft,
+  IdCard,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSecretary, type PriorityCategory } from '../secretary-context';
@@ -41,6 +42,7 @@ export default function WalkInRegistrationPage() {
   const [successNotice, setSuccessNotice] = useState<{
     token: string;
     queueNumber: number;
+    patientName: string;
     appointmentId: string;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export default function WalkInRegistrationPage() {
   // Auto-open triage modal after registration if requested
   const [createdApptForTriage, setCreatedApptForTriage] = useState<any | null>(null);
 
-  // Next Even Queue Slot
+  // Next Even Queue Slot for Walk-ins
   const evenNumbers = appointments
     .filter((a) => a.queue_number % 2 === 0)
     .map((a) => a.queue_number);
@@ -70,7 +72,7 @@ export default function WalkInRegistrationPage() {
         const targetClinicId = clinic?.id;
         const targetDoctorId = doctor?.id;
         if (!targetClinicId || !targetDoctorId) {
-          setErrorMsg('Clinic or Doctor details not resolved. Please wait a moment or refresh the page.');
+          setErrorMsg('Clinic or Doctor details not resolved. Please wait a moment or refresh.');
           setIsSubmitting(false);
           return;
         }
@@ -78,7 +80,6 @@ export default function WalkInRegistrationPage() {
         const todayStr = new Date().toISOString().split('T')[0];
         const dayOfWeek = new Date().getDay() === 0 ? 7 : new Date().getDay();
 
-        // Check if session already exists for today
         const { data: existingSess } = await supabase
           .from('queue_sessions')
           .select('id')
@@ -90,7 +91,6 @@ export default function WalkInRegistrationPage() {
         if (existingSess) {
           targetSessionId = existingSess.id;
         } else {
-          // Find schedule
           const { data: sched } = await supabase
             .from('doctor_clinic_schedules')
             .select('id')
@@ -159,7 +159,7 @@ export default function WalkInRegistrationPage() {
         }
       }
 
-      // 2. Insert into appointments with next even number
+      // 2. Insert into appointments
       const { data: newAppt, error: apptErr } = await supabase
         .from('appointments')
         .insert({
@@ -174,8 +174,9 @@ export default function WalkInRegistrationPage() {
           priority_category: priority,
           consultation_fee: doctor?.consultation_fee || 600,
           is_paid_to_clinic: false,
+          skip_count: 0,
         })
-        .select()
+        .select('*')
         .single();
 
       if (apptErr) throw apptErr;
@@ -185,20 +186,16 @@ export default function WalkInRegistrationPage() {
       setSuccessNotice({
         token: previewToken,
         queueNumber: nextEvenNumber,
+        patientName: fullName.trim(),
         appointmentId: newAppt.id,
       });
 
       if (openVitalsAfter) {
         setCreatedApptForTriage({
-          id: newAppt.id,
-          queue_number: nextEvenNumber,
-          token_code: previewToken,
+          ...newAppt,
           display_name: fullName.trim(),
-          booking_channel: 'WALK_IN',
-          patient_id: patientId,
         });
       } else {
-        // Reset form for next walkin
         setFullName('');
         setPhone('');
         setDateOfBirth('');
@@ -214,65 +211,69 @@ export default function WalkInRegistrationPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Page Title & Breadcrumb */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2.5">
-          <UserPlus className="h-6 w-6 text-brand-700" />
-          Register Walk-In Patient
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Issue next sequential even ticket slot &amp; record patient information into the queue
-        </p>
+    <div className="space-y-4 w-full">
+      {/* ── TOP NAV & BREADCRUMB ── */}
+      <div className="flex items-center justify-between">
+        <Link
+          href="/secretary/dashboard"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-brand-700 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to Queue Logbook</span>
+        </Link>
+        <span className="text-[11px] font-bold text-slate-400">
+          Walk-In Front Desk
+        </span>
       </div>
 
+      {/* ── ERROR ALERT ── */}
       {errorMsg && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-800 flex items-center gap-2.5">
-          <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-          <span>{errorMsg}</span>
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-xs font-bold text-red-900 flex items-center gap-3 shadow-xs">
+          <AlertCircle className="h-5 w-5 shrink-0 text-red-600" />
+          <span className="leading-snug">{errorMsg}</span>
         </div>
       )}
 
-      {/* Success Notification Banner */}
+      {/* ── SUCCESS NOTICE BANNER ── */}
       {successNotice && (
-        <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="rounded-3xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 shadow-md space-y-4 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-xs">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-xs shrink-0">
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-base font-black text-emerald-900">
+                <span className="font-mono text-base font-black text-emerald-950">
                   {successNotice.token}
                 </span>
-                <Badge className="bg-emerald-700 text-white text-[10px]">
+                <Badge className="bg-emerald-700 text-white text-xs font-bold px-2">
                   Slot #{successNotice.queueNumber}
                 </Badge>
               </div>
-              <p className="text-xs font-bold text-emerald-900 mt-0.5">
-                Patient successfully added to today&apos;s queue and marked as Waiting in Lounge!
+              <p className="text-sm font-bold text-slate-900 mt-0.5">
+                Successfully registered <span className="text-emerald-800">{successNotice.patientName}</span> into the queue!
+              </p>
+              <p className="text-xs text-slate-500">
+                Patient is now listed as Waiting in Lobby and ready for vitals triage.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-emerald-200/60">
             <Button
               variant="outline"
-              size="sm"
               onClick={() => {
                 setSuccessNotice(null);
                 setFullName('');
                 setPhone('');
               }}
-              className="text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-100 flex-1 sm:flex-initial"
+              className="w-full sm:w-auto h-11 text-xs font-bold border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl"
             >
-              Register Another Walk-In
+              + Register Another Walk-In
             </Button>
             <Button
-              variant="brand"
-              size="sm"
               onClick={() => router.push('/secretary/dashboard')}
-              className="text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white flex-1 sm:flex-initial"
+              className="w-full sm:w-auto h-11 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl shadow-xs"
             >
               Go to Queue Logbook →
             </Button>
@@ -280,24 +281,26 @@ export default function WalkInRegistrationPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Paper Form */}
-        <div className="lg:col-span-2 space-y-5">
-          <Card className="border-slate-200 shadow-xs bg-white">
-            <CardHeader className="p-5 pb-3 border-b border-slate-100">
-              <CardTitle className="text-base font-bold text-slate-900">
-                Patient Information Slip
+      {/* ── TWO-COLUMN WIDESCREEN REGISTRATION LAYOUT ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start w-full">
+        {/* Left: Form Canvas */}
+        <div className="lg:col-span-8 space-y-4">
+          <Card className="border-slate-200 shadow-xs bg-white rounded-3xl overflow-hidden">
+            <CardHeader className="p-4 sm:p-6 pb-3 border-b border-slate-100 bg-slate-50/60">
+              <CardTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-brand-700" />
+                Walk-In Patient Information
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                Please ask the patient for their basic details
+                Record basic patient details to issue a sequential ticket slot and send SMS queue updates.
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="p-5 space-y-4">
-              {/* Full Name */}
+            <CardContent className="p-4 sm:p-6 space-y-4">
+              {/* 1. Full Name */}
               <div>
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1">
-                  <User className="h-3.5 w-3.5 text-slate-500" />
+                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 mb-1.5">
+                  <User className="h-4 w-4 text-brand-700" />
                   Full Patient Name *
                 </label>
                 <Input
@@ -305,56 +308,43 @@ export default function WalkInRegistrationPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="e.g. Juan Carlos dela Cruz"
-                  className="h-12 text-sm font-semibold border-slate-300 focus:border-brand-700"
+                  className="h-12 text-sm sm:text-base font-semibold border-slate-300 focus:border-brand-700 rounded-2xl bg-white"
                   autoFocus
                 />
               </div>
 
-              {/* Mobile Phone */}
+              {/* 2. Mobile Phone Number */}
               <div>
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1">
-                  <Phone className="h-3.5 w-3.5 text-slate-500" />
-                  Philippine Mobile Number (For Free SMS Alerts)
+                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 mb-1.5">
+                  <Phone className="h-4 w-4 text-brand-700" />
+                  Philippine Mobile Number (09XXXXXXXXX)
                 </label>
                 <Input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="09171234567"
-                  className="h-12 text-sm font-semibold border-slate-300 focus:border-brand-700"
+                  className="h-12 text-sm sm:text-base font-bold font-mono border-slate-300 focus:border-brand-700 rounded-2xl bg-white"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Patient receives SMS 2 turns ahead so they can wait comfortably in the lobby
-                </span>
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                  Patient receives an automated SMS 2 turns ahead so they can wait comfortably in the lounge.
+                </p>
               </div>
 
-              {/* DOB & Sex */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* 3. Biological Sex & Date of Birth */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1">
-                    <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                    Date of Birth (Optional)
-                  </label>
-                  <Input
-                    type="date"
-                    value={dateOfBirth}
-                    onChange={(e) => setDateOfBirth(e.target.value)}
-                    className="h-11 text-xs border-slate-300"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-800 block mb-1">
+                  <label className="text-xs font-bold text-slate-800 block mb-1.5">
                     Biological Sex
                   </label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setGender('FEMALE')}
-                      className={`flex-1 h-11 rounded-xl text-xs font-bold border transition-all ${
+                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${
                         gender === 'FEMALE'
-                          ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
-                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-rose-50 text-rose-900 border-rose-300 shadow-xs ring-2 ring-rose-200'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
                       Female
@@ -362,50 +352,67 @@ export default function WalkInRegistrationPage() {
                     <button
                       type="button"
                       onClick={() => setGender('MALE')}
-                      className={`flex-1 h-11 rounded-xl text-xs font-bold border transition-all ${
+                      className={`h-11 rounded-2xl text-xs font-bold border transition-all ${
                         gender === 'MALE'
-                          ? 'bg-blue-50 text-blue-800 border-blue-300 shadow-2xs'
-                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                          ? 'bg-blue-50 text-blue-900 border-blue-300 shadow-xs ring-2 ring-blue-200'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
                       Male
                     </button>
                   </div>
                 </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-800 block mb-1.5">
+                    Date of Birth (Optional)
+                  </label>
+                  <Input
+                    type="date"
+                    value={dateOfBirth}
+                    onChange={(e) => setDateOfBirth(e.target.value)}
+                    className="h-11 text-xs border-slate-300 rounded-2xl bg-white"
+                  />
+                </div>
               </div>
 
-              {/* Priority Category Large Buttons */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="text-xs font-bold text-slate-800 block mb-2">
-                  Statutory Priority Privileges (Philippine Laws)
+              {/* 4. Priority Privilege Category */}
+              <div className="pt-3 border-t border-slate-100">
+                <label className="text-xs sm:text-sm font-bold text-slate-900 block mb-2">
+                  Patient Category &amp; Statutory Discounts
                 </label>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { id: 'NONE', label: 'Regular Patient', desc: 'Standard Queue' },
-                    { id: 'SENIOR', label: 'Senior Citizen (60+)', desc: 'RA 9994 20% Off' },
-                    { id: 'PWD', label: 'Person with Disability', desc: 'RA 7277 20% Off' },
-                    { id: 'PREGNANT', label: 'Pregnant / Maternal', desc: 'Express Lane' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setPriority(p.id as PriorityCategory)}
-                      className={`p-3 rounded-xl text-left border transition-all ${
-                        priority === p.id
-                          ? 'bg-brand-50 border-brand-500 text-brand-900 ring-2 ring-brand-200'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="text-xs font-extrabold block leading-tight">{p.label}</span>
-                      <span className="text-[10px] text-slate-500">{p.desc}</span>
-                    </button>
-                  ))}
+                    { id: 'NONE', label: 'Regular', desc: 'Standard Line' },
+                    { id: 'SENIOR', label: 'Senior (60+)', desc: '20% Discount' },
+                    { id: 'PWD', label: 'PWD', desc: '20% Discount' },
+                    { id: 'PREGNANT', label: 'Pregnant', desc: 'Express Lane' },
+                  ].map((p) => {
+                    const isSelected = priority === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setPriority(p.id as PriorityCategory)}
+                        className={`p-3 rounded-2xl text-left border transition-all ${
+                          isSelected
+                            ? 'bg-brand-700 text-white border-brand-700 shadow-sm ring-2 ring-brand-300/40'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-xs font-bold block leading-tight">{p.label}</span>
+                        <span className={`text-[10px] ${isSelected ? 'text-white/80' : 'text-slate-400'} block mt-0.5`}>
+                          {p.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {(priority === 'SENIOR' || priority === 'PWD') && (
-                  <div className="mt-3">
-                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  <div className="mt-3 bg-amber-50/70 border border-amber-200 p-3 rounded-2xl animate-in fade-in">
+                    <label className="text-xs font-bold text-amber-950 block mb-1">
                       {priority === 'SENIOR' ? 'OSCA Senior Citizen ID Number' : 'PWD ID Card Number'}
                     </label>
                     <Input
@@ -413,87 +420,85 @@ export default function WalkInRegistrationPage() {
                       value={priorityIdNumber}
                       onChange={(e) => setPriorityIdNumber(e.target.value)}
                       placeholder="e.g. OSCA-CDO-2024-9981"
-                      className="h-10 text-xs border-slate-300"
+                      className="h-10 text-xs border-amber-300 bg-white rounded-xl"
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <Button
+                  onClick={() => handleSubmit(true)}
+                  disabled={isSubmitting || !fullName.trim()}
+                  className="w-full h-12 text-sm sm:text-base font-bold bg-brand-700 hover:bg-brand-800 text-white rounded-2xl shadow-md gap-2"
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Stethoscope className="h-5 w-5" />
+                  )}
+                  <span>Register &amp; Record Baseline Vitals →</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => handleSubmit(false)}
+                  disabled={isSubmitting || !fullName.trim()}
+                  className="w-full h-11 text-xs sm:text-sm font-bold text-slate-700 border-slate-300 hover:bg-slate-100 rounded-2xl gap-2"
+                >
+                  <Ticket className="h-4 w-4 text-brand-700" />
+                  <span>Issue Ticket Only (Take Vitals Later)</span>
+                </Button>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right 1 Col: Physical Ticket Preview & Primary Actions */}
-        <div className="space-y-4">
-          {/* Ticket Slip Card */}
-          <Card className="border-2 border-dashed border-slate-300 bg-white shadow-xs overflow-hidden">
-            <div className="bg-brand-800 text-white p-4 text-center">
+        {/* Right: Ticket Slip Preview */}
+        <div className="lg:col-span-4 space-y-4">
+          <Card className="border-2 border-dashed border-slate-300 bg-white shadow-xs rounded-3xl overflow-hidden">
+            <div className="bg-brand-800 text-white p-5 text-center">
               <span className="text-[10px] uppercase font-bold tracking-widest block text-brand-200">
-                Queue Ticket Slip Preview
+                Ticket Slip Preview
               </span>
-              <p className="text-xs font-bold mt-0.5">
+              <p className="text-sm font-bold mt-1">
                 {clinic?.hospital_name || 'Maria Reyna XU Hospital'}
               </p>
-              <p className="text-[10px] text-brand-200">
+              <p className="text-xs text-brand-200">
                 Room {clinic?.room_number || '304'} &bull; {doctor?.name || 'Dr. Maria Santos'}
               </p>
             </div>
 
-            <CardContent className="p-5 text-center space-y-3">
+            <CardContent className="p-6 text-center space-y-4">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Assigned Token
+                  Next Available Token
                 </span>
                 <span className="font-mono text-3xl font-black text-brand-700 block my-1">
                   {previewToken}
                 </span>
                 <Badge variant="outline" className="text-xs font-bold text-slate-700 bg-slate-50">
-                  Even Slot #{nextEvenNumber}
+                  Walk-In Slot #{nextEvenNumber}
                 </Badge>
               </div>
 
-              <div className="border-t border-slate-100 pt-3 text-xs text-slate-600 space-y-1 text-left">
+              <div className="border-t border-slate-100 pt-3 text-xs text-slate-600 space-y-2 text-left">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Date:</span>
-                  <span className="font-semibold">{new Date().toLocaleDateString()}</span>
+                  <span className="font-semibold">{new Date().toLocaleDateString('en-US')}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Lane:</span>
+                  <span className="text-slate-400">Queue Line:</span>
                   <span className="font-semibold">{priority === 'NONE' ? 'Walk-In Regular' : priority}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-400">Physician Fee:</span>
+                  <span className="text-slate-400">Standard Fee:</span>
                   <span className="font-semibold">₱{doctor?.consultation_fee?.toFixed(2) || '600.00'}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
-
-          {/* Action Buttons */}
-          <div className="space-y-2.5">
-            <Button
-              variant="brand"
-              onClick={() => handleSubmit(true)}
-              disabled={isSubmitting || !fullName.trim()}
-              className="w-full h-12 text-sm font-bold bg-brand-700 hover:bg-brand-800 text-white rounded-xl shadow-xs gap-2"
-            >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Stethoscope className="h-4 w-4" />
-              )}
-              Add to Queue &amp; Record Vitals Now →
-            </Button>
-
-            <Button
-              variant="outline"
-              onClick={() => handleSubmit(false)}
-              disabled={isSubmitting || !fullName.trim()}
-              className="w-full h-11 text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 rounded-xl gap-2"
-            >
-              <Ticket className="h-4 w-4 text-brand-700" />
-              Issue Ticket Only (Vitals Later)
-            </Button>
-          </div>
         </div>
       </div>
 

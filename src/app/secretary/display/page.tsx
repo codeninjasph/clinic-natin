@@ -6,7 +6,6 @@ import {
   Tv,
   Volume2,
   VolumeX,
-  Building2,
   Stethoscope,
   Clock,
   ShieldCheck,
@@ -14,10 +13,13 @@ import {
   Minimize2,
   ArrowLeft,
   Users,
+  DoorOpen,
+  Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { playHospitalChime, announcePatientCall, maskPatientName } from '@/lib/audio/queue-chime';
+import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -53,6 +55,7 @@ export default function WaitingRoomDisplayPage() {
   const [appointments, setAppointments] = useState<DisplayAppointment[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [maskNames, setMaskNames] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>('');
 
   const prevServingNumberRef = useRef<number | null>(null);
@@ -69,6 +72,23 @@ export default function WaitingRoomDisplayPage() {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fullscreen Detection
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   // Fetch live session and appointments
   const fetchDisplayData = async () => {
@@ -107,7 +127,7 @@ export default function WaitingRoomDisplayPage() {
           announcement_notice: sd.announcement_notice,
           doctor: {
             full_name: sd.doctors?.profiles?.full_name || 'Dr. Maria Santos',
-            specialty: sd.doctors?.specialty || 'Internal Medicine / Cardiology',
+            specialty: sd.doctors?.specialty || 'General Practice / Internal Medicine',
           },
           clinic: {
             hospital_name: sd.clinics?.hospital_name || 'Maria Reyna XU Hospital',
@@ -133,7 +153,7 @@ export default function WaitingRoomDisplayPage() {
         prevServingNumberRef.current = currentServing;
         setSession(currentSession);
 
-        // Fetch appointments
+        // Fetch appointments for this session
         const { data: apptsData } = await supabase
           .from('appointments')
           .select(`
@@ -186,225 +206,264 @@ export default function WaitingRoomDisplayPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase]);
+  }, [supabase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived Serving and Upcoming
   const currentlyServingAppt = appointments.find((a) => a.status === 'SERVING');
   const upcomingPatients = appointments
     .filter((a) => a.status === 'WAITING' || a.status === 'BOOKED')
-    .slice(0, 4);
+    .slice(0, 5);
 
   const heroToken = currentlyServingAppt?.token_code || (session?.current_serving_number ? `Token #${session.current_serving_number}` : '—');
   const heroName = currentlyServingAppt
     ? maskNames
       ? maskPatientName(currentlyServingAppt.display_name)
       : currentlyServingAppt.display_name
-    : 'Waiting for Call';
+    : 'Waiting for Doctor Call';
 
-  const doctorStatusText =
-    session?.status === 'ACTIVE'
-      ? 'Currently Consulting in Room'
-      : session?.status === 'PAUSED'
-      ? 'Doctor on Urgent Hospital Rounds'
-      : 'Consultation Session Paused';
+  const doctorStatusConfig = {
+    ACTIVE: {
+      text: 'Doctor Consulting in Room',
+      badgeClass: 'bg-emerald-950/80 border-emerald-500/60 text-emerald-400',
+      dotClass: 'bg-emerald-400 animate-ping',
+    },
+    PAUSED: {
+      text: 'Doctor on Break / Rounds',
+      badgeClass: 'bg-amber-950/80 border-amber-500/60 text-amber-400',
+      dotClass: 'bg-amber-400',
+    },
+    COMPLETED: {
+      text: 'Clinic Session Finished',
+      badgeClass: 'bg-slate-900 border-slate-700 text-slate-400',
+      dotClass: 'bg-slate-500',
+    },
+    PENDING: {
+      text: 'Awaiting Session Start',
+      badgeClass: 'bg-slate-900 border-slate-700 text-slate-400',
+      dotClass: 'bg-slate-500',
+    },
+    CANCELLED: {
+      text: 'Clinic Session Closed',
+      badgeClass: 'bg-rose-950/80 border-rose-500/60 text-rose-400',
+      dotClass: 'bg-rose-500',
+    },
+  }[session?.status || 'PENDING'];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between overflow-hidden font-sans select-none">
-      {/* ── TOP 10-FOOT MONITOR HEADER ── */}
-      <header className="px-8 py-5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="h-14 w-14 rounded-2xl bg-brand-600 flex items-center justify-center text-white shadow-lg">
-            <Building2 className="h-8 w-8" />
+    <div className="min-h-screen bg-[#071311] text-white flex flex-col justify-between overflow-hidden font-sans select-none antialiased">
+      {/* ── TOP 10-FOOT MONITOR HEADER (CLINIC NATIN BRANDED) ── */}
+      <header className="px-6 lg:px-10 py-4 bg-[#0a1b17]/95 backdrop-blur-md border-b border-brand-900/60 flex items-center justify-between shadow-md">
+        {/* Left: Brand Logo & Clinic Location */}
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="bg-white/95 rounded-2xl p-2 px-3 shadow-md flex items-center shrink-0 border border-brand-200">
+            <ClinicNatinLogo height={32} href="/secretary/dashboard" priority />
           </div>
-          <div>
-            <span className="text-xs font-black uppercase tracking-widest text-brand-400 block">
-              Clinic Natin Outpatient Suite
-            </span>
-            <h1 className="text-2xl font-black tracking-tight text-white">
-              {session?.clinic?.hospital_name || 'Maria Reyna XU Hospital'} &bull; Room {session?.clinic?.room_number || '304'}
-            </h1>
-            <p className="text-sm font-semibold text-slate-400">
-              {session?.doctor?.full_name || 'Dr. Maria Santos, MD'} — {session?.doctor?.specialty || 'Cardiology'}
+
+          <div className="hidden sm:block h-8 w-px bg-brand-800/60" />
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl lg:text-2xl font-black tracking-tight text-white">
+                {session?.clinic?.hospital_name || 'Maria Reyna XU Hospital'}
+              </h1>
+              <span className="text-xs font-black uppercase tracking-wider bg-brand-500/20 text-brand-300 border border-brand-500/30 px-2.5 py-0.5 rounded-full">
+                Room {session?.clinic?.room_number || '304'}
+              </span>
+            </div>
+            <p className="text-xs lg:text-sm font-semibold text-brand-200/70 truncate mt-0.5">
+              {session?.doctor?.full_name || 'Dr. Maria Santos, MD'} &bull; {session?.doctor?.specialty || 'General Practice / Internal Medicine'}
             </p>
           </div>
         </div>
 
         {/* Right: Clock & Monitor Controls */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4 sm:gap-6 shrink-0">
           {/* Doctor Status Banner */}
           <div
-            className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl border text-sm font-bold shadow-xs ${
-              session?.status === 'ACTIVE'
-                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-400'
-                : 'bg-amber-950/80 border-amber-500/50 text-amber-400'
-            }`}
+            className={`hidden md:flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl border text-xs font-bold shadow-xs ${doctorStatusConfig.badgeClass}`}
           >
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                session?.status === 'ACTIVE' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
-              }`}
-            />
-            <span>{doctorStatusText}</span>
+            <span className={`h-2.5 w-2.5 rounded-full ${doctorStatusConfig.dotClass}`} />
+            <span>{doctorStatusConfig.text}</span>
           </div>
 
-          {/* Large Clock */}
+          {/* Large Digital Clock */}
           <div className="text-right">
-            <span className="text-3xl font-black font-mono tracking-wider text-slate-100 block">
-              {currentTime}
+            <span className="text-2xl lg:text-3xl font-black font-mono tracking-wider text-slate-100 block leading-none">
+              {currentTime || '--:--:--'}
             </span>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest block">
-              {new Date().toLocaleDateString('en-PH', { weekday: 'long', month: 'short', day: 'numeric' })}
+            <span className="text-[10px] lg:text-[11px] font-bold text-brand-300/60 uppercase tracking-widest block mt-1">
+              {new Date().toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
           </div>
 
-          {/* Audio Chime Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              setSoundEnabled(!soundEnabled);
-              if (!soundEnabled) playHospitalChime();
-            }}
-            className={`p-3 rounded-2xl border transition-all ${
-              soundEnabled
-                ? 'bg-brand-600 border-brand-500 text-white shadow-md'
-                : 'bg-slate-800 border-slate-700 text-slate-500'
-            }`}
-            title={soundEnabled ? 'Audio Chime is On (Click to Mute)' : 'Audio Chime is Muted'}
-          >
-            {soundEnabled ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
-          </button>
-
-          {/* Privacy Name Masking Toggle */}
-          <button
-            type="button"
-            onClick={() => setMaskNames(!maskNames)}
-            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-              maskNames
-                ? 'bg-purple-900/60 border-purple-500 text-purple-200'
-                : 'bg-slate-800 border-slate-700 text-slate-400'
-            }`}
-            title="Toggle RA 10173 Privacy Name Masking"
-          >
-            RA 10173: {maskNames ? 'Masked' : 'Full Name'}
-          </button>
-
-          {/* Exit Back to Desk */}
-          <Link href="/secretary/dashboard">
+          {/* Controls Cluster */}
+          <div className="flex items-center gap-2">
+            {/* Audio Chime Toggle */}
             <button
               type="button"
-              className="p-3 rounded-2xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white"
-              title="Return to Secretary Desk"
+              onClick={() => {
+                setSoundEnabled(!soundEnabled);
+                if (!soundEnabled) playHospitalChime();
+              }}
+              className={`p-2.5 rounded-xl border transition-all ${
+                soundEnabled
+                  ? 'bg-brand-600 border-brand-500 text-white shadow-sm ring-2 ring-brand-400/30'
+                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+              title={soundEnabled ? 'Audio Chime is ON (Click to Mute)' : 'Audio Chime is MUTED (Click to Unmute)'}
             >
-              <ArrowLeft className="h-5 w-5" />
+              {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
             </button>
-          </Link>
+
+            {/* Privacy Name Masking Toggle */}
+            <button
+              type="button"
+              onClick={() => setMaskNames(!maskNames)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all hidden sm:inline-flex items-center gap-1.5 ${
+                maskNames
+                  ? 'bg-brand-900/60 border-brand-500 text-brand-200'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle Philippine Data Privacy Act (RA 10173) name masking"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
+              <span>{maskNames ? 'Masked' : 'Full Name'}</span>
+            </button>
+
+            {/* Fullscreen Button */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter 10-Foot Fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+            </button>
+
+            {/* Exit Back to Secretary Desk */}
+            <Link href="/secretary/dashboard">
+              <button
+                type="button"
+                className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Return to Secretary Desk"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+            </Link>
+          </div>
         </div>
       </header>
 
-      {/* ── 10-FOOT MAIN DISPLAY CANVAS ── */}
-      <main className="flex-1 p-8 grid grid-cols-12 gap-8 items-stretch">
-        {/* Left 7 Cols: Massive Hero "NOW SERVING" Box */}
-        <div className="col-span-7 flex flex-col justify-between rounded-3xl border-2 border-brand-500/60 bg-gradient-to-br from-slate-900 via-slate-900 to-brand-950 p-10 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-            <Stethoscope className="h-72 w-72 text-brand-300" />
+      {/* ── 10-FOOT MAIN DISPLAY CANVAS (BRANDED WIDESCREEN) ── */}
+      <main className="flex-1 p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
+        {/* Left 7 Cols: Massive Hero "NOW SERVING" Stage */}
+        <div className="lg:col-span-7 flex flex-col justify-between rounded-3xl border-2 border-brand-500/70 bg-gradient-to-br from-[#0c221d] via-[#091a16] to-[#061210] p-8 lg:p-12 shadow-[0_0_60px_rgba(50,190,166,0.18)] relative overflow-hidden">
+          {/* Subtle Ambient Brand Watermark */}
+          <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+            <Stethoscope className="h-96 w-96 text-brand-300" />
           </div>
 
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-brand-500/20 border border-brand-500/40 px-5 py-2 text-sm font-black uppercase tracking-widest text-brand-300">
-              <span className="h-2.5 w-2.5 rounded-full bg-brand-400 animate-ping" />
-              <span>Now Serving &bull; Kasalukuyang Tinatawag</span>
+            {/* Now Serving Badge */}
+            <div className="inline-flex items-center gap-2.5 rounded-full bg-brand-500/20 border border-brand-500/50 px-5 py-2 text-sm font-black uppercase tracking-widest text-brand-300 shadow-xs">
+              <span className="h-3 w-3 rounded-full bg-brand-400 animate-ping" />
+              <span>Now Serving in Room {session?.clinic?.room_number || '304'}</span>
             </div>
 
-            {/* Giant Hero Token */}
-            <div className="my-6">
-              <span className="font-mono text-8xl xl:text-9xl font-black text-white tracking-tighter block drop-shadow-lg">
+            {/* Giant Hero Token Number */}
+            <div className="my-6 lg:my-8">
+              <span className="font-mono text-7xl sm:text-8xl lg:text-9xl 2xl:text-[10rem] font-black text-white tracking-tight block drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
                 {heroToken}
               </span>
-              <p className="text-3xl xl:text-4xl font-extrabold text-brand-200 mt-2 truncate">
+              <p className="text-2xl sm:text-3xl lg:text-4xl 2xl:text-5xl font-black text-brand-200 mt-2 truncate">
                 {heroName}
               </p>
             </div>
           </div>
 
-          {/* Location Callout Banner */}
-          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 p-6 flex items-center justify-between">
+          {/* Destination Guidance Banner */}
+          <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 p-5 lg:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-brand-500 text-white flex items-center justify-center font-black text-xl">
-                {session?.clinic?.room_number || '304'}
+              <div className="h-14 w-14 rounded-2xl bg-brand-500 text-slate-950 flex items-center justify-center font-black text-2xl shrink-0 shadow-md">
+                <DoorOpen className="h-7 w-7 text-slate-950" />
               </div>
               <div>
                 <span className="text-xs font-bold uppercase tracking-widest text-brand-300 block">
                   Proceed to Consultation Room
                 </span>
-                <p className="text-xl font-black text-white">
-                  Room {session?.clinic?.room_number || '304'} &bull; {session?.clinic?.hospital_name || 'Maria Reyna Hospital'}
+                <p className="text-lg lg:text-xl font-black text-white mt-0.5">
+                  Room {session?.clinic?.room_number || '304'} &bull; {session?.clinic?.hospital_name || 'Maria Reyna XU Hospital'}
                 </p>
               </div>
             </div>
 
-            <Badge className="bg-emerald-500 text-slate-950 font-black text-sm px-4 py-2">
-              PLEASE PROCEED INSIDE
-            </Badge>
+            <div className="shrink-0">
+              <Badge className="bg-brand-500 hover:bg-brand-400 text-slate-950 font-black text-xs sm:text-sm px-5 py-2.5 rounded-xl uppercase tracking-wider shadow-md">
+                Please Proceed Inside
+              </Badge>
+            </div>
           </div>
         </div>
 
         {/* Right 5 Cols: Upcoming Patients in Line */}
-        <div className="col-span-5 flex flex-col justify-between rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-xl">
+        <div className="lg:col-span-5 flex flex-col justify-between rounded-3xl border border-brand-900/60 bg-[#0c1c18]/90 backdrop-blur-md p-6 lg:p-8 shadow-xl">
           <div>
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-6">
-              <h2 className="text-base font-black uppercase tracking-widest text-slate-300 flex items-center gap-2">
+            <div className="flex items-center justify-between pb-4 border-b border-brand-900/60 mb-6">
+              <h2 className="text-base font-black uppercase tracking-widest text-slate-200 flex items-center gap-2.5">
                 <Users className="h-5 w-5 text-brand-400" />
-                <span>Next in Line &bull; Maghanda na po</span>
+                <span>Next in Line</span>
               </h2>
-              <span className="text-xs font-mono font-bold text-slate-500">
-                {upcomingPatients.length} Patients Waiting
+              <span className="text-xs font-mono font-bold text-brand-300/80 bg-brand-950/60 border border-brand-900 px-2.5 py-1 rounded-full">
+                {upcomingPatients.length} Waiting
               </span>
             </div>
 
             {upcomingPatients.length === 0 ? (
-              <div className="py-20 text-center text-slate-500">
-                <Users className="h-16 w-16 mx-auto mb-3 opacity-30" />
-                <p className="text-lg font-bold">No patients waiting in queue</p>
-                <p className="text-xs text-slate-600 mt-1">
-                  Walk-ins and online arrivals will display here automatically
+              <div className="py-16 text-center text-slate-500">
+                <Users className="h-16 w-16 mx-auto mb-3 opacity-30 text-brand-400" />
+                <p className="text-lg font-bold text-slate-300">All caught up!</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  No patients currently waiting in line. New arrivals will appear automatically.
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {upcomingPatients.map((patient, idx) => (
                   <div
                     key={patient.id}
-                    className={`rounded-2xl border p-5 transition-all flex items-center justify-between ${
+                    className={`rounded-2xl border p-4 lg:p-5 transition-all flex items-center justify-between ${
                       idx === 0
-                        ? 'bg-amber-950/40 border-amber-500/50 shadow-md'
-                        : 'bg-slate-800/60 border-slate-700/60'
+                        ? 'bg-brand-950/80 border-brand-500/60 shadow-[0_0_20px_rgba(50,190,166,0.12)] ring-1 ring-brand-400/40'
+                        : 'bg-[#10221e]/70 border-brand-900/40 hover:border-brand-800'
                     }`}
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3.5 min-w-0">
                       <div
-                        className={`h-10 w-10 rounded-xl flex items-center justify-center font-black text-base ${
-                          idx === 0 ? 'bg-amber-500 text-slate-950 font-mono' : 'bg-slate-700 text-slate-300 font-mono'
+                        className={`h-11 w-11 rounded-xl flex items-center justify-center font-black text-base shrink-0 font-mono shadow-xs ${
+                          idx === 0
+                            ? 'bg-brand-500 text-slate-950'
+                            : 'bg-slate-800/80 text-brand-200 border border-brand-900/40'
                         }`}
                       >
                         #{idx + 1}
                       </div>
-                      <div>
-                        <span className="font-mono text-2xl font-black text-white block leading-tight">
+                      <div className="min-w-0">
+                        <span className="font-mono text-xl lg:text-2xl font-black text-white block leading-tight">
                           {patient.token_code}
                         </span>
-                        <p className="text-sm font-semibold text-slate-400 truncate max-w-[200px]">
+                        <p className="text-xs lg:text-sm font-semibold text-brand-100/70 truncate max-w-[180px] sm:max-w-[240px]">
                           {maskNames ? maskPatientName(patient.display_name) : patient.display_name}
                         </p>
                       </div>
                     </div>
 
-                    <div>
+                    <div className="shrink-0">
                       {idx === 0 ? (
-                        <Badge className="bg-amber-500 text-slate-950 font-extrabold text-xs px-3 py-1">
+                        <Badge className="bg-amber-400 text-slate-950 font-black text-xs px-3 py-1 rounded-lg uppercase tracking-wider shadow-xs">
                           Next Patient
                         </Badge>
                       ) : (
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900/60 border border-slate-800">
                           Waiting
                         </span>
                       )}
@@ -415,24 +474,25 @@ export default function WaitingRoomDisplayPage() {
             )}
           </div>
 
-          <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 text-center">
-            <p className="text-xs text-slate-400 font-medium">
-              💡 Please watch your token code on this screen and listen for the audio chime callout.
+          <div className="p-4 rounded-2xl bg-[#091512] border border-brand-900/50 text-center mt-6">
+            <p className="text-xs text-brand-200/70 font-medium flex items-center justify-center gap-2">
+              <Sparkles className="h-4 w-4 text-brand-400 shrink-0" />
+              <span>Please keep your queue ticket token ready and listen for the audio chime.</span>
             </p>
           </div>
         </div>
       </main>
 
-      {/* ── HOSPITAL MARQUEE TICKER ── */}
-      <footer className="bg-brand-900 border-t border-brand-800 py-3.5 px-6 overflow-hidden flex items-center gap-4">
-        <div className="flex items-center gap-2 text-brand-200 font-black text-xs uppercase tracking-widest shrink-0">
-          <Clock className="h-4 w-4" />
-          <span>Hospital Notice:</span>
+      {/* ── HOSPITAL MARQUEE TICKER (CLINIC NATIN BRANDED) ── */}
+      <footer className="bg-gradient-to-r from-brand-950 via-[#0a241e] to-brand-950 border-t border-brand-800/70 py-3.5 px-6 lg:px-8 overflow-hidden flex items-center gap-4 shadow-lg">
+        <div className="flex items-center gap-2 text-brand-300 font-black text-xs uppercase tracking-widest shrink-0">
+          <Clock className="h-4 w-4 text-brand-400" />
+          <span>Clinic Notice:</span>
         </div>
         <div className="flex-1 overflow-hidden whitespace-nowrap">
           <p className="text-sm font-bold text-white inline-block animate-marquee">
             {session?.announcement_notice ||
-              'Welcome to Clinic Natin. Senior citizens, pregnant women, and PWDs are given statutory priority. Free Wi-Fi is available in the waiting lounge. Please present your mobile pass at the secretary desk.'}
+              'Welcome to Clinic Natin. Senior citizens, pregnant women, and PWDs are given statutory priority. Please present your mobile token or physical ticket at the reception desk.'}
           </p>
         </div>
       </footer>

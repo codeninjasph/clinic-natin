@@ -36,9 +36,10 @@ const GRACE_OPTIONS = [
 ];
 
 const REASON_PRESETS = [
+  'Called but not yet in waiting room',
+  'Stepped out temporarily',
   'Sent for Laboratory / Bloodwork',
   'Sent for Imaging / X-Ray / Ultrasound',
-  'Stepped out temporarily',
   'Awaiting relative / guardian',
 ];
 
@@ -63,18 +64,18 @@ export function BufferModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md bg-white border border-slate-200">
+      <DialogContent className="w-[94vw] sm:max-w-2xl bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-800 shadow-xs">
               <Hourglass className="h-5 w-5" />
             </div>
             <div>
-              <DialogTitle className="text-base font-bold text-slate-900">
+              <DialogTitle className="text-lg font-black text-slate-900">
                 Place in Buffer Lane
               </DialogTitle>
               <DialogDescription className="text-xs text-slate-500 mt-0.5">
-                Token <span className="font-bold text-slate-700">{appointment.token_code}</span> (#{appointment.queue_number}) — {appointment.display_name}
+                Token <span className="font-bold font-mono text-slate-800">{appointment.token_code}</span> (#{appointment.queue_number}) — <span className="font-semibold text-slate-800">{appointment.display_name}</span>
               </DialogDescription>
             </div>
           </div>
@@ -83,26 +84,26 @@ export function BufferModal({
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           {/* Grace Period Selection */}
           <div>
-            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-2">
-              <Clock className="h-3.5 w-3.5 text-amber-600" />
-              Select Grace Period Duration
+            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-2.5">
+              <Clock className="h-4 w-4 text-amber-600" />
+              <span>Select Grace Period Duration</span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {GRACE_OPTIONS.map((opt) => (
                 <button
                   type="button"
                   key={opt.minutes}
                   onClick={() => setSelectedMinutes(opt.minutes)}
-                  className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all ${
+                  className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all ${
                     selectedMinutes === opt.minutes
-                      ? 'border-amber-500 bg-amber-50/80 ring-1 ring-amber-500 shadow-xs'
-                      : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/60 hover:border-slate-300'
+                      ? 'border-amber-500 bg-amber-50/90 ring-2 ring-amber-400/40 shadow-xs'
+                      : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100/80 hover:border-slate-300'
                   }`}
                 >
-                  <span className={`text-xs font-black ${selectedMinutes === opt.minutes ? 'text-amber-900' : 'text-slate-800'}`}>
+                  <span className={`text-xs font-black ${selectedMinutes === opt.minutes ? 'text-amber-950 font-bold' : 'text-slate-900'}`}>
                     {opt.label}
                   </span>
-                  <span className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                  <span className={`text-[11px] mt-1 leading-snug ${selectedMinutes === opt.minutes ? 'text-amber-900/80' : 'text-slate-500'}`}>
                     {opt.desc}
                   </span>
                 </button>
@@ -112,10 +113,10 @@ export function BufferModal({
 
           {/* Reason Selection */}
           <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1.5">
+            <label className="text-xs font-bold text-slate-700 block mb-2">
               Reason for Buffering
             </label>
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="flex flex-wrap gap-2 mb-2.5">
               {REASON_PRESETS.map((preset) => (
                 <button
                   type="button"
@@ -124,9 +125,9 @@ export function BufferModal({
                     setReason(preset);
                     setCustomReason('');
                   }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
                     reason === preset
-                      ? 'bg-amber-600 text-white border-amber-600'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -136,9 +137,9 @@ export function BufferModal({
               <button
                 type="button"
                 onClick={() => setReason('Custom')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
                   reason === 'Custom'
-                    ? 'bg-amber-600 text-white border-amber-600'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
@@ -152,33 +153,33 @@ export function BufferModal({
                 value={customReason}
                 onChange={(e) => setCustomReason(e.target.value)}
                 placeholder="Enter specific diagnostic or departure reason..."
-                className="h-9 text-xs rounded-lg"
+                className="h-11 text-xs rounded-xl border-slate-300"
                 autoFocus
               />
             )}
           </div>
 
-          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
-            <p className="leading-relaxed text-[11px]">
-              Patient will be dispatched an SMS notice with their {selectedMinutes}-minute return deadline. When the patient returns with results, click <span className="font-bold text-amber-700">&ldquo;Restore&rdquo;</span> to insert them +2 slots ahead in the active consultation line.
+          <div className="rounded-2xl bg-amber-50/70 border border-amber-200/80 p-3.5 text-xs text-amber-950 flex items-start gap-2.5">
+            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="leading-relaxed text-xs">
+              Patient will be dispatched an automated SMS notice with their <strong>{selectedMinutes}-minute return deadline</strong>. When the patient returns with results, click <span className="font-bold text-amber-800">&ldquo;Restore&rdquo;</span> to insert them +2 slots ahead in the active consultation line.
             </p>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          <DialogFooter className="gap-2 sm:gap-2 pt-2 border-t border-slate-100 flex items-center justify-end">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={isLoading}
-              className="text-xs"
+              className="h-10 text-xs font-bold rounded-xl border-slate-200 px-4"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={isLoading}
-              className="text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
+              className="h-10 text-xs font-black bg-amber-600 hover:bg-amber-700 text-white gap-1.5 rounded-xl px-5 shadow-xs"
             >
               {isLoading ? 'Saving...' : `Confirm (${selectedMinutes}m Grace)`}
             </Button>

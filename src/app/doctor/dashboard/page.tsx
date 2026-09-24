@@ -941,8 +941,8 @@ export default function DoctorDashboardPage() {
             toastNotice.type === 'destructive'
               ? 'destructive'
               : toastNotice.type === 'brand'
-              ? 'brand'
-              : 'success'
+                ? 'brand'
+                : 'success'
           }
         >
           <div className="flex items-start justify-between w-full">
@@ -1148,7 +1148,7 @@ export default function DoctorDashboardPage() {
                         </p>
                         <p className="text-xs text-slate-500 mt-0.5">
                           {currentlyServing.booking_channel === 'ONLINE'
-                            ? '🌐 Online Reservation (₱50 GCash Paid)'
+                            ? '🌐 Online Reservation'
                             : '🚶 Walk-in Registered at Desk'}{' '}
                           · PhilHealth / HMO Covered
                         </p>
@@ -1889,22 +1889,20 @@ export default function DoctorDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setQueueTab('active')}
-                  className={`flex-1 text-xs py-1 px-2 rounded-md font-semibold transition-all ${
-                    queueTab === 'active'
+                  className={`flex-1 text-xs py-1 px-2 rounded-md font-semibold transition-all ${queueTab === 'active'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   Active Lineup ({waitingPatients.length + (currentlyServing ? 1 : 0)})
                 </button>
                 <button
                   type="button"
                   onClick={() => setQueueTab('buffered')}
-                  className={`flex-1 text-xs py-1 px-2 rounded-md font-semibold transition-all flex items-center justify-center gap-1.5 ${
-                    queueTab === 'buffered'
+                  className={`flex-1 text-xs py-1 px-2 rounded-md font-semibold transition-all flex items-center justify-center gap-1.5 ${queueTab === 'buffered'
                       ? 'bg-white text-amber-900 shadow-xs'
                       : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   Buffer Lane
                   {bufferedPatients.length > 0 && (
@@ -1976,13 +1974,12 @@ export default function DoctorDashboardPage() {
                           <div className="flex items-center gap-2.5 min-w-0">
                             {/* Queue number badge */}
                             <div
-                              className={`h-8 w-8 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
-                                appt.status === 'SERVING'
+                              className={`h-8 w-8 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${appt.status === 'SERVING'
                                   ? 'bg-emerald-600 text-white shadow-sm'
                                   : appt.status === 'COMPLETED'
-                                  ? 'bg-slate-100 text-slate-400'
-                                  : 'bg-brand-50 text-brand-700'
-                              }`}
+                                    ? 'bg-slate-100 text-slate-400'
+                                    : 'bg-brand-50 text-brand-700'
+                                }`}
                             >
                               #{appt.queue_number}
                             </div>
@@ -1990,11 +1987,10 @@ export default function DoctorDashboardPage() {
                             {/* Patient info */}
                             <div className="min-w-0">
                               <p
-                                className={`text-xs font-bold truncate ${
-                                  appt.status === 'COMPLETED'
+                                className={`text-xs font-bold truncate ${appt.status === 'COMPLETED'
                                     ? 'text-slate-400 line-through'
                                     : 'text-slate-800'
-                                }`}
+                                  }`}
                               >
                                 {appt.display_name}
                               </p>
@@ -2003,11 +1999,10 @@ export default function DoctorDashboardPage() {
                                   {appt.token_code}
                                 </span>
                                 <span
-                                  className={`text-[9px] font-bold px-1 rounded ${
-                                    appt.booking_channel === 'ONLINE'
+                                  className={`text-[9px] font-bold px-1 rounded ${appt.booking_channel === 'ONLINE'
                                       ? 'bg-emerald-50 text-emerald-700'
                                       : 'bg-blue-50 text-blue-700'
-                                  }`}
+                                    }`}
                                 >
                                   {appt.booking_channel === 'ONLINE' ? 'Online' : 'Walk-in'}
                                 </span>
@@ -2018,13 +2013,12 @@ export default function DoctorDashboardPage() {
                           {/* Status + Priority */}
                           <div className="text-right shrink-0">
                             <span
-                              className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
-                                appt.status === 'SERVING'
+                              className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${appt.status === 'SERVING'
                                   ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
                                   : appt.status === 'COMPLETED'
-                                  ? 'bg-slate-100 text-slate-400'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
+                                    ? 'bg-slate-100 text-slate-400'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
                             >
                               {appt.status}
                             </span>

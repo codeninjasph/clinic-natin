@@ -38,6 +38,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
+import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 import { DoctorProvider, useDoctor, type ClinicRoom } from './doctor-context';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -253,29 +254,20 @@ function DoctorLayoutInner({ children }: { children: React.ReactNode }) {
 
           {/* Left: Logo + brand */}
           <div className="flex items-center gap-3">
-            <Link href="/doctor/dashboard" className="flex items-center gap-2.5 group">
-              <div className="h-9 w-9 rounded-xl bg-brand-700 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                <Stethoscope className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-slate-900 tracking-tight">
-                    Clinic Natin
-                  </span>
-                  <Badge variant="brand" className="text-[10px] px-2">
-                    Doctor Suite
-                  </Badge>
-                  {doctor && (!doctor.isVerified || doctor.verificationStatus === 'PENDING') && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 bg-amber-50 text-amber-800 font-semibold">
-                      Pending Review
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium leading-none mt-0.5">
-                  {selectedRoom ? `${selectedRoom.hospital} · ${selectedRoom.room}` : 'Outpatient Clinic'}
-                </p>
-              </div>
-            </Link>
+            <ClinicNatinLogo height={30} href="/doctor/dashboard" priority />
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+              <Badge variant="brand" className="text-[10px] px-2 font-bold">
+                Doctor Suite
+              </Badge>
+              {doctor && (!doctor.isVerified || doctor.verificationStatus === 'PENDING') && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 bg-amber-50 text-amber-800 font-semibold">
+                  Pending Review
+                </Badge>
+              )}
+              <span className="text-[11px] text-slate-500 font-medium leading-none hidden lg:inline">
+                {selectedRoom ? `${selectedRoom.hospital} · ${selectedRoom.room}` : 'Outpatient Clinic'}
+              </span>
+            </div>
           </div>
 
           {/* Center: Live telemetry & Session Controls */}

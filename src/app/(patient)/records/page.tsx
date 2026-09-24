@@ -57,6 +57,13 @@ export default function PatientRecordsPage() {
             icd10_code,
             followup_date,
             vitals,
+            profiles!patient_id (
+              id,
+              full_name,
+              date_of_birth,
+              gender,
+              allergies
+            ),
             doctors!doctor_id (
               id,
               title,
@@ -153,8 +160,16 @@ export default function PatientRecordsPage() {
   const handleOpenRxModal = (rec: any) => {
     const doctor = rec.doctors;
     const profile = doctor?.profiles;
+    const patientProf = rec.profiles;
     const clinic = rec.appointments?.queue_sessions?.clinics;
     const docName = profile?.full_name ? profile.full_name : 'Maria Santos, MD';
+
+    let patientAgeNum = 28;
+    if (patientProf?.date_of_birth) {
+      patientAgeNum = Math.floor(
+        (Date.now() - new Date(patientProf.date_of_birth).getTime()) / (365.25 * 24 * 3600 * 1000)
+      );
+    }
 
     const formatted: PharmacistRxProps = {
       rxCode: `CN-RX-${new Date(rec.created_at).getFullYear()}-${rec.id.replace(/-/g, '').slice(0, 5).toUpperCase()}`,
@@ -163,10 +178,10 @@ export default function PatientRecordsPage() {
       prcLicense: doctor?.prc_license || '0129841',
       ptrNumber: doctor?.ptr_number || 'CDO-882194',
       s2License: doctor?.s2_license || undefined,
-      patientName: 'Dianne Pondoc',
-      patientAge: 28,
-      patientGender: 'Female',
-      allergies: ['Penicillin'],
+      patientName: patientProf?.full_name || 'Dianne Pondoc',
+      patientAge: patientAgeNum,
+      patientGender: patientProf?.gender || 'Female',
+      allergies: patientProf?.allergies?.length ? patientProf.allergies : ['None reported'],
       diagnosis: rec.diagnosis || 'Clinical Consultation',
       consultationDate: new Date(rec.created_at).toLocaleDateString('en-PH', {
         month: 'long',

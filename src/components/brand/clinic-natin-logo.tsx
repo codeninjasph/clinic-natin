@@ -41,7 +41,7 @@ export function ClinicNatinLogo({
       style={{ height: `${height}px`, width: `${width}px` }}
     >
       <Image
-        src="/clinic-natin-logo.png"
+        src="/new-clinic-natin-logo.png"
         alt="Clinic Natin Official Logo"
         width={1920}
         height={400}

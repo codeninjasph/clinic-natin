@@ -38,6 +38,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
+import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 
 const NAVIGATION_ITEMS = [
   { href: '/cnadmin', label: 'Operations Cockpit', icon: LayoutDashboard },
@@ -323,20 +324,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex h-16 items-center justify-between px-6">
           {/* Logo & Brand */}
           <div className="flex items-center gap-4">
-            <Link href="/cnadmin" className="flex items-center gap-2.5 group">
-              <div className="h-9 w-9 rounded-xl bg-brand-700 text-white flex items-center justify-center font-bold text-sm shadow-sm group-hover:scale-105 transition-transform">
-                CN
+            <div className="flex items-center gap-3">
+              <ClinicNatinLogo height={32} href="/cnadmin" priority />
+              <div className="hidden sm:block border-l border-slate-200 pl-3">
+                <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-bold">
+                  Admin Cockpit
+                </Badge>
+                <p className="text-[10px] text-slate-400 font-medium">Operations HQ</p>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-base text-slate-900 tracking-tight">Clinic Natin</span>
-                  <Badge variant="secondary" className="bg-emerald-50 text-emerald-800 border-emerald-200 text-[10px] font-bold">
-                    Admin Cockpit
-                  </Badge>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium">Cagayan de Oro & Region X Operations</p>
-              </div>
-            </Link>
+            </div>
           </div>
 
           {/* Real-Time Telemetry Pills */}
