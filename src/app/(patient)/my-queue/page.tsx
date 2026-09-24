@@ -484,6 +484,72 @@ export default function PatientDashboardPage() {
   // Initial Load
   useEffect(() => {
     async function init() {
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const tokenQuery = urlParams?.get('token');
+
+      // ── PRIORITY 1: Walk-In / Token Direct Access (e.g. from SMS Link) ─────
+      if (tokenQuery) {
+        try {
+          const { data: apptData, error: tokenErr } = await supabase
+            .from('appointments')
+            .select(`
+              id, queue_session_id, queue_number, token_code, status, priority_category, estimated_call_time, created_at,
+              patient_id, walk_in_name, walk_in_phone,
+              queue_sessions!queue_session_id (
+                id, status, current_serving_number, session_date, announcement_notice,
+                doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
+                clinics!clinic_id ( hospital_name, room_number, street, barangay, city, province, address )
+              )
+            `)
+            .eq('token_code', tokenQuery.trim())
+            .maybeSingle();
+
+          if (apptData) {
+            const transformed = transformActiveAppt(apptData as unknown as RawActiveAppointment);
+            if (transformed) {
+              setActiveAppointments([transformed]);
+              setLastUpdated(new Date());
+            }
+
+            let loadedProfile: UserProfile | null = null;
+            if (apptData.patient_id) {
+              const { data: profData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', apptData.patient_id)
+                .maybeSingle();
+
+              if (profData) {
+                loadedProfile = profData as UserProfile;
+                await fetchMedicalRecords(profData.id);
+              }
+            }
+
+            if (!loadedProfile) {
+              loadedProfile = {
+                id: apptData.patient_id || 'guest',
+                full_name: apptData.walk_in_name || 'Walk-In Patient',
+                phone_number: apptData.walk_in_phone || null,
+                email: null,
+                avatar_url: null,
+                priority_category: apptData.priority_category || 'NONE',
+                is_onboarding_completed: false,
+              };
+            }
+
+            setProfile(loadedProfile);
+            populateSettingsForm(loadedProfile);
+            setIsLoadingActive(false);
+            setIsLoadingRecords(false);
+            setIsLoadingProfile(false);
+            return;
+          }
+        } catch (tokenLoadErr) {
+          console.error('[my-queue] Failed to load token appointment:', tokenLoadErr);
+        }
+      }
+
+      // ── PRIORITY 2: Authenticated Supabase User ────────────────────────────
       const { data: { user } } = await supabase.auth.getUser();
 
       let profileId: string | null = null;
@@ -507,10 +573,8 @@ export default function PatientDashboardPage() {
         }
       }
 
-      // Check if demo user is active in localStorage or fallback
+      // ── PRIORITY 3: Demo Persona or Fallback (Dianne Pondoc) ────────────────
       if (!profileId && typeof window !== 'undefined') {
-        const demoUserJson = localStorage.getItem('clinic_natin_demo_user');
-        const demoRole = localStorage.getItem('clinic_natin_demo_role');
         const targetId = '971463e5-9348-42c0-b759-5b56f9df9e99'; // Unified Dianne Pondoc patient profile
 
         const { data: demoDbProfile } = await supabase
@@ -556,36 +620,9 @@ export default function PatientDashboardPage() {
           fetchActiveAppointments(profileId),
           fetchMedicalRecords(profileId),
         ]);
-      } else {
-        // Query token parameter e.g. /my-queue?token=CN-A109
-        const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-        const tokenQuery = urlParams?.get('token');
-
-        if (tokenQuery) {
-          const { data: apptData } = await supabase
-            .from('appointments')
-            .select(`
-              id, queue_session_id, queue_number, token_code, status, priority_category, estimated_call_time, created_at,
-              queue_sessions!queue_session_id (
-                id, status, current_serving_number, session_date, announcement_notice,
-                doctors!doctor_id ( title, specialty, profiles!profile_id ( full_name ) ),
-                clinics!clinic_id ( hospital_name, room_number, street, barangay, city, province, address )
-              )
-            `)
-            .eq('token_code', tokenQuery)
-            .maybeSingle();
-
-          if (apptData) {
-            const transformed = transformActiveAppt(apptData as unknown as RawActiveAppointment);
-            if (transformed) {
-              setActiveAppointments([transformed]);
-              setLastUpdated(new Date());
-            }
-          }
-        }
-        setIsLoadingActive(false);
-        setIsLoadingRecords(false);
       }
+      setIsLoadingActive(false);
+      setIsLoadingRecords(false);
       setIsLoadingProfile(false);
     }
     init();
@@ -717,19 +754,27 @@ export default function PatientDashboardPage() {
       })
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments', filter: `patient_id=eq.${profileId}` },
+        { event: '*', schema: 'public', table: 'appointments' },
         (payload) => {
+          const updated = payload.new as { id: string; patient_id?: string; status: string; queue_number: number; token_code: string } | null;
+          if (!updated) return;
+
+          const isOurAppt = activeAppointments.some((a) => a.id === updated.id || a.token_code === updated.token_code) ||
+            (profileId && profileId !== 'guest' && updated.patient_id === profileId);
+
+          if (!isOurAppt) return;
+
           if (payload.eventType === 'INSERT') {
-            fetchActiveAppointments(profileId);
+            if (profileId && profileId !== 'guest') fetchActiveAppointments(profileId);
             setLastUpdated(new Date());
             return;
           }
-          const updated = payload.new as { id: string; status: string; queue_number: number; token_code: string };
+
           const newStatus = updated.status as AppointmentStatus;
           const activeStatuses: AppointmentStatus[] = ['BOOKED', 'WAITING', 'SERVING', 'BUFFERED'];
           if (activeStatuses.includes(newStatus)) {
             setActiveAppointments((prev) =>
-              prev.map((appt) => (appt.id === updated.id ? { ...appt, status: newStatus } : appt))
+              prev.map((appt) => (appt.id === updated.id || appt.token_code === updated.token_code ? { ...appt, status: newStatus } : appt))
             );
             if (newStatus === 'SERVING') {
               hospitalChime.playDingDong();
@@ -748,8 +793,8 @@ export default function PatientDashboardPage() {
               ]);
             }
           } else {
-            setActiveAppointments((prev) => prev.filter((appt) => appt.id !== updated.id));
-            fetchMedicalRecords(profileId);
+            setActiveAppointments((prev) => prev.filter((appt) => appt.id !== updated.id && appt.token_code !== updated.token_code));
+            if (profileId && profileId !== 'guest') fetchMedicalRecords(profileId);
           }
           setLastUpdated(new Date());
         }
@@ -1052,6 +1097,42 @@ export default function PatientDashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* ── Pre-Consultation Health Passport Banner (For Walk-ins / Incomplete Onboarding) ── */}
+        {!profile?.is_onboarding_completed && (
+          <div className="relative overflow-hidden rounded-3xl border-2 border-brand-300 bg-gradient-to-r from-brand-700 via-brand-800 to-teal-800 p-6 text-white shadow-xl">
+            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-[11px] font-black tracking-wide text-brand-100 uppercase">
+                  <HeartPulse className="h-3.5 w-3.5 text-emerald-300 animate-pulse" />
+                  Pre-Consultation Step (Takes 1 Min)
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  Complete Your Digital Health Passport While You Wait
+                </h3>
+                <p className="text-xs sm:text-sm text-brand-100/90 max-w-xl leading-relaxed">
+                  Help Dr. {activeAppointments[0]?.doctor_name ? activeAppointments[0].doctor_name : 'your doctor'} give you the best consultation. Record your drug allergies, medical conditions, and HMO or PhilHealth so your chart is verified before your turn is called.
+                </p>
+              </div>
+              <Button
+                asChild
+                className="shrink-0 inline-flex items-center gap-2.5 px-6 py-4 h-auto rounded-2xl bg-white text-brand-900 hover:bg-brand-50 font-black text-xs sm:text-sm shadow-md transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Link
+                  href={
+                    activeAppointments[0]?.token_code
+                      ? `/onboarding?token=${activeAppointments[0].token_code}`
+                      : '/onboarding'
+                  }
+                >
+                  <FileText className="h-4 w-4 text-brand-700" />
+                  Fill Out Passport Now
+                  <ChevronRight className="h-4 w-4 text-brand-700" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* ── 2-Column Desktop Cockpit Layout (Active Queue Left, EMR/Records Right) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

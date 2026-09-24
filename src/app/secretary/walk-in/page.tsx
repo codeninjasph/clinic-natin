@@ -65,6 +65,7 @@ export default function WalkInRegistrationPage() {
     queueNumber: number;
     patientName: string;
     appointmentId: string;
+    smsSentTo?: string | null;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -308,6 +309,23 @@ export default function WalkInRegistrationPage() {
 
       if (apptErr) throw apptErr;
 
+      // Dispatch welcome & live queue tracker SMS to walk-in patient
+      if (phone.trim()) {
+        fetch('/api/secretary/send-walkin-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appointmentId: newAppt.id,
+            phoneNumber: phone.trim(),
+            patientName: fullName.trim(),
+            tokenCode: previewToken,
+            queueNumber: nextEvenNumber,
+            doctorName: doctor?.name,
+            clinicName: clinic?.hospital_name,
+          }),
+        }).catch((e) => console.warn('[WalkInPage] SMS dispatch error:', e));
+      }
+
       await refreshData();
 
       setSuccessNotice({
@@ -315,6 +333,7 @@ export default function WalkInRegistrationPage() {
         queueNumber: nextEvenNumber,
         patientName: fullName.trim(),
         appointmentId: newAppt.id,
+        smsSentTo: phone.trim() || null,
       });
 
       if (openVitalsAfter) {
@@ -387,6 +406,14 @@ export default function WalkInRegistrationPage() {
               <p className="text-xs text-slate-500">
                 Patient is now listed as Waiting in Lobby and ready for vitals triage.
               </p>
+              {successNotice.smsSentTo && (
+                <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-xl bg-emerald-100/80 border border-emerald-300 text-xs font-semibold text-emerald-900 w-fit">
+                  <Phone className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
+                  <span>
+                    Live queue tracker & Health Passport invite sent via SMS to <strong>{successNotice.smsSentTo}</strong>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

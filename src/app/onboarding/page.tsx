@@ -123,6 +123,8 @@ export default function PatientOnboardingPage() {
   const [userName, setUserName] = useState('Juan Dela Cruz');
   const [userEmail, setUserEmail] = useState('');
   const [patientIdCode, setPatientIdCode] = useState('CN-P8821');
+  const [tokenParam, setTokenParam] = useState<string | null>(null);
+  const [linkedPatientId, setLinkedPatientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -130,6 +132,72 @@ export default function PatientOnboardingPage() {
   // Load existing session data and stored health passport
   useEffect(() => {
     async function loadUser() {
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const token = urlParams?.get('token');
+
+      // ── Priority 1: If arriving from SMS with Walk-In Token ──
+      if (token) {
+        setTokenParam(token);
+        const { data: appt } = await supabase
+          .from('appointments')
+          .select(`
+            id, patient_id, walk_in_name, walk_in_phone, priority_category,
+            profiles!patient_id (
+              id, full_name, phone_number, email, date_of_birth, gender, priority_category,
+              priority_id_number, is_onboarding_completed, blood_type, weight_kg,
+              height_cm, allergies, comorbidities, maintenance_meds, hmo_provider,
+              hmo_card_number, philhealth_number, emergency_contact_name,
+              emergency_contact_phone, emergency_contact_relationship
+            )
+          `)
+          .eq('token_code', token.trim())
+          .maybeSingle();
+
+        if (appt) {
+          if (appt.patient_id) {
+            setLinkedPatientId(appt.patient_id);
+            const pidCode = `CN-P${appt.patient_id.replace(/-/g, '').slice(0, 5).toUpperCase()}`;
+            setPatientIdCode(pidCode);
+          }
+          const prof = appt.profiles as any;
+          if (prof) {
+            if (prof.full_name) setUserName(prof.full_name);
+            if (prof.email) setUserEmail(prof.email);
+            if (prof.phone_number) setEmergencyPhone(prof.phone_number);
+            if (prof.date_of_birth) setDateOfBirth(prof.date_of_birth);
+            if (prof.gender) setGender(prof.gender);
+            if (prof.blood_type) setBloodType(prof.blood_type);
+            if (prof.weight_kg) setWeightKg(String(prof.weight_kg));
+            if (prof.height_cm) {
+              setHeightCm(String(prof.height_cm));
+              const totalInches = Math.round(prof.height_cm / 2.54);
+              setHeightFeet(String(Math.floor(totalInches / 12)));
+              setHeightInches(String(totalInches % 12));
+            }
+            if (prof.allergies?.length) setSelectedAllergies(prof.allergies);
+            if (prof.comorbidities?.length) setSelectedComorbidities(prof.comorbidities);
+            if (prof.maintenance_meds?.length) setMaintenanceMeds(prof.maintenance_meds);
+            if (prof.priority_category) setPriorityCategory(prof.priority_category);
+            if (prof.priority_id_number) setPriorityIdNumber(prof.priority_id_number);
+            if (prof.hmo_provider) setHmoProvider(prof.hmo_provider);
+            if (prof.hmo_card_number) setHmoCardNumber(prof.hmo_card_number);
+            if (prof.philhealth_number) setPhilhealthNumber(prof.philhealth_number);
+            if (prof.emergency_contact_name) setEmergencyName(prof.emergency_contact_name);
+            if (prof.emergency_contact_relationship) setEmergencyRelation(prof.emergency_contact_relationship);
+
+            if (prof.is_onboarding_completed && !urlParams?.get('edit')) {
+              setIsCompleted(true);
+            }
+          } else {
+            if (appt.walk_in_name) setUserName(appt.walk_in_name);
+            if (appt.walk_in_phone) setEmergencyPhone(appt.walk_in_phone);
+            if (appt.priority_category) setPriorityCategory(appt.priority_category);
+          }
+          return;
+        }
+      }
+
+      // ── Priority 2: Standard Supabase Auth ──
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserEmail(user.email || '');
@@ -372,7 +440,12 @@ export default function PatientOnboardingPage() {
         updated_at: new Date().toISOString(),
       };
 
-      if (user) {
+      if (linkedPatientId) {
+        await supabase
+          .from('profiles')
+          .update(profilePayload)
+          .eq('id', linkedPatientId);
+      } else if (user) {
         await supabase
           .from('profiles')
           .update(profilePayload)
@@ -439,7 +512,7 @@ export default function PatientOnboardingPage() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => router.push('/my-queue')}
+              onClick={() => router.push(tokenParam ? `/my-queue?token=${tokenParam}` : '/my-queue')}
               className="text-xs text-slate-500 hover:text-slate-800"
             >
               Skip for now &rarr;
@@ -452,6 +525,30 @@ export default function PatientOnboardingPage() {
       <main className="mx-auto max-w-3xl px-4 pt-8 sm:px-6">
         {!isCompleted ? (
           <div>
+            {tokenParam && (
+              <div className="mb-6 rounded-2xl border border-brand-200 bg-brand-50/90 p-4 flex items-center justify-between gap-4 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-700 text-white font-mono text-xs font-black shrink-0">
+                    <Ticket className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-brand-900">
+                      Linking with Walk-in Token: <span className="font-mono text-brand-700">{tokenParam}</span>
+                    </p>
+                    <p className="text-[11px] text-brand-700/80">
+                      Your answers will be securely attached to your consultation chart for your doctor.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href={`/my-queue?token=${tokenParam}`}
+                  className="text-xs font-bold text-brand-700 hover:text-brand-900 whitespace-nowrap"
+                >
+                  View Queue &rarr;
+                </Link>
+              </div>
+            )}
+
             {/* Stepper Progress Bar */}
             <div className="mb-8">
               <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
@@ -1223,20 +1320,32 @@ export default function PatientOnboardingPage() {
 
             {/* Next Steps Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 max-w-md mx-auto">
-              <Link
-                href="/#doctor-directory"
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-700 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-brand-700/90 transition active:scale-95"
-              >
-                <Search className="h-4 w-4" />
-                Find Doctors in CDO
-              </Link>
-              <Link
-                href="/my-queue"
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition active:scale-95"
-              >
-                <Ticket className="h-4 w-4 text-brand-700" />
-                Go to My Queue Tracker
-              </Link>
+              {tokenParam ? (
+                <Link
+                  href={`/my-queue?token=${tokenParam}`}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-700 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-brand-700/90 transition active:scale-95"
+                >
+                  <Ticket className="h-4 w-4" />
+                  Return to Live Queue Ticket ({tokenParam})
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href="/#doctor-directory"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-brand-700 px-6 py-3.5 text-sm font-bold text-white shadow-md hover:bg-brand-700/90 transition active:scale-95"
+                  >
+                    <Search className="h-4 w-4" />
+                    Find Doctors in CDO
+                  </Link>
+                  <Link
+                    href="/my-queue"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition active:scale-95"
+                  >
+                    <Ticket className="h-4 w-4 text-brand-700" />
+                    Go to My Queue Tracker
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
