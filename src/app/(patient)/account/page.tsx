@@ -147,7 +147,7 @@ export default function PatientAccountPage() {
           const { data } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14')
+            .eq('id', '971463e5-9348-42c0-b759-5b56f9df9e99')
             .maybeSingle();
 
           if (data) {

@@ -138,6 +138,8 @@ interface MedicalRecord {
   doctor_title: string;
   doctor_specialty: string;
   consultation_date: string | null;
+  hospital_name?: string | null;
+  room_number?: string | null;
   prescriptions: Prescription[];
 }
 
@@ -196,7 +198,16 @@ type RawMedicalRecord = {
     specialty: string;
     profiles: { full_name: string } | null;
   } | null;
-  appointments: { created_at: string } | null;
+  appointments: {
+    created_at: string;
+    queue_sessions?: {
+      clinics?: {
+        name: string;
+        hospital_name: string;
+        room_number: string;
+      } | null;
+    } | null;
+  } | null;
   prescriptions_lab_requests: {
     id: string;
     item_type: string;
@@ -387,6 +398,8 @@ export default function PatientDashboardPage() {
       doctor_name: row.doctors?.profiles?.full_name ?? 'Attending Doctor',
       doctor_specialty: row.doctors?.specialty ?? 'Internal Medicine',
       consultation_date: row.appointments?.created_at ?? row.created_at,
+      hospital_name: row.appointments?.queue_sessions?.clinics?.hospital_name ?? 'Maria Reyna Xavier University Hospital',
+      room_number: row.appointments?.queue_sessions?.clinics?.room_number ?? '304',
       prescriptions: (row.prescriptions_lab_requests ?? []).map((rx) => ({
         id: rx.id,
         item_type: rx.item_type as ItemType,
@@ -413,7 +426,12 @@ export default function PatientDashboardPage() {
             title, specialty,
             profiles!profile_id ( full_name )
           ),
-          appointments!appointment_id ( created_at ),
+          appointments!appointment_id (
+            created_at,
+            queue_sessions (
+              clinics ( name, hospital_name, room_number )
+            )
+          ),
           prescriptions_lab_requests (
             id, item_type, details, instructions, generic_name, brand_name, dosage, frequency, duration, is_digital_copy_sent
           )
@@ -446,7 +464,7 @@ export default function PatientDashboardPage() {
           )
         `)
         .eq('patient_id', profileId)
-        .in('status', ['BOOKED', 'WAITING', 'SERVING'])
+        .in('status', ['BOOKED', 'WAITING', 'SERVING', 'BUFFERED'])
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -489,48 +507,47 @@ export default function PatientDashboardPage() {
         }
       }
 
-      // Check if demo user is active in localStorage
+      // Check if demo user is active in localStorage or fallback
       if (!profileId && typeof window !== 'undefined') {
         const demoUserJson = localStorage.getItem('clinic_natin_demo_user');
         const demoRole = localStorage.getItem('clinic_natin_demo_role');
-        if (demoUserJson || demoRole === 'PATIENT') {
-          // Fetch full Andres Bonifacio profile from database
-          const { data: demoDbProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14')
-            .maybeSingle();
+        const targetId = '971463e5-9348-42c0-b759-5b56f9df9e99'; // Unified Dianne Pondoc patient profile
 
-          if (demoDbProfile) {
-            const p = demoDbProfile as UserProfile;
-            setProfile(p);
-            profileId = p.id;
-            populateSettingsForm(p);
-          } else {
-            const fallback: UserProfile = {
-              id: 'fbd0825e-9298-4eb9-b3b7-eca4ec515f14',
-              full_name: 'Andres Bonifacio',
-              phone_number: '+639171110001',
-              email: 'patient@clinicnatin.ph',
-              avatar_url: null,
-              blood_type: 'O+',
-              weight_kg: 68.5,
-              height_cm: 170.0,
-              allergies: ['Penicillin', 'Sulfa Drugs'],
-              comorbidities: ['Hypertension'],
-              maintenance_meds: ['Amlodipine 5mg'],
-              priority_category: 'SENIOR',
-              priority_id_number: 'OSCA-CDO-2023-8821',
-              hmo_provider: 'PhilHealth Konsulta',
-              emergency_contact_name: 'Gregoria de Jesus',
-              emergency_contact_relationship: 'Spouse',
-              emergency_contact_phone: '+639178889999',
-              is_onboarding_completed: true,
-            };
-            setProfile(fallback);
-            profileId = fallback.id;
-            populateSettingsForm(fallback);
-          }
+        const { data: demoDbProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', targetId)
+          .maybeSingle();
+
+        if (demoDbProfile) {
+          const p = demoDbProfile as UserProfile;
+          setProfile(p);
+          profileId = p.id;
+          populateSettingsForm(p);
+        } else {
+          const fallback: UserProfile = {
+            id: targetId,
+            full_name: 'Dianne Pondoc',
+            phone_number: '+639171234567',
+            email: 'patient@clinicnatin.ph',
+            avatar_url: null,
+            blood_type: 'A+',
+            weight_kg: 51.0,
+            height_cm: 155.0,
+            allergies: ['Penicillin'],
+            comorbidities: ['Asthma'],
+            maintenance_meds: ['Salbutamol Inhaler'],
+            priority_category: 'NONE',
+            priority_id_number: null,
+            hmo_provider: 'Maxicare',
+            emergency_contact_name: 'Roberto Pondoc',
+            emergency_contact_relationship: 'Spouse',
+            emergency_contact_phone: '+639179876543',
+            is_onboarding_completed: true,
+          };
+          setProfile(fallback);
+          profileId = fallback.id;
+          populateSettingsForm(fallback);
         }
       }
 
@@ -700,8 +717,13 @@ export default function PatientDashboardPage() {
       })
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'appointments', filter: `patient_id=eq.${profileId}` },
+        { event: '*', schema: 'public', table: 'appointments', filter: `patient_id=eq.${profileId}` },
         (payload) => {
+          if (payload.eventType === 'INSERT') {
+            fetchActiveAppointments(profileId);
+            setLastUpdated(new Date());
+            return;
+          }
           const updated = payload.new as { id: string; status: string; queue_number: number; token_code: string };
           const newStatus = updated.status as AppointmentStatus;
           const activeStatuses: AppointmentStatus[] = ['BOOKED', 'WAITING', 'SERVING', 'BUFFERED'];
@@ -1634,7 +1656,7 @@ export default function PatientDashboardPage() {
                 </h3>
                 <p className="text-xs font-semibold text-brand-700">{selectedRxRecord.doctor_specialty}</p>
                 <p className="text-[11px] text-slate-500">
-                  Room 304, Medical Arts Building &bull; Maria Reyna Xavier University Hospital
+                  {selectedRxRecord.room_number ? (selectedRxRecord.room_number.startsWith('Room') || selectedRxRecord.room_number.startsWith('Suite') ? selectedRxRecord.room_number : `Room ${selectedRxRecord.room_number}`) : 'Consultation Suite'} &bull; {selectedRxRecord.hospital_name || 'Maria Reyna Xavier University Hospital'}
                 </p>
                 <p className="text-[10px] text-slate-400">
                   PRC Lic. No: 0128492 &bull; PTR: 8392104 &bull; S2: B-938210
@@ -1851,6 +1873,11 @@ function ActiveTicketCard({ appt }: { appt: ActiveAppointment }) {
                       )}
                     </p>
                     <Progress value={progressPercent} className="h-2 bg-slate-200" />
+                  </div>
+                ) : appt.queue_session.status === 'PAUSED' ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 font-medium flex items-center justify-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Clinic session is temporarily paused / under maintenance. Your reserved turn (#{mine}) is safely preserved.</span>
                   </div>
                 ) : (
                   <p className="text-xs text-slate-400 font-medium">Clinic queue session is pending start.</p>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Compass,
   Ticket,
@@ -17,12 +17,14 @@ import {
   Search,
   Bell,
   CheckCircle2,
+  LogOut,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
 
 export function PatientNavBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [activeQueueCount, setActiveQueueCount] = useState<number>(0);
   const [servingNumber, setServingNumber] = useState<number | null>(null);
   const [myTokenCode, setMyTokenCode] = useState<string | null>(null);
@@ -31,14 +33,50 @@ export function PatientNavBar() {
   const [activeDependent, setActiveDependent] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
+  const handleSignOut = async () => {
+    setDropdownOpen(false);
+    const supabase = createClient();
+    await supabase.auth.signOut().catch(() => {});
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('clinic_natin_demo_user');
+      localStorage.removeItem('clinic_natin_demo_role');
+    }
+    router.push('/login');
+  };
+
   useEffect(() => {
     async function loadActiveState() {
       try {
         const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        let profileId = '971463e5-9348-42c0-b759-5b56f9df9e99';
+
+        if (user) {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .eq('auth_id', user.id)
+            .maybeSingle();
+          if (p) {
+            profileId = p.id;
+            setPatientName(p.full_name);
+          }
+        } else {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', profileId)
+            .maybeSingle();
+          if (p?.full_name) {
+            setPatientName(p.full_name);
+          }
+        }
+
         const { data: appts } = await supabase
           .from('appointments')
           .select('id, queue_number, token_code, status, queue_sessions(current_serving_number)')
-          .in('status', ['BOOKED', 'WAITING', 'SERVING'])
+          .eq('patient_id', profileId)
+          .in('status', ['BOOKED', 'WAITING', 'SERVING', 'BUFFERED'])
           .order('created_at', { ascending: false })
           .limit(1);
 
@@ -50,10 +88,14 @@ export function PatientNavBar() {
           if (qs?.current_serving_number) {
             setServingNumber(qs.current_serving_number);
           }
+        } else {
+          setActiveQueueCount(0);
+          setMyTokenCode(null);
+          setServingNumber(null);
         }
 
         // Load dependents
-        const res = await fetch('/api/patient/dependents?profileId=971463e5-9348-42c0-b759-5b56f9df9e99');
+        const res = await fetch(`/api/patient/dependents?profileId=${profileId}`);
         if (res.ok) {
           const json = await res.json();
           if (json.dependents) {
@@ -252,6 +294,15 @@ export function PatientNavBar() {
                       <User className="h-3.5 w-3.5 text-slate-400" />
                       Health Passport & Settings
                     </Link>
+                    <button
+                      type="button"
+                      id="patient-nav-logout-btn"
+                      onClick={handleSignOut}
+                      className="flex w-full items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition"
+                    >
+                      <LogOut className="h-3.5 w-3.5 text-red-500" />
+                      Sign Out
+                    </button>
                   </div>
                 </div>
               )}
