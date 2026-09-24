@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -16,6 +16,11 @@ import {
   Stethoscope,
   ArrowLeft,
   IdCard,
+  UserCheck,
+  AlertTriangle,
+  Search,
+  X,
+  Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useSecretary, type PriorityCategory } from '../secretary-context';
@@ -38,6 +43,22 @@ export default function WalkInRegistrationPage() {
   const [priority, setPriority] = useState<PriorityCategory>('NONE');
   const [priorityIdNumber, setPriorityIdNumber] = useState('');
 
+  // Existing Account Detection (MPI Matching)
+  const [matchedProfile, setMatchedProfile] = useState<{
+    id: string;
+    full_name: string;
+    phone_number: string | null;
+    date_of_birth: string | null;
+    gender: string | null;
+    priority_category: string;
+    allergies?: string[];
+  } | null>(null);
+  const [hasLinkedExisting, setHasLinkedExisting] = useState(false);
+  const [originalPhoneNumber, setOriginalPhoneNumber] = useState<string | null>(null);
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [dismissedProfileId, setDismissedProfileId] = useState<string | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<{
     token: string;
@@ -56,6 +77,71 @@ export default function WalkInRegistrationPage() {
     .map((a) => a.queue_number);
   const nextEvenNumber = evenNumbers.length > 0 ? Math.max(...evenNumbers) + 2 : 2;
   const previewToken = `CN-WK${String(nextEvenNumber).padStart(3, '0')}`;
+
+  // ── Debounced Master Patient Index (MPI) Search ────────────────────────────
+  useEffect(() => {
+    if (hasLinkedExisting) return;
+
+    const trimmedName = fullName.trim();
+    const trimmedPhone = phone.trim();
+
+    if (trimmedName.length < 2 && trimmedPhone.length < 4) {
+      setSearchSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        let q = supabase
+          .from('profiles')
+          .select('id, full_name, phone_number, date_of_birth, gender, priority_category, allergies')
+          .eq('role', 'PATIENT')
+          .order('full_name', { ascending: true })
+          .limit(4);
+
+        if (trimmedName.length >= 2 && trimmedPhone.length >= 4) {
+          q = q.or(`full_name.ilike.%${trimmedName}%,phone_number.ilike.%${trimmedPhone}%`);
+        } else if (trimmedName.length >= 2) {
+          q = q.ilike('full_name', `%${trimmedName}%`);
+        } else if (trimmedPhone.length >= 4) {
+          q = q.ilike('phone_number', `%${trimmedPhone}%`);
+        }
+
+        const { data } = await q;
+        if (data) {
+          setSearchSuggestions(data.filter((p) => p.id !== dismissedProfileId));
+        }
+      } catch (err) {
+        console.error('Failed to search existing patients:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [fullName, phone, hasLinkedExisting, dismissedProfileId, supabase]);
+
+  const handleLinkProfile = (prof: any) => {
+    setMatchedProfile(prof);
+    setHasLinkedExisting(true);
+    setSearchSuggestions([]);
+    setFullName(prof.full_name);
+    setPhone(prof.phone_number || '');
+    setOriginalPhoneNumber(prof.phone_number || null);
+    if (prof.date_of_birth) setDateOfBirth(prof.date_of_birth);
+    if (prof.gender) setGender(prof.gender);
+    if (prof.priority_category) setPriority(prof.priority_category as PriorityCategory);
+  };
+
+  const handleUnlinkProfile = () => {
+    if (matchedProfile) {
+      setDismissedProfileId(matchedProfile.id);
+    }
+    setMatchedProfile(null);
+    setHasLinkedExisting(false);
+    setOriginalPhoneNumber(null);
+  };
 
   const handleSubmit = async (openVitalsAfter = false) => {
     if (!fullName.trim()) {
@@ -137,29 +223,70 @@ export default function WalkInRegistrationPage() {
         }
       }
 
-      // 1. Create or find profile
+      // ── 1. Create, Link, or Update Profile (Master Patient Index) ───────────
       let patientId: string | null = null;
-      if (phone.trim() || fullName.trim()) {
-        const { data: prof, error: profErr } = await supabase
+
+      if (hasLinkedExisting && matchedProfile) {
+        patientId = matchedProfile.id;
+        // Update contact & demographics on existing profile
+        await supabase
           .from('profiles')
-          .insert({
+          .update({
             full_name: fullName.trim(),
             phone_number: phone.trim() || null,
             date_of_birth: dateOfBirth || null,
             gender: gender,
             priority_category: priority,
             priority_id_number: priorityIdNumber.trim() || null,
-            role: 'PATIENT',
           })
-          .select('id')
-          .single();
+          .eq('id', matchedProfile.id);
+      } else {
+        // Check if an existing profile matches this exact phone number or name
+        let existingId: string | null = null;
+        if (phone.trim()) {
+          const { data: byPhone } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('phone_number', phone.trim())
+            .maybeSingle();
+          if (byPhone) existingId = byPhone.id;
+        }
 
-        if (!profErr && prof) {
-          patientId = prof.id;
+        if (existingId) {
+          patientId = existingId;
+          await supabase
+            .from('profiles')
+            .update({
+              full_name: fullName.trim(),
+              date_of_birth: dateOfBirth || null,
+              gender: gender,
+              priority_category: priority,
+              priority_id_number: priorityIdNumber.trim() || null,
+            })
+            .eq('id', existingId);
+        } else if (phone.trim() || fullName.trim()) {
+          // Brand new patient profile
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles')
+            .insert({
+              full_name: fullName.trim(),
+              phone_number: phone.trim() || null,
+              date_of_birth: dateOfBirth || null,
+              gender: gender,
+              priority_category: priority,
+              priority_id_number: priorityIdNumber.trim() || null,
+              role: 'PATIENT',
+            })
+            .select('id')
+            .single();
+
+          if (!profErr && prof) {
+            patientId = prof.id;
+          }
         }
       }
 
-      // 2. Insert into appointments
+      // ── 2. Insert into appointments ─────────────────────────────────────────
       const { data: newAppt, error: apptErr } = await supabase
         .from('appointments')
         .insert({
@@ -201,6 +328,10 @@ export default function WalkInRegistrationPage() {
         setDateOfBirth('');
         setPriority('NONE');
         setPriorityIdNumber('');
+        setMatchedProfile(null);
+        setHasLinkedExisting(false);
+        setOriginalPhoneNumber(null);
+        setSearchSuggestions([]);
       }
     } catch (err: unknown) {
       console.error('[WalkInPage] Registration failed:', err);
@@ -298,24 +429,152 @@ export default function WalkInRegistrationPage() {
 
             <CardContent className="p-4 sm:p-6 space-y-4">
               {/* 1. Full Name */}
-              <div>
-                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 mb-1.5">
-                  <User className="h-4 w-4 text-brand-700" />
-                  Full Patient Name *
+              <div className="space-y-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <User className="h-4 w-4 text-brand-700" />
+                    Full Patient Name *
+                  </span>
+                  {isSearching && (
+                    <span className="text-[11px] text-brand-600 font-semibold flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Checking records...
+                    </span>
+                  )}
                 </label>
                 <Input
                   type="text"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Juan Carlos dela Cruz"
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (hasLinkedExisting) {
+                      setHasLinkedExisting(false);
+                      setMatchedProfile(null);
+                      setOriginalPhoneNumber(null);
+                    }
+                  }}
+                  placeholder="e.g. Juan Carlos dela Cruz or Bongbong Marcos"
                   className="h-12 text-sm sm:text-base font-semibold border-slate-300 focus:border-brand-700 rounded-2xl bg-white"
                   autoFocus
                 />
+
+                {/* ── Linked Existing Account Confirmation Banner ── */}
+                {hasLinkedExisting && matchedProfile && (
+                  <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/90 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-start sm:items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                        <UserCheck className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-emerald-950">
+                            Linked to Existing Patient Account
+                          </span>
+                          <Badge className="bg-emerald-700 text-white text-[9px] py-0 font-bold">
+                            Passport Active
+                          </Badge>
+                          {matchedProfile.date_of_birth && (
+                            <span className="text-[11px] text-emerald-800 font-medium">
+                              DOB: {matchedProfile.date_of_birth}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-emerald-800 mt-0.5">
+                          Previous consultations, diagnoses, and prescriptions are attached to{' '}
+                          <strong>{matchedProfile.full_name}</strong>.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUnlinkProfile}
+                      className="h-8 text-xs font-semibold text-slate-600 hover:text-red-700 border-emerald-300 bg-white hover:bg-red-50 shrink-0 self-end sm:self-center"
+                    >
+                      Different Person (Unlink)
+                    </Button>
+                  </div>
+                )}
+
+                {/* ── Existing Account Suggestions (MPI Match) ── */}
+                {!hasLinkedExisting && searchSuggestions.length > 0 && (
+                  <div className="rounded-2xl border-2 border-brand-200 bg-brand-50/70 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center justify-between text-xs font-extrabold text-brand-950">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-brand-700" />
+                        Existing Clinic Natin Account Detected ({searchSuggestions.length})
+                      </span>
+                      <span className="text-[10px] text-brand-700 font-semibold">
+                        Avoids duplicate charts
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {searchSuggestions.map((prof) => {
+                        const age = prof.date_of_birth
+                          ? Math.floor(
+                              (Date.now() - new Date(prof.date_of_birth).getTime()) /
+                                (365.25 * 24 * 3600 * 1000)
+                            )
+                          : null;
+
+                        return (
+                          <div
+                            key={prof.id}
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-white border border-brand-100 rounded-xl shadow-2xs hover:border-brand-300 transition-colors"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">
+                                {prof.full_name}
+                              </p>
+                              <p className="text-[11px] text-slate-500 font-medium">
+                                {age !== null ? `${age} yrs • ` : ''}
+                                {prof.gender ? `${prof.gender} • ` : ''}
+                                Phone:{' '}
+                                <strong className="font-mono text-slate-700">
+                                  {prof.phone_number || 'None on file'}
+                                </strong>
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => handleLinkProfile(prof)}
+                                className="h-8 text-xs font-bold bg-brand-700 hover:bg-brand-800 text-white rounded-lg gap-1 shadow-2xs"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Link &amp; Pre-fill
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setDismissedProfileId(prof.id);
+                                  setSearchSuggestions((prev) =>
+                                    prev.filter((p) => p.id !== prof.id)
+                                  );
+                                }}
+                                className="h-8 text-xs text-slate-400 hover:text-slate-600 px-2"
+                                title="Not this patient"
+                              >
+                                Not them
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 2. Mobile Phone Number */}
-              <div>
-                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5 mb-1.5">
+              <div className="space-y-1.5">
+                <label className="text-xs sm:text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Phone className="h-4 w-4 text-brand-700" />
                   Philippine Mobile Number (09XXXXXXXXX)
                 </label>
@@ -326,7 +585,33 @@ export default function WalkInRegistrationPage() {
                   placeholder="09171234567"
                   className="h-12 text-sm sm:text-base font-bold font-mono border-slate-300 focus:border-brand-700 rounded-2xl bg-white"
                 />
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">
+
+                {/* ── Changed Mobile Number Detection Alert ── */}
+                {hasLinkedExisting &&
+                  originalPhoneNumber &&
+                  phone.trim() &&
+                  phone.trim() !== originalPhoneNumber && (
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-3 text-xs text-amber-950 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">New Mobile Number Detected</p>
+                        <p className="text-[11px] text-amber-900/90 mt-0.5 leading-relaxed">
+                          Patient&apos;s mobile number will be updated from{' '}
+                          <strong className="font-mono bg-white px-1 py-0.5 rounded border border-amber-200">
+                            {originalPhoneNumber}
+                          </strong>{' '}
+                          to{' '}
+                          <strong className="font-mono bg-white px-1 py-0.5 rounded border border-amber-200">
+                            {phone.trim()}
+                          </strong>
+                          . All past consultations, lab results, and prescriptions remain 100%
+                          preserved under their account.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                <p className="text-[11px] text-slate-500 font-medium">
                   Patient receives an automated SMS 2 turns ahead so they can wait comfortably in the lounge.
                 </p>
               </div>
