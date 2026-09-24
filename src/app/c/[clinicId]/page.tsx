@@ -47,6 +47,7 @@ export default function ClinicQRCheckInPage() {
 
   const [clinic, setClinic] = React.useState<CDOClinic>(defaultClinic);
   const [isLoadingClinic, setIsLoadingClinic] = React.useState(false);
+  const [isMaintenance, setIsMaintenance] = React.useState(false);
   const [schedules, setSchedules] = React.useState<any[]>([]);
   const [alternateClinicToday, setAlternateClinicToday] = React.useState<any | null>(null);
 
@@ -93,6 +94,7 @@ export default function ClinicQRCheckInPage() {
           const json = await res.json();
           const row = json.clinic || json.data;
           if (row && isMounted) {
+            setIsMaintenance(row.status === 'MAINTENANCE');
             const docSchedules = row.doctor_clinic_schedules || [];
             setSchedules(docSchedules);
 
@@ -288,7 +290,12 @@ export default function ClinicQRCheckInPage() {
             </div>
           </div>
 
-          {session.state === 'IN_SESSION' ? (
+          {isMaintenance ? (
+            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-900 border-amber-300 font-bold flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Room Under Maintenance
+            </Badge>
+          ) : session.state === 'IN_SESSION' ? (
             <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200 font-bold flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
               Live Clinic Queue
@@ -458,6 +465,25 @@ export default function ClinicQRCheckInPage() {
           </Alert>
         )}
 
+        {isMaintenance && (
+          <Alert className="bg-amber-50 border-amber-300 text-amber-950 p-4">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <AlertTitle className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                Consultation Room Under Maintenance
+              </AlertTitle>
+              <AlertDescription className="text-xs mt-1 space-y-1 text-amber-800">
+                <p>
+                  <strong>{clinic.room}</strong> ({clinic.name}) is temporarily paused for maintenance, cleaning, or doctor rotation. Patient check-in and walk-in queue tokens are currently unavailable.
+                </p>
+                <p className="text-[11px] text-amber-700">
+                  Please inquire with the hospital reception desk or the floor secretary for schedule updates.
+                </p>
+              </AlertDescription>
+            </div>
+          </Alert>
+        )}
+
         {/* ── STATE 1: MENU SELECTION ── */}
         {mode === 'MENU' && (
           <div className="space-y-3">
@@ -468,7 +494,9 @@ export default function ClinicQRCheckInPage() {
             {/* Option A: Online Booking Arrival (Guarded) */}
             <button
               type="button"
+              disabled={isMaintenance}
               onClick={() => {
+                if (isMaintenance) return;
                 if (session.state === 'CLOSED_TODAY') {
                   setCheckinError(
                     `Arrival check-in is unavailable today. ${clinic.activeDoctor} does not consult in this room on ${manilaNow.dayName}s.`
@@ -483,14 +511,18 @@ export default function ClinicQRCheckInPage() {
                 setMode('ONLINE_CHECKIN');
               }}
               className={`w-full text-left rounded-2xl border p-4 transition ${
-                session.state === 'CLOSED_TODAY'
+                isMaintenance
+                  ? 'border-slate-200 bg-slate-100/80 cursor-not-allowed opacity-75'
+                  : session.state === 'CLOSED_TODAY'
                   ? 'border-slate-200 bg-slate-50 opacity-80'
                   : 'border-brand-200 bg-white shadow-xs hover:border-brand-700 hover:shadow-md active:scale-[0.99] group'
               }`}
             >
               <div className="flex items-start gap-3.5">
                 <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 border transition ${
-                  session.state === 'CLOSED_TODAY'
+                  isMaintenance
+                    ? 'bg-slate-200 text-slate-400 border-slate-300'
+                    : session.state === 'CLOSED_TODAY'
                     ? 'bg-slate-100 text-slate-400 border-slate-200'
                     : 'bg-brand-50 text-brand-700 border-brand-200 group-hover:bg-brand-700 group-hover:text-white'
                 }`}>
@@ -498,10 +530,14 @@ export default function ClinicQRCheckInPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-bold text-slate-900 group-hover:text-brand-700 transition">
+                    <p className={`text-sm font-bold ${isMaintenance ? 'text-slate-500' : 'text-slate-900 group-hover:text-brand-700'} transition`}>
                       I have an Online Booking
                     </p>
-                    {session.state === 'CLOSED_TODAY' ? (
+                    {isMaintenance ? (
+                      <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold">
+                        Under Maintenance
+                      </Badge>
+                    ) : session.state === 'CLOSED_TODAY' ? (
                       <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-800 border-amber-300 font-bold">
                         Closed Today
                       </Badge>
@@ -514,7 +550,9 @@ export default function ClinicQRCheckInPage() {
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {session.state === 'CLOSED_TODAY'
+                    {isMaintenance
+                      ? 'Self check-in is paused while this consultation suite is undergoing maintenance.'
+                      : session.state === 'CLOSED_TODAY'
                       ? `Arrival check-in is unavailable because ${clinic.activeDoctor} does not hold consultations here on ${manilaNow.dayName}s.`
                       : session.state === 'AFTER_SESSION'
                       ? `Consultations ended at ${session.endTimeDisplay}. Check with secretary desk.`
@@ -524,13 +562,13 @@ export default function ClinicQRCheckInPage() {
               </div>
             </button>
 
-            {/* Option B: Walk-In Registration (Strictly Guarded to IN_SESSION) */}
+            {/* Option B: Walk-In Registration (Strictly Guarded to IN_SESSION & Not in Maintenance) */}
             <button
               type="button"
-              disabled={session.state !== 'IN_SESSION'}
-              onClick={() => session.state === 'IN_SESSION' && setMode('WALKIN_REGISTER')}
+              disabled={isMaintenance || session.state !== 'IN_SESSION'}
+              onClick={() => !isMaintenance && session.state === 'IN_SESSION' && setMode('WALKIN_REGISTER')}
               className={`w-full text-left rounded-2xl border p-4 transition ${
-                session.state === 'IN_SESSION'
+                !isMaintenance && session.state === 'IN_SESSION'
                   ? 'border-blue-200 bg-white shadow-xs hover:border-blue-600 hover:shadow-md active:scale-[0.99] group'
                   : 'border-slate-200 bg-slate-100/80 cursor-not-allowed opacity-75'
               }`}
@@ -538,7 +576,7 @@ export default function ClinicQRCheckInPage() {
               <div className="flex items-start gap-3.5">
                 <div
                   className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 border transition ${
-                    session.state === 'IN_SESSION'
+                    !isMaintenance && session.state === 'IN_SESSION'
                       ? 'bg-blue-50 text-blue-700 border-blue-200 group-hover:bg-blue-600 group-hover:text-white'
                       : 'bg-slate-200 text-slate-400 border-slate-300'
                   }`}

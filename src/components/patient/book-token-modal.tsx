@@ -25,6 +25,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  Wrench,
   QrCode,
   ArrowRight,
   ArrowLeft,
@@ -46,6 +48,7 @@ export interface BookDoctorProps {
     hospital_name: string;
     room_number: string;
     address: string;
+    status?: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
   };
   todaySchedule?: {
     id: string;
@@ -146,7 +149,7 @@ export function BookTokenModal({
   };
 
   const handleCreateBooking = async () => {
-    if (!doctor) return;
+    if (!doctor || doctor.activeClinic?.status === 'MAINTENANCE') return;
     setIsSubmitting(true);
     setErrorMessage(null);
 
@@ -228,29 +231,31 @@ export function BookTokenModal({
 
   if (!doctor) return null;
 
+  const isMaintenance = doctor.activeClinic?.status === 'MAINTENANCE';
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg p-0 overflow-hidden rounded-2xl bg-white border border-slate-200">
         {/* Header */}
-        <div className="bg-gradient-to-r from-brand to-brand-dark px-6 py-4 text-white">
+        <div className={`px-6 py-4 text-white ${isMaintenance ? 'bg-gradient-to-r from-amber-700 to-amber-900' : 'bg-gradient-to-r from-brand to-brand-dark'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/20">
-                <Ticket className="h-4 w-4 text-white" />
+                {isMaintenance ? <Wrench className="h-4 w-4 text-white" /> : <Ticket className="h-4 w-4 text-white" />}
               </div>
-              <span className="text-xs font-black uppercase tracking-wider text-brand-100">
-                Official Queue Reservation
+              <span className="text-xs font-black uppercase tracking-wider text-white/90">
+                {isMaintenance ? 'Facility Maintenance Mode' : 'Official Queue Reservation'}
               </span>
             </div>
-            <span className="text-xs font-bold text-white/80 bg-white/10 px-2.5 py-0.5 rounded-full">
-              Odd Token &bull; Online
+            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${isMaintenance ? 'text-amber-100 bg-amber-950/40 border border-amber-500/40' : 'text-white/80 bg-white/10'}`}>
+              {isMaintenance ? 'Room Suspended' : 'Odd Token • Online'}
             </span>
           </div>
 
           <DialogTitle className="text-lg font-bold text-white mt-2">
             {formatDoctorDisplayName(doctor.doctorName)}
           </DialogTitle>
-          <DialogDescription className="text-brand-100/90 text-xs flex items-center gap-1.5 mt-0.5">
+          <DialogDescription className="text-white/80 text-xs flex items-center gap-1.5 mt-0.5">
             <span>{doctor.specialty}</span>
             <span>&bull;</span>
             <span>{doctor.activeClinic.hospital_name} ({doctor.activeClinic.room_number})</span>
@@ -260,6 +265,18 @@ export function BookTokenModal({
         {/* ── STEP 1: PATIENT & PRIORITY DETAILS ── */}
         {step === 'DETAILS' && (
           <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            {isMaintenance && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="font-bold text-amber-900">Clinic Room Currently Under Maintenance</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                    {doctor.activeClinic.hospital_name} ({doctor.activeClinic.room_number || doctor.activeClinic.name}) is undergoing scheduled facility maintenance. Queue token reservations and in-person admissions are temporarily suspended.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {errorMessage && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
@@ -411,24 +428,35 @@ export function BookTokenModal({
               >
                 Cancel
               </Button>
-              <Button
-                type="button"
-                onClick={handleCreateBooking}
-                disabled={isSubmitting}
-                className="rounded-xl bg-brand hover:bg-brand-dark text-white font-bold text-xs gap-1.5 shadow-sm"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    Reserving Slot...
-                  </>
-                ) : (
-                  <>
-                    Continue to ₱50 QRPH Payment
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </>
-                )}
-              </Button>
+              {isMaintenance ? (
+                <Button
+                  type="button"
+                  disabled
+                  className="rounded-xl bg-slate-100 text-slate-400 border border-slate-200 font-bold text-xs cursor-not-allowed gap-1.5"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  Room Under Maintenance
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleCreateBooking}
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-brand hover:bg-brand-dark text-white font-bold text-xs gap-1.5 shadow-sm"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      Reserving Slot...
+                    </>
+                  ) : (
+                    <>
+                      Continue to ₱50 QRPH Payment
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
+              )}
             </DialogFooter>
           </div>
         )}

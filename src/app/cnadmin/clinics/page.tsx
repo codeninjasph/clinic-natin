@@ -254,11 +254,12 @@ export default function ClinicsAndRoomsPage() {
     setBulkParsedItems(parsed);
   }, [rawText]);
 
-  // Notification Banner
+  // Notification Banner with Undo support
   const [bannerAlert, setBannerAlert] = React.useState<{
     type: 'success' | 'destructive' | 'warning';
     title: string;
     message: string;
+    undo?: () => Promise<void>;
   } | null>(null);
 
   // 1. Printed QR Standee Dialog State
@@ -320,7 +321,11 @@ export default function ClinicsAndRoomsPage() {
     endTime: '13:30:00',
   });
 
-  // 4. Decommission / Delete Confirm Dialog State
+  // 4. Maintenance Mode Guard Confirm Dialog State
+  const [clinicForMaintenance, setClinicForMaintenance] = React.useState<ClinicRecord | null>(null);
+  const [maintenanceConfirmOpen, setMaintenanceConfirmOpen] = React.useState(false);
+
+  // 5. Decommission / Delete Confirm Dialog State
   const [clinicToDelete, setClinicToDelete] = React.useState<ClinicRecord | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -367,6 +372,16 @@ export default function ClinicsAndRoomsPage() {
       console.error('Failed to fetch supporting lookups:', err);
     }
   }, []);
+
+  // Comprehensive Refresh
+  const handleRefreshAll = React.useCallback(async () => {
+    try {
+      setRefreshing(true);
+      await Promise.all([fetchClinics(), fetchSupportingData()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchClinics, fetchSupportingData]);
 
   React.useEffect(() => {
     fetchClinics();
@@ -482,7 +497,23 @@ export default function ClinicsAndRoomsPage() {
       });
 
       if (data.hospital?.id) {
-        handleAddHospitalSelect(data.hospital.id);
+        const newHosp = data.hospital;
+        // Synchronously update local hospitals cache to prevent closure race condition
+        setHospitals((prev) => {
+          const exists = prev.some((h) => h.id === newHosp.id);
+          return exists ? prev : [newHosp, ...prev];
+        });
+        setAddForm((prev) => ({
+          ...prev,
+          hospitalId: newHosp.id,
+          hospitalName: newHosp.short_name || newHosp.name,
+          street: newHosp.street || '',
+          barangay: newHosp.barangay || '',
+          city: newHosp.city || 'Cagayan de Oro',
+          province: newHosp.province || 'Misamis Oriental',
+          address: newHosp.address || '',
+          contactPhone: newHosp.contact_phone || prev.contactPhone,
+        }));
       }
 
       setHospitalForm({
@@ -523,10 +554,14 @@ export default function ClinicsAndRoomsPage() {
       setAddHospitalModalOpen(false);
       setRawText('');
       setBulkParsedItems([]);
+      const count = data.count ?? bulkParsedItems.length;
       setBannerAlert({
-        type: 'success',
-        title: 'Bulk Facility Ingestion Successful',
-        message: `Successfully recorded ${data.count ?? bulkParsedItems.length} medical facilities from raw dataset into master catalog.`,
+        type: count > 0 ? 'success' : 'warning',
+        title: count > 0 ? 'Bulk Facility Ingestion Successful' : 'No New Facilities Added',
+        message:
+          count > 0
+            ? `Successfully recorded ${count} medical facilities from raw dataset into master catalog.`
+            : 'All parsed facilities are already recorded in the catalog (no duplicates were inserted).',
       });
     } catch (err: any) {
       setHospitalModalError(err.message || 'Error importing facilities');
@@ -545,12 +580,24 @@ export default function ClinicsAndRoomsPage() {
       return;
     }
 
+    if (addForm.assignedDoctorId && addForm.scheduleDays.length === 0) {
+      setAddModalError('Please select at least one consultation day for the assigned physician.');
+      return;
+    }
+
+    const finalOperatingHours = addForm.assignedDoctorId
+      ? deriveOperatingHours(addForm.scheduleDays, addForm.startTime, addForm.endTime) || addForm.operatingHours
+      : addForm.operatingHours;
+
     setIsSubmittingAdd(true);
     try {
       const res = await fetch('/api/admin/clinics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addForm),
+        body: JSON.stringify({
+          ...addForm,
+          operatingHours: finalOperatingHours,
+        }),
       });
       const data = await res.json();
 
@@ -639,12 +686,24 @@ export default function ClinicsAndRoomsPage() {
       return;
     }
 
+    if (editForm.assignedDoctorId && editForm.scheduleDays.length === 0) {
+      setEditModalError('Please select at least one consultation day for the assigned physician.');
+      return;
+    }
+
+    const finalOperatingHours = editForm.assignedDoctorId
+      ? deriveOperatingHours(editForm.scheduleDays, editForm.startTime, editForm.endTime) || editForm.operatingHours
+      : editForm.operatingHours;
+
     setIsSubmittingEdit(true);
     try {
       const res = await fetch('/api/admin/clinics', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          ...editForm,
+          operatingHours: finalOperatingHours,
+        }),
       });
       const data = await res.json();
 
@@ -666,8 +725,8 @@ export default function ClinicsAndRoomsPage() {
     }
   };
 
-  // Quick Toggle Active / Maintenance Status
-  const handleToggleStatus = async (clinic: ClinicRecord) => {
+  // Execute Toggle Active / Maintenance Status
+  const executeToggleStatus = async (clinic: ClinicRecord) => {
     const nextStatus = clinic.status === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
     try {
       const res = await fetch('/api/admin/clinics', {
@@ -686,7 +745,12 @@ export default function ClinicsAndRoomsPage() {
       setBannerAlert({
         type: nextStatus === 'ACTIVE' ? 'success' : 'warning',
         title: `Room Status: ${nextStatus}`,
-        message: `${clinic.room_number} (${clinic.hospital_name}) is now marked as ${nextStatus}.`,
+        message: `${clinic.room_number} (${clinic.hospital_name}) is now marked as ${nextStatus}.${
+          nextStatus === 'MAINTENANCE' ? ' Any active live queue sessions have been set to PAUSED.' : ''
+        }`,
+        undo: async () => {
+          await executeToggleStatus({ ...clinic, status: nextStatus });
+        },
       });
       fetchClinics();
     } catch (err: any) {
@@ -696,6 +760,17 @@ export default function ClinicsAndRoomsPage() {
         message: err.message,
       });
     }
+  };
+
+  // Guarded Toggle Active / Maintenance Status
+  const handleToggleStatus = (clinic: ClinicRecord) => {
+    const activeSession = clinic.queue_sessions?.[0];
+    if (clinic.status === 'ACTIVE' && activeSession && activeSession.status === 'ACTIVE') {
+      setClinicForMaintenance(clinic);
+      setMaintenanceConfirmOpen(true);
+      return;
+    }
+    executeToggleStatus(clinic);
   };
 
   // Open Decommission Confirm Dialog
@@ -734,6 +809,7 @@ export default function ClinicsAndRoomsPage() {
         message: err.message,
       });
       setDeleteConfirmOpen(false);
+      setClinicToDelete(null);
     } finally {
       setIsDeleting(false);
     }
@@ -748,12 +824,27 @@ export default function ClinicsAndRoomsPage() {
     window.print();
   };
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!selectedClinicForQR) return;
     const checkinUrl = getStandeeCheckinUrl(selectedClinicForQR.id);
-    navigator.clipboard.writeText(checkinUrl);
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(checkinUrl);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = checkinUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy check-in URL', err);
+    }
   };
 
   // Derived unique provinces and cities for cascading location filters
@@ -829,7 +920,7 @@ export default function ClinicsAndRoomsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchClinics}
+            onClick={handleRefreshAll}
             disabled={refreshing}
             className="h-9 text-xs font-semibold gap-1.5 border-slate-200 hover:bg-slate-50"
           >
@@ -862,7 +953,7 @@ export default function ClinicsAndRoomsPage() {
         </div>
       </div>
 
-      {/* Dynamic In-App Status Notification Banner */}
+      {/* Dynamic In-App Status Notification Banner with Undo */}
       {bannerAlert && (
         <Alert
           variant={bannerAlert.type === 'destructive' ? 'destructive' : bannerAlert.type === 'warning' ? 'warning' : 'success'}
@@ -873,13 +964,28 @@ export default function ClinicsAndRoomsPage() {
               <AlertTitle className="font-bold">{bannerAlert.title}</AlertTitle>
               <AlertDescription className="text-xs">{bannerAlert.message}</AlertDescription>
             </div>
-            <button
-              type="button"
-              onClick={() => setBannerAlert(null)}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-900 ml-4"
-            >
-              Dismiss
-            </button>
+            <div className="flex items-center gap-2">
+              {bannerAlert.undo && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const undoFn = bannerAlert.undo;
+                    setBannerAlert(null);
+                    if (undoFn) await undoFn();
+                  }}
+                  className="text-xs font-bold text-brand-700 underline hover:text-brand-900 ml-4 cursor-pointer"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setBannerAlert(null)}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-900 ml-3"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         </Alert>
       )}
@@ -990,6 +1096,7 @@ export default function ClinicsAndRoomsPage() {
                 onChange={(e) => {
                   setProvinceFilter(e.target.value);
                   setCityFilter('ALL');
+                  setHospitalFilter('ALL');
                 }}
                 className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
               >
@@ -1007,7 +1114,10 @@ export default function ClinicsAndRoomsPage() {
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">City:</span>
               <select
                 value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
+                onChange={(e) => {
+                  setCityFilter(e.target.value);
+                  setHospitalFilter('ALL');
+                }}
                 className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-brand-700 font-medium"
               >
                 <option value="ALL">All Cities ({uniqueCities.length})</option>
@@ -1697,7 +1807,16 @@ export default function ClinicsAndRoomsPage() {
                 </label>
                 <select
                   value={addForm.assignedDoctorId}
-                  onChange={(e) => setAddForm({ ...addForm, assignedDoctorId: e.target.value })}
+                  onChange={(e) => {
+                    const docId = e.target.value;
+                    setAddForm((prev) => ({
+                      ...prev,
+                      assignedDoctorId: docId,
+                      operatingHours: docId
+                        ? deriveOperatingHours(prev.scheduleDays, prev.startTime, prev.endTime)
+                        : prev.operatingHours,
+                    }));
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700"
                 >
                   <option value="">No Doctor Assigned (Shared Consultation Room)</option>
@@ -1942,7 +2061,16 @@ export default function ClinicsAndRoomsPage() {
                 </label>
                 <select
                   value={editForm.assignedDoctorId}
-                  onChange={(e) => setEditForm({ ...editForm, assignedDoctorId: e.target.value })}
+                  onChange={(e) => {
+                    const docId = e.target.value;
+                    setEditForm((prev) => ({
+                      ...prev,
+                      assignedDoctorId: docId,
+                      operatingHours: docId
+                        ? deriveOperatingHours(prev.scheduleDays, prev.startTime, prev.endTime)
+                        : prev.operatingHours,
+                    }));
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 focus:outline-none focus:border-brand-700"
                 >
                   <option value="">Unassigned (Shared Consultation Room)</option>
@@ -2054,6 +2182,28 @@ export default function ClinicsAndRoomsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* ── MODAL 2.5: MAINTENANCE CONFIRM DIALOG ── */}
+      <ConfirmDialog
+        open={maintenanceConfirmOpen}
+        onOpenChange={setMaintenanceConfirmOpen}
+        title="Place Room in Maintenance Mode?"
+        description={
+          clinicForMaintenance
+            ? `Consultation room ${clinicForMaintenance.room_number} (${clinicForMaintenance.name}) at ${clinicForMaintenance.hospital_name} currently has an active queuing session. Switching this room to MAINTENANCE will automatically pause patient check-ins and set the live session to PAUSED. Do you want to proceed?`
+            : ''
+        }
+        confirmLabel="Confirm Maintenance Mode"
+        cancelLabel="Keep Active"
+        variant="destructive"
+        onConfirm={async () => {
+          setMaintenanceConfirmOpen(false);
+          if (clinicForMaintenance) {
+            await executeToggleStatus(clinicForMaintenance);
+            setClinicForMaintenance(null);
+          }
+        }}
+      />
 
       {/* ── MODAL 3: DECOMMISSION CONFIRM DIALOG ── */}
       <ConfirmDialog
@@ -2278,6 +2428,8 @@ export default function ClinicsAndRoomsPage() {
               #clinic-printable-standee,
               #clinic-printable-standee * {
                 visibility: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
               #clinic-printable-standee {
                 position: fixed !important;

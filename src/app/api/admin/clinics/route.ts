@@ -335,19 +335,46 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Clinic not found' }, { status: 404 });
     }
 
+    // Check for duplicate room in the same hospital when updating room number or hospital name
+    const targetHospital = (hospitalName !== undefined ? hospitalName : oldClinic.hospital_name)?.trim();
+    const targetRoom = (roomNumber !== undefined ? roomNumber : oldClinic.room_number)?.trim();
+
+    if (
+      targetHospital &&
+      targetRoom &&
+      (targetHospital !== oldClinic.hospital_name || targetRoom !== oldClinic.room_number)
+    ) {
+      const { data: existingDuplicate } = await supabase
+        .from('clinics')
+        .select('id, name, room_number')
+        .eq('hospital_name', targetHospital)
+        .eq('room_number', targetRoom)
+        .neq('id', id)
+        .maybeSingle();
+
+      if (existingDuplicate) {
+        return NextResponse.json(
+          {
+            error: `Room "${targetRoom}" is already registered under ${targetHospital} (${existingDuplicate.name}). Please specify a unique consultation room number.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const updatePayload: Record<string, any> = {};
     if (name !== undefined) updatePayload.name = name.trim();
     if (hospitalName !== undefined) updatePayload.hospital_name = hospitalName.trim();
-    if (hospitalId !== undefined) updatePayload.hospital_id = hospitalId;
-    if (buildingName !== undefined) updatePayload.building_name = buildingName.trim();
-    if (floorNumber !== undefined) updatePayload.floor_number = floorNumber.trim();
+    if (hospitalId !== undefined) updatePayload.hospital_id = hospitalId || null;
+    if (buildingName !== undefined) updatePayload.building_name = buildingName?.trim() || null;
+    if (floorNumber !== undefined) updatePayload.floor_number = floorNumber?.trim() || null;
     if (roomNumber !== undefined) updatePayload.room_number = roomNumber.trim();
     if (address !== undefined) updatePayload.address = address.trim();
     if (street !== undefined) updatePayload.street = street?.trim() || null;
     if (barangay !== undefined) updatePayload.barangay = barangay?.trim() || null;
     if (city !== undefined) updatePayload.city = city.trim();
     if (province !== undefined) updatePayload.province = province.trim();
-    if (contactPhone !== undefined) updatePayload.contact_phone = contactPhone.trim();
+    if (contactPhone !== undefined) updatePayload.contact_phone = contactPhone?.trim() || null;
     if (operatingHours !== undefined) updatePayload.operating_hours = operatingHours.trim();
     if (status !== undefined) updatePayload.status = status;
     if (isVerified !== undefined) updatePayload.is_verified = isVerified;
@@ -366,46 +393,121 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
       updatedClinic = data;
+
+      // If status toggled to MAINTENANCE, synchronize active queue sessions for this room
+      if (status === 'MAINTENANCE') {
+        await supabase
+          .from('queue_sessions')
+          .update({
+            status: 'PAUSED',
+            announcement_notice: 'Room is temporarily paused for maintenance/sanitization.',
+            last_updated_at: new Date().toISOString(),
+          })
+          .eq('clinic_id', id)
+          .eq('status', 'ACTIVE');
+      }
     }
 
-    // Optional: update, add, or remove doctor schedules (multi-day support)
-    // IMPORTANT: Only touch rows for the *specific* doctor being assigned/cleared.
-    // Never delete schedules belonging to other doctors who also use this suite.
+    // Optional: update, add, or remove doctor schedules non-destructively (multi-day support)
+    // PRESERVES primary keys to avoid cascading deletes of linked queue_sessions and appointments!
     if (assignedDoctorId !== undefined) {
-      // Get the previous doctor for this clinic from the request context (sent as previousDoctorId)
-      // or fall back to clearing only the exact doctor being replaced.
-      const { previousDoctorId } = body; // frontend should send previousDoctorId when changing doctors
+      const { previousDoctorId } = body;
+      const targetDoctor = assignedDoctorId ? assignedDoctorId.trim() : null;
+      const oldDoctor = previousDoctorId ? previousDoctorId.trim() : null;
 
-      // Determine which doctor's rows to remove:
-      // - If we're explicitly clearing (assignedDoctorId = ''), remove the previousDoctorId's rows.
-      // - If we're assigning the same doctor, remove and re-insert their own rows.
-      // - If we're swapping to a different doctor, remove previousDoctorId's rows only.
-      const doctorToRemove = previousDoctorId || assignedDoctorId;
+      // 1. Fetch current schedules for this clinic
+      const { data: currentSchedules } = await supabase
+        .from('doctor_clinic_schedules')
+        .select('id, doctor_id, day_of_week, is_active')
+        .eq('clinic_id', id);
 
-      if (doctorToRemove) {
-        await supabase
-          .from('doctor_clinic_schedules')
-          .delete()
-          .eq('clinic_id', id)
-          .eq('doctor_id', doctorToRemove);
-      }
+      const scheduleList = currentSchedules || [];
 
-      if (assignedDoctorId) {
-        const days = Array.isArray(scheduleDays) && scheduleDays.length > 0
-          ? scheduleDays
+      if (!targetDoctor) {
+        // Explicitly unassigned: deactivate or clean up doctor schedules
+        const docsToClear = oldDoctor ? [oldDoctor] : Array.from(new Set(scheduleList.map((s) => s.doctor_id)));
+        for (const docId of docsToClear) {
+          const docScheds = scheduleList.filter((s) => s.doctor_id === docId);
+          for (const s of docScheds) {
+            const { count } = await supabase
+              .from('queue_sessions')
+              .select('id', { count: 'exact', head: true })
+              .eq('schedule_id', s.id);
+
+            if (count && count > 0) {
+              await supabase.from('doctor_clinic_schedules').update({ is_active: false }).eq('id', s.id);
+            } else {
+              await supabase.from('doctor_clinic_schedules').delete().eq('id', s.id);
+            }
+          }
+        }
+      } else {
+        const targetDays: number[] = Array.isArray(scheduleDays) && scheduleDays.length > 0
+          ? scheduleDays.map((d: any) => Number(d))
           : [Number(scheduleDay) || 1];
 
-        const rows = days.map((d) => ({
-          doctor_id: assignedDoctorId,
-          clinic_id: id,
-          day_of_week: Number(d),
-          start_time: startTime || '08:30:00',
-          end_time: endTime || '17:00:00',
-          max_patients: 40,
-          is_active: true,
-        }));
+        // If doctor changed, handle old doctor's schedules
+        if (oldDoctor && oldDoctor !== targetDoctor) {
+          const oldScheds = scheduleList.filter((s) => s.doctor_id === oldDoctor);
+          for (const s of oldScheds) {
+            const { count } = await supabase
+              .from('queue_sessions')
+              .select('id', { count: 'exact', head: true })
+              .eq('schedule_id', s.id);
 
-        await supabase.from('doctor_clinic_schedules').insert(rows);
+            if (count && count > 0) {
+              await supabase.from('doctor_clinic_schedules').update({ is_active: false }).eq('id', s.id);
+            } else {
+              await supabase.from('doctor_clinic_schedules').delete().eq('id', s.id);
+            }
+          }
+        }
+
+        const docScheds = scheduleList.filter((s) => s.doctor_id === targetDoctor);
+
+        // Deactivate or remove unselected days
+        for (const s of docScheds) {
+          if (!targetDays.includes(s.day_of_week)) {
+            const { count } = await supabase
+              .from('queue_sessions')
+              .select('id', { count: 'exact', head: true })
+              .eq('schedule_id', s.id);
+
+            if (count && count > 0) {
+              await supabase.from('doctor_clinic_schedules').update({ is_active: false }).eq('id', s.id);
+            } else {
+              await supabase.from('doctor_clinic_schedules').delete().eq('id', s.id);
+            }
+          }
+        }
+
+        // Upsert selected days without regenerating IDs
+        for (const day of targetDays) {
+          const existing = docScheds.find((s) => s.day_of_week === day);
+          if (existing) {
+            await supabase
+              .from('doctor_clinic_schedules')
+              .update({
+                start_time: startTime || '08:30:00',
+                end_time: endTime || '17:00:00',
+                max_patients: 40,
+                is_active: true,
+              })
+              .eq('id', existing.id);
+          } else {
+            await supabase
+              .from('doctor_clinic_schedules')
+              .insert({
+                doctor_id: targetDoctor,
+                clinic_id: id,
+                day_of_week: day,
+                start_time: startTime || '08:30:00',
+                end_time: endTime || '17:00:00',
+                max_patients: 40,
+                is_active: true,
+              });
+          }
+        }
       }
     }
 
@@ -466,7 +568,10 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Clinic not found' }, { status: 404 });
     }
 
-    // 3. Delete clinic (cascades to doctor_clinic_schedules)
+    // 3. Clean up any schedule overrides referencing this clinic as replacement room
+    await supabase.from('schedule_overrides').update({ new_clinic_id: null }).eq('new_clinic_id', id);
+
+    // 4. Delete clinic (cascades to doctor_clinic_schedules)
     const { error: deleteErr } = await supabase.from('clinics').delete().eq('id', id);
 
     if (deleteErr) {

@@ -18,6 +18,8 @@ import {
   CreditCard,
   CheckCircle2,
   X,
+  AlertTriangle,
+  Wrench,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -63,6 +65,7 @@ interface ClinicSchedule {
     barangay?: string | null;
     city?: string | null;
     province?: string | null;
+    status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
   };
 }
 
@@ -103,6 +106,7 @@ type RawRow = {
       barangay?: string | null;
       city?: string | null;
       province?: string | null;
+      status?: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE' | null;
     } | null;
     queue_sessions: Array<{
       id: string;
@@ -125,6 +129,10 @@ function extractActiveSession(
   schedules: RawRow['doctor_clinic_schedules']
 ): ActiveQueueSession | null {
   for (const sched of schedules) {
+    // If the clinic room is in maintenance or inactive, its session is NOT live for patients
+    if (sched.clinics?.status === 'MAINTENANCE' || sched.clinics?.status === 'INACTIVE') {
+      continue;
+    }
     for (const session of sched.queue_sessions) {
       if (session.status === 'ACTIVE') {
         return {
@@ -166,6 +174,7 @@ function transformRows(rows: RawRow[]): DoctorCard[] {
           barangay: s.clinics?.barangay,
           city: s.clinics?.city,
           province: s.clinics?.province,
+          status: (s.clinics?.status as 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE') || 'ACTIVE',
         },
       })),
     activeSession: extractActiveSession(row.doctor_clinic_schedules || []),
@@ -198,7 +207,21 @@ function SkeletonCard() {
   );
 }
 
-function QueueBadge({ session }: { session: ActiveQueueSession | null }) {
+function QueueBadge({
+  session,
+  isMaintenance,
+}: {
+  session: ActiveQueueSession | null;
+  isMaintenance?: boolean;
+}) {
+  if (isMaintenance) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 ring-1 ring-amber-300 whitespace-nowrap">
+        <AlertTriangle className="h-3 w-3 text-amber-600" />
+        Room Maintenance
+      </span>
+    );
+  }
   if (session?.status === 'ACTIVE') {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200 whitespace-nowrap">
@@ -237,7 +260,10 @@ function DoctorCardItem({
     .toUpperCase();
 
   const todaySchedule = doctor.schedules.find((s) => s.day_of_week === manilaNow.isoDay);
-  const session = getClinicSessionState(todaySchedule, manilaNow);
+  const isTodayMaintenance = todaySchedule?.clinic.status === 'MAINTENANCE';
+  const allClinicsMaintenance = doctor.schedules.length > 0 && doctor.schedules.every((s) => s.clinic.status === 'MAINTENANCE');
+  const hasActiveClinic = doctor.schedules.some((s) => s.clinic.status === 'ACTIVE');
+  const session = isTodayMaintenance ? { state: 'CLOSED_TODAY' as const } : getClinicSessionState(todaySchedule, manilaNow);
 
   // Group schedules by clinic / hospital
   const hospitalGroups = Array.from(
@@ -282,7 +308,7 @@ function DoctorCardItem({
             </div>
           </div>
         </div>
-        <QueueBadge session={doctor.activeSession} />
+        <QueueBadge session={doctor.activeSession} isMaintenance={isTodayMaintenance || allClinicsMaintenance} />
       </div>
 
       {/* ── Accepted HMOs Pills ── */}
@@ -304,42 +330,85 @@ function DoctorCardItem({
 
       {/* ── Spotlight: Today's Active Hospital & Room ── */}
       {todaySchedule ? (
-        <div className="mt-3.5 rounded-xl border border-brand-200 bg-brand-50/70 p-3.5 shadow-xs">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-white shadow-xs">
-                <Building2 className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-brand-dark bg-brand-100 px-2 py-0.5 rounded-full">
-                    Today&apos;s Clinic ({manilaNow.dayName})
-                  </span>
-                  {todaySchedule.clinic.room_number && (
-                    <span className="rounded-md bg-brand-dark px-2 py-0.5 text-[10px] font-bold text-white">
-                      {todaySchedule.clinic.room_number}
+        isTodayMaintenance ? (
+          <div className="mt-3.5 rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 shadow-xs">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-600 text-white shadow-xs">
+                  <Wrench className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 text-amber-700" />
+                      Room Closed &bull; Under Maintenance
                     </span>
-                  )}
-                </div>
-                <h3 className="text-sm font-bold text-slate-900 mt-1 truncate">
-                  {todaySchedule.clinic.hospital_name}
-                </h3>
-                <p className="text-xs text-slate-700 font-medium truncate">
-                  {todaySchedule.clinic.name}
-                </p>
-                <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                  <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
-                  <span className="truncate">{todaySchedule.clinic.address}</span>
+                    {todaySchedule.clinic.room_number && (
+                      <span className="rounded-md bg-amber-800 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {todaySchedule.clinic.room_number}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 mt-1 truncate">
+                    {todaySchedule.clinic.hospital_name}
+                  </h3>
+                  <p className="text-xs text-amber-900 font-semibold truncate">
+                    {todaySchedule.clinic.name} &bull; Maintenance in Progress
+                  </p>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                    <span className="truncate">{todaySchedule.clinic.address}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-2 font-medium leading-relaxed bg-amber-100/70 p-2 rounded-lg border border-amber-200">
+                    ⚠️ Consultations and live queue registration at this clinic room are temporarily suspended today for scheduled facility maintenance or sanitation.
+                  </p>
                 </div>
               </div>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="inline-block rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-emerald-950 shadow-xs border border-emerald-200">
-                {formatTime(todaySchedule.start_time)}&ndash;{formatTime(todaySchedule.end_time)}
-              </span>
+              <div className="shrink-0 text-right">
+                <span className="inline-block rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 shadow-xs border border-amber-300">
+                  Suspended
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-3.5 rounded-xl border border-brand-200 bg-brand-50/70 p-3.5 shadow-xs">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-white shadow-xs">
+                  <Building2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-brand-dark bg-brand-100 px-2 py-0.5 rounded-full">
+                      Today&apos;s Clinic ({manilaNow.dayName})
+                    </span>
+                    {todaySchedule.clinic.room_number && (
+                      <span className="rounded-md bg-brand-dark px-2 py-0.5 text-[10px] font-bold text-white">
+                        {todaySchedule.clinic.room_number}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900 mt-1 truncate">
+                    {todaySchedule.clinic.hospital_name}
+                  </h3>
+                  <p className="text-xs text-slate-700 font-medium truncate">
+                    {todaySchedule.clinic.name}
+                  </p>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                    <MapPin className="h-3 w-3 shrink-0 text-slate-400" />
+                    <span className="truncate">{todaySchedule.clinic.address}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <span className="inline-block rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-emerald-950 shadow-xs border border-emerald-200">
+                  {formatTime(todaySchedule.start_time)}&ndash;{formatTime(todaySchedule.end_time)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )
       ) : (
         <div className="mt-3.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 flex items-center gap-2">
           <Building2 className="h-4 w-4 shrink-0 text-slate-400" />
@@ -369,11 +438,14 @@ function DoctorCardItem({
           <div className="space-y-1.5">
             {hospitalGroups.map((group) => {
               const isTodayHospital = todaySchedule?.clinic.id === group.clinic.id;
+              const isGroupMaintenance = group.clinic.status === 'MAINTENANCE';
               return (
                 <div
                   key={group.clinic.id}
                   className={`rounded-xl border p-2.5 transition ${
-                    isTodayHospital
+                    isGroupMaintenance
+                      ? 'border-amber-200 bg-amber-50/40'
+                      : isTodayHospital
                       ? 'border-emerald-300 bg-emerald-50/30 ring-1 ring-emerald-200/60 shadow-xs'
                       : 'border-slate-200 bg-slate-50/50'
                   }`}
@@ -382,7 +454,11 @@ function DoctorCardItem({
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                       <Building2
                         className={`h-3.5 w-3.5 shrink-0 ${
-                          isTodayHospital ? 'text-emerald-700' : 'text-slate-500'
+                          isGroupMaintenance
+                            ? 'text-amber-600'
+                            : isTodayHospital
+                            ? 'text-emerald-700'
+                            : 'text-slate-500'
                         }`}
                       />
                       <span className="text-xs font-bold text-slate-900 truncate">
@@ -393,12 +469,30 @@ function DoctorCardItem({
                           {group.clinic.room_number}
                         </span>
                       )}
+                      {isGroupMaintenance && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded">
+                          <Wrench className="h-2.5 w-2.5 text-amber-700" />
+                          Maintenance
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {group.schedules.map((s) => {
                       const isToday = s.day_of_week === manilaNow.isoDay;
+                      if (isGroupMaintenance) {
+                        return (
+                          <span
+                            key={s.id}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] bg-amber-50 text-amber-800 border border-amber-200/70 line-through opacity-75 font-medium"
+                            title="Suspended for clinic maintenance"
+                          >
+                            <span>{DAY_NAMES[s.day_of_week]}</span>
+                            <span>{formatTime(s.start_time)}&ndash;{formatTime(s.end_time)}</span>
+                          </span>
+                        );
+                      }
                       return (
                         <span
                           key={s.id}
@@ -422,17 +516,45 @@ function DoctorCardItem({
       )}
 
       {/* ── Action Button: Launches 4-Step Token Booking Flow ── */}
-      <button
-        id={`join-queue-${doctor.doctorId}`}
-        onClick={() => onBook(doctor)}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand hover:bg-brand-dark text-white px-4 py-2.5 text-xs font-bold shadow-xs transition-all active:scale-[0.98]"
-      >
-        <Ticket className="h-4 w-4" />
-        {session.state === 'IN_SESSION' && todaySchedule
-          ? `Join Live Queue at ${todaySchedule.clinic.hospital_name.replace(' - Xavier University Hospital', '').replace(' Medical Plaza', '')} (₱50 QRPH)`
-          : `Reserve Token for ${displayName} (₱50 QRPH)`}
-        <ChevronRight className="h-4 w-4 opacity-80" />
-      </button>
+      {allClinicsMaintenance ? (
+        <button
+          disabled
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 text-slate-500 border border-slate-200 px-4 py-2.5 text-xs font-bold cursor-not-allowed shadow-none"
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          All Clinic Suites Under Maintenance &bull; Queue Unavailable
+        </button>
+      ) : isTodayMaintenance && hasActiveClinic ? (
+        <button
+          id={`join-queue-${doctor.doctorId}`}
+          onClick={() => onBook(doctor)}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 text-xs font-bold shadow-xs transition-all active:scale-[0.98]"
+        >
+          <Ticket className="h-4 w-4" />
+          Reserve Token for Other Active Clinic (₱50 QRPH)
+          <ChevronRight className="h-4 w-4 opacity-80" />
+        </button>
+      ) : isTodayMaintenance ? (
+        <button
+          disabled
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 text-slate-500 border border-slate-200 px-4 py-2.5 text-xs font-bold cursor-not-allowed shadow-none"
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          Clinic Suite Under Maintenance &bull; Queue Unavailable
+        </button>
+      ) : (
+        <button
+          id={`join-queue-${doctor.doctorId}`}
+          onClick={() => onBook(doctor)}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-brand hover:bg-brand-dark text-white px-4 py-2.5 text-xs font-bold shadow-xs transition-all active:scale-[0.98]"
+        >
+          <Ticket className="h-4 w-4" />
+          {session.state === 'IN_SESSION' && todaySchedule
+            ? `Join Live Queue at ${todaySchedule.clinic.hospital_name.replace(' - Xavier University Hospital', '').replace(' Medical Plaza', '')} (₱50 QRPH)`
+            : `Reserve Token for ${displayName} (₱50 QRPH)`}
+          <ChevronRight className="h-4 w-4 opacity-80" />
+        </button>
+      )}
     </article>
   );
 }
@@ -516,7 +638,8 @@ export default function DiscoverPage() {
             street,
             barangay,
             city,
-            province
+            province,
+            status
           ),
           queue_sessions (
             id,
@@ -550,6 +673,20 @@ export default function DiscoverPage() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'queue_sessions' },
+        () => {
+          fetchDoctors();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clinics' },
+        () => {
+          fetchDoctors();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'doctor_clinic_schedules' },
         () => {
           fetchDoctors();
         }
@@ -701,13 +838,20 @@ export default function DiscoverPage() {
   const manilaNow = getManilaNow();
 
   const handleBook = (doctor: DoctorCard) => {
-    const todaySched = doctor.schedules.find((s) => s.day_of_week === manilaNow.isoDay);
-    const activeClinic = todaySched ? todaySched.clinic : doctor.schedules[0]?.clinic || {
+    // Prefer today's active schedule, then first active schedule, then fallback
+    const todayActiveSched = doctor.schedules.find(
+      (s) => s.day_of_week === manilaNow.isoDay && s.clinic.status === 'ACTIVE'
+    );
+    const firstActiveSched = doctor.schedules.find((s) => s.clinic.status === 'ACTIVE');
+    const targetSched = todayActiveSched || firstActiveSched || doctor.schedules[0];
+
+    const targetClinic = targetSched?.clinic || {
       id: 'clinic-mr-304',
       name: 'Consultation Suite',
       hospital_name: 'Maria Reyna - Xavier University Hospital',
       room_number: 'Room 304',
       address: 'Hayes St, Cagayan de Oro',
+      status: 'MAINTENANCE' as const,
     };
 
     setSelectedDoctorForBooking({
@@ -715,12 +859,16 @@ export default function DiscoverPage() {
       doctorName: formatDoctorDisplayName(doctor.name, doctor.title),
       specialty: doctor.specialty,
       consultationFee: doctor.consultationFee,
-      activeClinic,
-      todaySchedule: todaySched
+      activeClinic: {
+        ...targetClinic,
+        room_number: targetClinic.room_number || '',
+        status: targetClinic.status,
+      },
+      todaySchedule: todayActiveSched
         ? {
-            id: todaySched.id,
-            start_time: todaySched.start_time,
-            end_time: todaySched.end_time,
+            id: todayActiveSched.id,
+            start_time: todayActiveSched.start_time,
+            end_time: todayActiveSched.end_time,
           }
         : undefined,
     });

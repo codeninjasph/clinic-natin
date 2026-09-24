@@ -93,6 +93,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 3b. Verify clinic maintenance/inactive status
+    const { data: clinicRecord } = await supabase
+      .from('clinics')
+      .select('id, name, hospital_name, room_number, status')
+      .eq('id', effectiveClinicId)
+      .maybeSingle();
+
+    if (clinicRecord) {
+      if (clinicRecord.status === 'MAINTENANCE') {
+        return NextResponse.json(
+          {
+            error: `Clinic room ${clinicRecord.room_number || clinicRecord.name} at ${clinicRecord.hospital_name || 'the facility'} is currently under maintenance. Online queue booking is temporarily suspended.`,
+          },
+          { status: 422 }
+        );
+      }
+      if (clinicRecord.status === 'INACTIVE') {
+        return NextResponse.json(
+          {
+            error: `Clinic room ${clinicRecord.room_number || clinicRecord.name} is currently inactive. Online queue booking is unavailable.`,
+          },
+          { status: 422 }
+        );
+      }
+    }
+
     let targetSession: { id: string; current_serving_number: number } | null = null;
 
     // Try finding existing queue session for today
