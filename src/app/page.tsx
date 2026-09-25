@@ -483,12 +483,9 @@ export default function HomePage() {
       {/* ----------------------------------------------------------------- */}
       <header className="sticky top-0 z-40 w-full border-b border-brand-100/80 bg-white/95 backdrop-blur-md transition-all shadow-xs">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto flex items-center justify-between px-3 sm:px-6 lg:px-10 xl:px-12 h-16 lg:h-20">
-          {/* Brand Logo & National Expansion Badge */}
+          {/* Brand Logo */}
           <div className="flex items-center gap-2 sm:gap-3">
             <ClinicNatinLogo height={32} href="/" priority />
-            <Badge variant="outline" className="hidden lg:inline-flex text-[11px] font-semibold border-brand-200 text-brand-700 bg-brand-50/60">
-              Philippine Outpatient OS
-            </Badge>
           </div>
 
           {/* Desktop Navigation Links */}
@@ -516,29 +513,35 @@ export default function HomePage() {
             </a>
           </nav>
 
-          {/* Action CTAs & Mobile Hamburger Button */}
+          {/* Redesigned Right Navigation: Track Turn utility pill, Sign In, and Register CTA */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Live Queue Tracker Pill */}
             <Link
               href="/my-queue"
-              className="inline-flex items-center gap-1 rounded-xl border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-bold text-brand-800 transition hover:bg-brand-100 sm:px-3 sm:py-2 sm:text-sm active:scale-95"
+              className="inline-flex items-center gap-1.5 rounded-full border border-brand-200/90 bg-brand-50/80 px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs font-bold text-brand-800 transition hover:bg-brand-100 active:scale-95 shadow-2xs"
             >
               <Ticket className="h-3.5 w-3.5 text-brand-700" />
               <span>Track Turn</span>
             </Link>
 
-            <Link
-              href="/signup"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-xs sm:text-sm font-bold text-white shadow-sm transition hover:bg-brand-800 active:scale-95"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>Patient Sign Up</span>
-            </Link>
+            {/* Subtle Divider (Desktop only) */}
+            <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 
+            {/* Unified Sign In (Patients, Doctors, Staff) */}
             <Link
               href="/login"
-              className="hidden md:inline-flex rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-95"
+              className="hidden sm:inline-flex items-center px-2 py-1.5 text-xs sm:text-sm font-semibold text-slate-600 hover:text-brand-700 transition"
             >
-              Staff Portal
+              Sign In
+            </Link>
+
+            {/* Primary Action Button */}
+            <Link
+              href="/signup"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 hover:bg-brand-800 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold text-white shadow-xs transition active:scale-95"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              <span>Register</span>
             </Link>
 
             {/* Mobile Menu Hamburger Toggle */}
@@ -546,7 +549,7 @@ export default function HomePage() {
               type="button"
               variant="ghost"
               size="icon"
-              className="xl:hidden h-9 w-9 rounded-xl text-slate-700 hover:bg-slate-100"
+              className="xl:hidden h-9 w-9 rounded-xl text-slate-700 hover:bg-slate-100 ml-0.5"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Toggle mobile menu"
             >
@@ -635,15 +638,15 @@ export default function HomePage() {
                     className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-700 p-2.5 text-xs font-bold text-white shadow-xs"
                   >
                     <UserPlus className="h-4 w-4" />
-                    <span>Sign Up (Free)</span>
+                    <span>Register (Free)</span>
                   </Link>
                   <Link
                     href="/login"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-semibold text-slate-700"
+                    className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                   >
-                    <Building2 className="h-4 w-4 text-slate-400" />
-                    <span>Doctor &amp; Secretary Staff Portal</span>
+                    <Building2 className="h-4 w-4 text-slate-500" />
+                    <span>Sign In (Patient / Doctor / Staff)</span>
                   </Link>
                 </div>
               </div>
