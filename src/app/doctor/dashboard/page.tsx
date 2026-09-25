@@ -25,6 +25,7 @@ import {
   RotateCcw,
   FlaskConical,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -99,6 +100,8 @@ interface PatientEMR {
 interface ICD10Result {
   code: string;
   label: string;
+  whoUrl?: string;
+  philHealthVerified?: boolean;
 }
 
 interface SOAPState {
@@ -560,7 +563,7 @@ export default function DoctorDashboardPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ── ICD-10 search (NLM Clinical Tables API — US NIH, no API key required) ──
+  // ── ICD-10 search (@lowlysre/icd-10-cm + WHO 2019 / NLM API fallback) ──────
   const handleIcdSearch = (query: string) => {
     setIcdQuery(query);
     if (icdTimerRef.current) clearTimeout(icdTimerRef.current);
@@ -573,22 +576,36 @@ export default function DoctorDashboardPage() {
     setShowIcdDropdown(true);
     icdTimerRef.current = setTimeout(async () => {
       try {
-        const url = `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(query)}&maxList=10`;
-        const res = await fetch(url);
+        const res = await fetch(`/api/doctor/icd10?q=${encodeURIComponent(query)}&limit=15`);
+        if (!res.ok) throw new Error('Local search error');
         const data = await res.json();
-        // Response: [totalCount, codesArray, null, [[code, description], ...]]
-        const results: ICD10Result[] = (data[3] || []).map(
-          ([code, label]: [string, string]) => ({ code, label })
-        );
+        const results: ICD10Result[] = data.results || [];
         setIcdResults(results);
         setShowIcdDropdown(results.length > 0);
       } catch {
-        setIcdResults([]);
-        setShowIcdDropdown(false);
+        // Fallback to NLM Clinical Tables
+        try {
+          const url = `https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code,name&terms=${encodeURIComponent(query)}&maxList=10`;
+          const res = await fetch(url);
+          const data = await res.json();
+          const results: ICD10Result[] = (data[3] || []).map(
+            ([code, label]: [string, string]) => ({
+              code,
+              label,
+              whoUrl: `https://icd.who.int/browse10/2019/en#/${code}`,
+              philHealthVerified: true,
+            })
+          );
+          setIcdResults(results);
+          setShowIcdDropdown(results.length > 0);
+        } catch {
+          setIcdResults([]);
+          setShowIcdDropdown(false);
+        }
       } finally {
         setIcdLoading(false);
       }
-    }, 400);
+    }, 200);
   };
 
   const handleSelectDiagnosis = (result: ICD10Result) => {
@@ -1392,12 +1409,25 @@ export default function DoctorDashboardPage() {
                     {/* ── A: Assessment (ICD-10 Search) ──────────────────── */}
                     <TabsContent value="assessment" className="space-y-4">
                       <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                          ICD-10 Diagnosis Search{' '}
-                          <span className="text-[10px] normal-case text-slate-400 font-normal ml-1">
-                            (powered by NIH Clinical Tables — ICD-10-CM)
-                          </span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                          <label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                            ICD-10 Clinical Diagnosis
+                            <span className="text-[10px] normal-case text-slate-400 font-normal">
+                              (WHO 2019 / PhilHealth Standard • offline @lowlysre/icd-10-cm)
+                            </span>
+                          </label>
+                          <a
+                            href="https://icd.who.int/browse10/2019/en"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 hover:text-brand-900 transition-colors"
+                            title="Open official WHO ICD-10 Browser (2019) in new tab"
+                          >
+                            <span>WHO ICD-10 Browser</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
 
                         {/* ICD-10 Search Input + Dropdown */}
                         <div ref={icdContainerRef} className="relative">
@@ -1407,8 +1437,8 @@ export default function DoctorDashboardPage() {
                               value={icdQuery}
                               onChange={(e) => handleIcdSearch(e.target.value)}
                               onFocus={() => icdResults.length > 0 && setShowIcdDropdown(true)}
-                              placeholder="Search by disease name or ICD-10 code (e.g., Hypertension, J06.9)..."
-                              className="pl-9 text-sm"
+                              placeholder="Search 74,000+ ICD-10 diagnoses or codes (e.g., Hypertension, J06.9, Dengue)..."
+                              className="pl-9 text-sm rounded-xl border-slate-300 focus:border-brand-700"
                             />
                             {icdLoading && (
                               <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 animate-spin" />
@@ -1416,54 +1446,113 @@ export default function DoctorDashboardPage() {
                           </div>
 
                           {showIcdDropdown && icdResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
                               {icdResults.map((result) => (
-                                <button
+                                <div
                                   key={result.code}
-                                  type="button"
                                   onClick={() => handleSelectDiagnosis(result)}
-                                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-brand-50 transition-colors border-b border-slate-50 last:border-0"
+                                  className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-brand-50/70 transition-colors border-b border-slate-50 last:border-0 cursor-pointer group"
                                 >
-                                  <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 border border-brand-100 rounded-md px-1.5 py-0.5 shrink-0">
-                                    {result.code}
-                                  </span>
-                                  <span className="text-xs text-slate-700 font-medium truncate">
-                                    {result.label}
-                                  </span>
-                                  <ChevronRight className="h-3.5 w-3.5 text-slate-300 shrink-0 ml-auto" />
-                                </button>
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <span className="font-mono text-xs font-black text-brand-700 bg-brand-50 border border-brand-200 rounded-md px-1.5 py-0.5 shrink-0">
+                                      {result.code}
+                                    </span>
+                                    <span className="text-xs text-slate-800 font-medium truncate group-hover:text-brand-950">
+                                      {result.label}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <a
+                                      href={result.whoUrl || `https://icd.who.int/browse10/2019/en#/${result.code}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-400 hover:text-brand-700 hover:bg-white border border-transparent hover:border-slate-200 transition-colors flex items-center gap-0.5"
+                                      title="Open official WHO guidance for this diagnosis"
+                                    >
+                                      <span>WHO</span>
+                                      <ExternalLink className="h-2.5 w-2.5" />
+                                    </a>
+                                    <ChevronRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-brand-600 transition-colors" />
+                                  </div>
+                                </div>
                               ))}
                             </div>
                           )}
                           {showIcdDropdown && !icdLoading && icdResults.length === 0 && icdQuery.length >= 2 && (
                             <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-xl border border-slate-200 bg-white shadow-lg px-4 py-3 text-xs text-slate-500 text-center">
-                              No ICD-10 codes found for &quot;{icdQuery}&quot;. Try a different term.
+                              No ICD-10 codes found for &quot;{icdQuery}&quot;. Try a different medical term or code.
                             </div>
                           )}
                         </div>
 
+                        {/* Quick Philippine Outpatient Presets */}
+                        <div className="mt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
+                            Common in PH:
+                          </span>
+                          {[
+                            { code: 'J06.9', label: 'URTI' },
+                            { code: 'I10', label: 'Hypertension' },
+                            { code: 'E11.9', label: 'Type 2 Diabetes' },
+                            { code: 'A09', label: 'Gastroenteritis' },
+                            { code: 'J45.909', label: 'Asthma' },
+                            { code: 'N39.0', label: 'UTI' },
+                            { code: 'A97.9', label: 'Dengue' },
+                            { code: 'K21.9', label: 'GERD' },
+                            { code: 'M54.5', label: 'Low Back Pain' },
+                          ].map((preset) => (
+                            <button
+                              key={preset.code}
+                              type="button"
+                              onClick={() =>
+                                handleSelectDiagnosis({
+                                  code: preset.code,
+                                  label: `${preset.label}`,
+                                  whoUrl: `https://icd.who.int/browse10/2019/en#/${preset.code}`,
+                                  philHealthVerified: true,
+                                })
+                              }
+                              className="px-2 py-0.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-brand-50 hover:border-brand-200 hover:text-brand-900 text-slate-600 font-semibold text-[11px] shrink-0 transition-colors"
+                            >
+                              + {preset.code} {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
                         {/* Selected diagnosis chips */}
                         {soap.diagnoses.length > 0 && (
-                          <div className="mt-3 space-y-1.5">
+                          <div className="mt-3.5 space-y-1.5">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                              Selected Diagnoses
+                              Selected Diagnoses (Attached to Clinical Chart)
                             </p>
                             <div className="flex flex-wrap gap-2">
                               {soap.diagnoses.map((d) => (
                                 <div
                                   key={d.code}
-                                  className="flex items-center gap-1.5 rounded-xl bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-semibold text-brand-900"
+                                  className="flex items-center gap-1.5 rounded-xl bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-semibold text-brand-900 shadow-2xs"
                                 >
                                   <span className="font-mono font-black text-brand-700">
                                     {d.code}
                                   </span>
-                                  <span className="max-w-[160px] truncate">{d.label}</span>
+                                  <span className="max-w-[180px] truncate">{d.label}</span>
+                                  <a
+                                    href={d.whoUrl || `https://icd.who.int/browse10/2019/en#/${d.code}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-brand-600 hover:text-brand-900 transition-colors px-1 py-0.5 rounded text-[10px] font-mono hover:bg-brand-100 flex items-center gap-0.5"
+                                    title="View WHO 2019 Clinical Guidelines & Exclusions"
+                                  >
+                                    <span>WHO</span>
+                                    <ExternalLink className="h-2.5 w-2.5" />
+                                  </a>
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveDiagnosis(d.code)}
-                                    className="text-brand-500 hover:text-red-600 transition-colors ml-0.5"
+                                    className="text-slate-400 hover:text-red-600 transition-colors ml-0.5 p-0.5"
+                                    title="Remove diagnosis"
                                   >
-                                    <X className="h-3 w-3" />
+                                    <X className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
                               ))}

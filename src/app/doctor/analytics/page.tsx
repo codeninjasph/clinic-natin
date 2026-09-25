@@ -197,11 +197,10 @@ export default function DoctorAnalyticsPage() {
               <button
                 key={t.id}
                 onClick={() => setTimeRange(t.id as typeof timeRange)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
-                  timeRange === t.id
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${timeRange === t.id
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 {t.label}
               </button>
@@ -307,15 +306,9 @@ export default function DoctorAnalyticsPage() {
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div className="p-3 rounded-xl border border-emerald-100 bg-emerald-50/40 text-xs">
                   <p className="font-bold text-emerald-900">Online Slot Retention</p>
-                  <p className="text-[11px] text-emerald-700 mt-0.5">
-                    ₱50 GCash deposit ensures higher patient commitment and near-zero no-shows.
-                  </p>
                 </div>
                 <div className="p-3 rounded-xl border border-blue-100 bg-blue-50/40 text-xs">
                   <p className="font-bold text-blue-900">Walk-In Balancing</p>
-                  <p className="text-[11px] text-blue-700 mt-0.5">
-                    Secretary registers on arrival; interleaved queue prevents walk-in crowding.
-                  </p>
                 </div>
               </div>
             </CardContent>
