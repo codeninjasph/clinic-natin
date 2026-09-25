@@ -40,6 +40,13 @@ import {
   FileCode,
   Info,
   CheckCheck,
+  Menu,
+  QrCode,
+  Wifi,
+  WifiOff,
+  Bell,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import {
   Accordion,
@@ -91,6 +98,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { ClinicNatinLogo } from '@/components/brand/clinic-natin-logo';
+import { hospitalChime } from '@/lib/audio/chime';
 
 // ---------------------------------------------------------------------------
 // Doctor Data Types & Sample Records (Nationwide Scope - CDO Launch Hub)
@@ -365,6 +373,9 @@ const CITY_OPTIONS = [
 ];
 
 export default function HomePage() {
+  // Mobile navigation drawer state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('All Specializations');
@@ -374,6 +385,10 @@ export default function HomePage() {
 
   // Hero Simulator Perspective State
   const [heroPerspective, setHeroPerspective] = useState<'patient' | 'doctor' | 'tv'>('patient');
+
+  // Simulated Mobile Phone State
+  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(false);
+  const [chimePlayed, setChimePlayed] = useState<boolean>(false);
 
   // Modal State for Queue Booking Demonstration
   const [selectedDoctorForQueue, setSelectedDoctorForQueue] = useState<DoctorListing | null>(null);
@@ -409,6 +424,13 @@ export default function HomePage() {
     });
   }, [searchQuery, selectedSpecialty, selectedCity, onlyHmo, onlyLiveQueue]);
 
+  // Handle audio chime test
+  const handlePlayChime = () => {
+    hospitalChime.playDingDong();
+    setChimePlayed(true);
+    setTimeout(() => setChimePlayed(false), 2000);
+  };
+
   // Handle queue modal submit
   const handleJoinQueueSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -428,7 +450,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFCFB] text-slate-900 selection:bg-brand-200 selection:text-slate-900 font-sans">
+    <div className="min-h-screen pb-20 lg:pb-0 bg-[#FAFCFB] text-slate-900 selection:bg-brand-200 selection:text-slate-900 font-sans">
       {/* ----------------------------------------------------------------- */}
       {/* TOP NOTIFICATION BAR - NATIONWIDE EXPANSION & CDO LAUNCH HUB */}
       {/* ----------------------------------------------------------------- */}
@@ -455,7 +477,7 @@ export default function HomePage() {
             </Badge>
           </div>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           <nav className="hidden xl:flex items-center gap-8 text-sm font-semibold text-slate-600">
             <a href="#what-is-clinic-natin" className="transition hover:text-brand-700">
               What is Clinic Natin
@@ -465,6 +487,12 @@ export default function HomePage() {
             </a>
             <a href="#doctor-directory" className="transition hover:text-brand-700">
               Find Doctors & Clinics
+            </a>
+            <a href="#mobile-experience" className="transition hover:text-brand-700 flex items-center gap-1.5">
+              <span>Mobile App</span>
+              <span className="rounded-full bg-brand-100 text-brand-800 text-[10px] font-bold px-1.5 py-0.2">
+                PWA
+              </span>
             </a>
             <a href="#clinical-engine" className="transition hover:text-brand-700 flex items-center gap-1.5">
               <span>WHO ICD-10 & e-Rx</span>
@@ -480,39 +508,139 @@ export default function HomePage() {
             </a>
           </nav>
 
-          {/* Action CTAs */}
+          {/* Action CTAs & Mobile Hamburger Button */}
           <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href="/my-queue"
               className="inline-flex items-center gap-1.5 rounded-xl border border-brand-300 bg-brand-50 px-3 py-2 text-xs sm:text-sm font-bold text-brand-800 transition hover:bg-brand-100 hover:border-brand-600 active:scale-95"
             >
               <Ticket className="h-4 w-4 text-brand-700" />
-              <span>Track Live Turn</span>
+              <span>Track Turn</span>
             </Link>
 
             <Link
               href="/signup"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-xs sm:text-sm font-bold text-white shadow-sm transition hover:bg-brand-800 active:scale-95"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-brand-700 px-3.5 py-2 text-xs sm:text-sm font-bold text-white shadow-sm transition hover:bg-brand-800 active:scale-95"
             >
               <UserPlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Patient Sign Up</span>
-              <span className="sm:hidden">Sign Up</span>
+              <span>Patient Sign Up</span>
             </Link>
 
             <Link
               href="/login"
-              className="hidden sm:inline-flex rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-95"
+              className="hidden md:inline-flex rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-95"
             >
               Staff Portal
             </Link>
+
+            {/* Mobile Menu Hamburger Toggle */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="xl:hidden h-10 w-10 rounded-xl text-slate-700 hover:bg-slate-100"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle mobile menu"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer / Slide-Down Menu */}
+        {mobileMenuOpen && (
+          <div className="xl:hidden border-t border-slate-200/90 bg-white/98 backdrop-blur-xl px-4 py-6 shadow-xl animate-in slide-in-from-top-2 duration-200">
+            <div className="space-y-4">
+              <div className="flex flex-col space-y-3 font-semibold text-sm text-slate-700">
+                <a
+                  href="#what-is-clinic-natin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  What is Clinic Natin
+                </a>
+                <a
+                  href="#how-it-works"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  How It Works
+                </a>
+                <a
+                  href="#doctor-directory"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  Find Doctors & Clinics
+                </a>
+                <a
+                  href="#mobile-experience"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition flex items-center justify-between"
+                >
+                  <span>Mobile App (PWA)</span>
+                  <Badge variant="brand" className="text-[10px]">Instant</Badge>
+                </a>
+                <a
+                  href="#clinical-engine"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  WHO ICD-10 & e-Rx
+                </a>
+                <a
+                  href="#benefits"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  Why Clinic Natin
+                </a>
+                <a
+                  href="#faq"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-2 rounded-xl hover:bg-brand-50 hover:text-brand-700 transition"
+                >
+                  FAQ
+                </a>
+              </div>
+
+              <Separator className="bg-slate-100" />
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Link
+                  href="/mobile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50/70 p-3 text-xs font-bold text-brand-800"
+                >
+                  <Smartphone className="h-4 w-4 text-brand-700" />
+                  <span>Mobile Simulator</span>
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-700 p-3 text-xs font-bold text-white shadow-sm"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>Sign Up (Free)</span>
+                </Link>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700"
+                >
+                  <Building2 className="h-4 w-4 text-slate-400" />
+                  <span>Doctor & Secretary Portal</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 1. HERO SECTION - EXPANSIVE WIDESCREEN HERO WITH SIMULATOR */}
+      {/* 1. HERO SECTION - EXPANSIVE WIDESCREEN HERO WITH PHONE SIMULATOR */}
       {/* ----------------------------------------------------------------- */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-brand-50/70 via-[#F7FCF9] to-[#FAFCFB] pt-10 pb-16 lg:pt-16 lg:pb-24 border-b border-brand-100/60">
+      <section className="relative overflow-hidden bg-gradient-to-b from-brand-50/70 via-[#F7FCF9] to-[#FAFCFB] pt-8 pb-16 lg:pt-16 lg:pb-24 border-b border-brand-100/60">
         {/* Ambient Glows */}
         <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-96 w-[900px] rounded-full bg-brand-100/50 blur-3xl" />
         <div className="pointer-events-none absolute top-1/4 -right-20 h-80 w-80 rounded-full bg-emerald-200/30 blur-2xl" />
@@ -530,7 +658,7 @@ export default function HomePage() {
 
               {/* Main Headline */}
               <h1 className="text-3xl sm:text-5xl xl:text-6xl font-black tracking-tight text-slate-900 leading-[1.12]">
-                End the 5:00 AM Clinic Lines.{' '}
+                End the 7:00 AM Clinic Lines.{' '}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-700 via-brand-800 to-emerald-600 block sm:inline">
                   Healthcare Without Waiting Room Chaos.
                 </span>
@@ -538,7 +666,7 @@ export default function HomePage() {
 
               {/* Comprehensive Definition */}
               <p className="mx-auto lg:mx-0 max-w-3xl text-base sm:text-lg text-slate-600 leading-relaxed font-normal">
-                <strong>Clinic Natin</strong> is the unified outpatient operating system for Philippine medical practices, hospitals, and clinics. 
+                <strong>Clinic Natin</strong> is the unified outpatient operating system for Philippine medical practices, hospitals, and clinics.
                 Synchronizing real-time mobile queue telemetry, 1-minute digital health passports, WHO ICD-10 clinical diagnosis autocomplete, and BIR statutory discount accounting — so patients never wait hours in congested corridors again.
               </p>
 
@@ -562,11 +690,11 @@ export default function HomePage() {
                 </Link>
 
                 <Link
-                  href="/signup"
+                  href="/mobile"
                   className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 px-5 py-3.5 text-sm sm:text-base font-bold text-white shadow-sm transition-all duration-200"
                 >
-                  <UserPlus className="h-4 w-4" />
-                  <span>Patient Sign Up (Free)</span>
+                  <Smartphone className="h-4 w-4" />
+                  <span>Mobile App Preview</span>
                 </Link>
               </div>
 
@@ -591,13 +719,14 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right Column: Interactive Real-Time Architecture Telemetry Simulator */}
+            {/* Right Column: Interactive Real-Time Architecture Telemetry Simulator WITH MOBILE PHONE FRAME */}
             <div className="lg:col-span-5 xl:col-span-5">
-              <div className="relative mx-auto max-w-lg lg:max-w-none">
+              <div className="relative mx-auto max-w-md lg:max-w-none">
                 {/* Decorative border backdrop glow */}
-                <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-brand-300 via-emerald-400 to-brand-600 opacity-40 blur-xl" />
+                <div className="absolute -inset-2 rounded-3xl bg-gradient-to-r from-brand-300 via-emerald-400 to-brand-600 opacity-30 blur-2xl" />
 
-                <Card className="relative rounded-3xl border border-white/80 bg-white/95 p-5 sm:p-7 shadow-2xl backdrop-blur-xl">
+                {/* Outer Card Controller */}
+                <div className="relative rounded-3xl border border-white/80 bg-white/95 p-4 sm:p-6 shadow-2xl backdrop-blur-xl">
                   {/* Perspective Selector Tabs */}
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                     <div className="flex items-center gap-2">
@@ -606,7 +735,7 @@ export default function HomePage() {
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                       </span>
                       <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">
-                        Live System Simulation
+                        Interactive Live Preview
                       </span>
                     </div>
 
@@ -615,13 +744,14 @@ export default function HomePage() {
                       <button
                         type="button"
                         onClick={() => setHeroPerspective('patient')}
-                        className={`px-2.5 py-1 rounded-lg transition ${
+                        className={`px-2.5 py-1 rounded-lg transition flex items-center gap-1 ${
                           heroPerspective === 'patient'
                             ? 'bg-white text-brand-700 shadow-2xs font-bold'
                             : 'hover:text-slate-900'
                         }`}
                       >
-                        Patient
+                        <Smartphone className="h-3 w-3" />
+                        <span>Mobile App</span>
                       </button>
                       <button
                         type="button"
@@ -648,82 +778,171 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* 1. Patient Perspective */}
+                  {/* 1. PATIENT MOBILE VIEW UI (REALISTIC SMARTPHONE FRAME) */}
                   {heroPerspective === 'patient' && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-12 w-12 rounded-2xl bg-emerald-600 text-white font-bold shadow-xs">
-                            <AvatarFallback className="bg-emerald-600 text-white font-bold">MR</AvatarFallback>
-                          </Avatar>
+                    <div className="relative mx-auto w-full max-w-[340px] sm:max-w-[360px] rounded-[44px] border-[9px] border-slate-900 bg-white text-slate-900 shadow-2xl overflow-hidden ring-1 ring-slate-800">
+                      {/* iOS Dynamic Island & Status Bar */}
+                      <div className="bg-[#568259] text-white pt-2.5 px-5 pb-2 select-none relative z-20">
+                        {/* Dynamic Island Pill */}
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 bg-black rounded-full flex items-center justify-between px-2 text-[9px] text-white shadow-inner">
+                          <div className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="font-semibold text-emerald-300">#14</span>
+                          </div>
+                          <span className="text-[9px] text-slate-400">➔ #18</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-[11px] font-semibold">
+                          <span>9:41</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] opacity-80">5G</span>
+                            {isOfflineMode ? (
+                              <WifiOff className="w-3 h-3 text-amber-300" />
+                            ) : (
+                              <Wifi className="w-3 h-3 text-emerald-200" />
+                            )}
+                            <div className="w-4 h-2 border border-white/80 rounded-2xs p-0.5 flex items-center">
+                              <div className="w-full h-full bg-white rounded-3xs" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mobile App Header */}
+                      <div className="bg-[#568259] text-white px-4 pb-3 pt-1 flex items-center justify-between shadow-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center backdrop-blur">
+                            <Stethoscope className="w-3.5 h-3.5 text-emerald-200" />
+                          </div>
                           <div>
-                            <h3 className="font-bold text-slate-900 text-base">
-                              Dr. Maria Elena Reyes, MD, FPPS
-                            </h3>
-                            <span className="inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-800">
-                              Pediatrics Specialist &bull; Maria Reyna XU Hospital
+                            <h2 className="font-extrabold text-sm tracking-tight leading-none">Clinic Natin</h2>
+                            <p className="text-[9px] text-emerald-100/80 font-medium">Philippine Outpatient OS</p>
+                          </div>
+                        </div>
+
+                        {/* Offline / Online Sync Badge Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => setIsOfflineMode(!isOfflineMode)}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 transition ${
+                            isOfflineMode
+                              ? 'bg-amber-400 text-amber-950 shadow-xs'
+                              : 'bg-emerald-800/70 text-emerald-200 border border-emerald-600/40'
+                          }`}
+                        >
+                          {isOfflineMode ? (
+                            <>
+                              <WifiOff className="w-2.5 h-2.5" />
+                              <span>Offline Mode</span>
+                            </>
+                          ) : (
+                            <>
+                              <Wifi className="w-2.5 h-2.5 text-emerald-300" />
+                              <span>Live Sync</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Phone Screen Scrollable Content */}
+                      <div className="p-3.5 space-y-3 bg-[#F8FBF9] text-left text-xs max-h-[440px] overflow-y-auto">
+                        {/* Greeting & Doctor */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] text-slate-500 font-medium">Mabuhay, Kenneth 👋</p>
+                            <h3 className="text-sm font-black text-slate-900">Dr. Maria Elena Reyes</h3>
+                            <span className="text-[10px] text-slate-500">Maria Reyna XU Hospital &bull; Rm 304</span>
+                          </div>
+                          <Badge variant="success" className="text-[10px] py-0 px-2">
+                            Live
+                          </Badge>
+                        </div>
+
+                        {/* Serving Telemetry Card */}
+                        <div className="rounded-2xl bg-gradient-to-b from-brand-50 to-emerald-50/70 border border-brand-200/80 p-3 text-center shadow-2xs">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            Now Calling Next
+                          </span>
+                          <div className="text-3xl font-black text-brand-700 tracking-tight my-0.5">
+                            #14
+                          </div>
+                          <p className="text-[10px] text-slate-600 flex items-center justify-center gap-1">
+                            <Clock className="h-3 w-3 text-brand-700" />
+                            <span>Average Door-to-Doctor: <strong>11 mins</strong></span>
+                          </p>
+                        </div>
+
+                        {/* Booking Token & Progress */}
+                        <div className="rounded-xl bg-white p-3 border border-slate-200 space-y-2 shadow-2xs">
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Your Token:</span>
+                            <span className="font-extrabold text-slate-900">#18 (4 Ahead of You)</span>
+                          </div>
+                          <div className="flex justify-between font-medium">
+                            <span className="text-slate-500">Safe-Zone Departure:</span>
+                            <span className="font-bold text-emerald-700">Leave home at 10:45 AM</span>
+                          </div>
+                          <div className="space-y-1 pt-1">
+                            <div className="flex justify-between text-[10px] text-slate-500">
+                              <span>Queue Progress</span>
+                              <span className="font-bold">78%</span>
+                            </div>
+                            <Progress value={78} className="h-1.5 bg-slate-100" indicatorClassName="bg-brand-700" />
+                          </div>
+                        </div>
+
+                        {/* Interactive Hospital Chime Audio Test */}
+                        <div className="flex items-center justify-between rounded-xl bg-brand-50/90 p-2.5 border border-brand-200">
+                          <div className="flex items-center gap-2">
+                            <Bell className="h-3.5 w-3.5 text-brand-700" />
+                            <span className="text-[11px] font-medium text-slate-700">
+                              {chimePlayed ? 'Ding-Dong Playing!' : 'Turn Chime Audio Alert'}
                             </span>
                           </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="brand"
+                            onClick={handlePlayChime}
+                            className="h-7 text-[10px] font-bold px-2 rounded-lg"
+                          >
+                            <Volume2 className="h-3 w-3 mr-1" />
+                            Test Chime
+                          </Button>
                         </div>
-                        <Badge variant="success" className="text-[11px] py-1">
-                          Queue Live
-                        </Badge>
-                      </div>
 
-                      {/* Serving Telemetry Box */}
-                      <div className="rounded-2xl bg-gradient-to-b from-brand-50 to-emerald-50/50 border border-brand-100 p-4 text-center">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Now Calling Next
-                        </span>
-                        <div className="text-4xl font-black text-brand-700 tracking-tight my-1">
-                          #14
-                        </div>
-                        <p className="text-xs text-slate-600 flex items-center justify-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 text-brand-700" />
-                          <span>Average Door-to-Doctor Time: <strong>11 mins</strong></span>
-                        </p>
-                      </div>
-
-                      {/* Patient Status Breakdown */}
-                      <div className="rounded-xl bg-slate-50 p-3.5 text-xs border border-slate-100 space-y-2">
-                        <div className="flex justify-between font-medium">
-                          <span className="text-slate-500">Your Booking Token:</span>
-                          <span className="font-bold text-slate-900">#18 (4 Patients Ahead)</span>
-                        </div>
-                        <div className="flex justify-between font-medium">
-                          <span className="text-slate-500">Safe-Zone Departure:</span>
-                          <span className="font-bold text-emerald-700">Leave home at 10:45 AM</span>
-                        </div>
-                        <div className="space-y-1 pt-1">
-                          <div className="flex justify-between text-[11px] text-slate-500">
-                            <span>Queue Progress</span>
-                            <span>78% complete</span>
+                        {/* Digital Health Passport Status */}
+                        <div className="flex items-center justify-between rounded-xl bg-white p-2.5 border border-slate-200">
+                          <div className="flex items-center gap-1.5">
+                            <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="text-[11px] font-medium text-slate-800">
+                              Digital Health Passport
+                            </span>
                           </div>
-                          <Progress value={78} className="h-2 bg-slate-200" indicatorClassName="bg-brand-700" />
+                          <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-[9px] bg-emerald-50">
+                            Synced &bull; O+
+                          </Badge>
                         </div>
                       </div>
 
-                      {/* Pre-Consultation Digital Health Passport Banner */}
-                      <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3 border border-emerald-200 text-xs">
-                        <div className="flex items-center gap-2">
-                          <CheckCheck className="h-4 w-4 text-emerald-600" />
-                          <span className="font-medium text-emerald-900">
-                            <strong>Health Passport:</strong> Pre-consultation chart synced
-                          </span>
+                      {/* Smartphone Bottom Nav Bar */}
+                      <div className="bg-white border-t border-slate-100 px-4 py-2 flex items-center justify-around text-slate-400 select-none">
+                        <div className="flex flex-col items-center gap-0.5 text-brand-700 font-bold">
+                          <Ticket className="w-3.5 h-3.5" />
+                          <span className="text-[9px]">Queue</span>
                         </div>
-                        <Badge variant="outline" className="border-emerald-300 text-emerald-700 text-[10px] bg-white">
-                          Verified
-                        </Badge>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
-                        <span className="flex items-center gap-1 text-slate-600">
-                          <Smartphone className="h-3.5 w-3.5 text-brand-700" />
-                          SMS alert dispatched at #16
-                        </span>
-                        <Link href="/my-queue" className="font-bold text-brand-700 hover:underline flex items-center gap-0.5">
-                          Open Live View <ArrowUpRight className="h-3 w-3" />
-                        </Link>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <Search className="w-3.5 h-3.5" />
+                          <span className="text-[9px]">Doctors</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span className="text-[9px]">Passport</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <Activity className="w-3.5 h-3.5" />
+                          <span className="text-[9px]">History</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -860,7 +1079,19 @@ export default function HomePage() {
                       </div>
                     </div>
                   )}
-                </Card>
+
+                  {/* Simulator Footer Link */}
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Interactive Preview:</span>
+                    <Link
+                      href="/mobile"
+                      className="font-bold text-brand-700 hover:underline flex items-center gap-1"
+                    >
+                      <span>Open Full Mobile Simulator</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -883,7 +1114,7 @@ export default function HomePage() {
               The Modern Outpatient Operating System Built for the Philippines
             </h2>
             <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-              In traditional Philippine clinics, patients wake up at 5:00 AM to fight over handwritten paper numbers, sitting 4 to 6 hours in congested hospital hallways. 
+              In traditional Philippine clinics, patients wake up at 7:00 AM to fight over handwritten paper numbers, sitting 4 to 6 hours in congested hospital hallways.
               <strong>Clinic Natin</strong> replaces that chaotic manual cycle with an integrated digital ecosystem connecting Patients, Doctors, and Clinic Secretaries.
             </p>
           </div>
@@ -982,7 +1213,148 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 3. HOW IT WORKS - INTERACTIVE ROLE-BASED WORKFLOWS (SHADCN TABS) */}
+      {/* 3. DEDICATED MOBILE-FIRST UI SECTION - ZERO APP STORE DOWNLOAD */}
+      {/* ----------------------------------------------------------------- */}
+      <section id="mobile-experience" className="py-20 bg-gradient-to-b from-[#FAFCFB] via-emerald-50/30 to-white border-b border-slate-100">
+        <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+
+            {/* Left Column: Mobile Value Props */}
+            <div className="lg:col-span-6 space-y-6 text-center lg:text-left">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-emerald-800">
+                <Smartphone className="h-3.5 w-3.5" />
+                Zero-Friction Mobile Web Experience
+              </span>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+                Designed for Smartphones. No Heavy 100MB App Install Required.
+              </h2>
+              <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
+                92% of Filipino patients consult without wanting to download a bulky app from the Google Play Store or App Store. 
+                Clinic Natin is a lightning-fast <strong>Progressive Web App (PWA)</strong> that opens instantly from an SMS dispatch or QR code scan.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="rounded-2xl bg-white p-4 border border-slate-200 shadow-2xs text-left">
+                  <div className="h-9 w-9 rounded-xl bg-brand-100 text-brand-700 flex items-center justify-center font-bold mb-2">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm">Instant Web Access</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Opens in Safari, Chrome, or inside Messenger &amp; Viber in under 1 second without account creation hurdles.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white p-4 border border-slate-200 shadow-2xs text-left">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold mb-2">
+                    <WifiOff className="h-5 w-5" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm">Basement Offline Mode</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Your QR Health Passport and token number remain accessible even in hospital basements with zero cellular data.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white p-4 border border-slate-200 shadow-2xs text-left">
+                  <div className="h-9 w-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold mb-2">
+                    <Volume2 className="h-5 w-5" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm">Hospital Chime Audio</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Receives a resonant medical Ding-Dong paging chime when your turn arrives so you never miss a consultation call.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white p-4 border border-slate-200 shadow-2xs text-left">
+                  <div className="h-9 w-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold mb-2">
+                    <QrCode className="h-5 w-5" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-sm">QRPH &amp; GCash Ready</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Scan with GCash, Maya, BDO, BPI, or any InstaPay app for a seamless ₱50 reservation deposit.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-wrap gap-3 justify-center lg:justify-start">
+                <Link
+                  href="/mobile"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-brand-700 hover:bg-brand-800 px-6 py-3 text-sm font-bold text-white shadow-md transition"
+                >
+                  <Smartphone className="h-4 w-4" />
+                  <span>Launch Mobile App Simulator</span>
+                  <ArrowRight className="h-4 w-4 opacity-80" />
+                </Link>
+                <Link
+                  href="/my-queue"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 px-5 py-3 text-sm font-bold text-slate-700 transition"
+                >
+                  <Ticket className="h-4 w-4 text-brand-700" />
+                  <span>Test Live Turn Tracker</span>
+                </Link>
+              </div>
+            </div>
+
+            {/* Right Column: Visual Showcase of Mobile Lock Screen Widget & PWA */}
+            <div className="lg:col-span-6 flex justify-center">
+              <div className="w-full max-w-md space-y-4">
+                {/* iOS Live Activity Lock Screen Card */}
+                <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 text-white shadow-2xl space-y-3">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-lg bg-brand-700 flex items-center justify-center text-white font-black text-xs">
+                        CN
+                      </div>
+                      <span className="font-bold text-white">Clinic Natin &bull; Live Activity</span>
+                    </div>
+                    <span>now</span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div>
+                      <div className="text-xs text-slate-400">Maria Reyna XU Hospital</div>
+                      <div className="text-lg font-black text-white">Dr. Reyes &bull; Room 304</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase font-bold text-emerald-400">Now Serving</div>
+                      <div className="text-2xl font-black text-emerald-400 font-mono">#14</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-slate-900 p-3 flex items-center justify-between border border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-brand-400 animate-ping" />
+                      <span className="text-xs text-slate-300 font-semibold">Your Token: <strong>#18</strong></span>
+                    </div>
+                    <Badge variant="warning" className="text-[10px] font-bold">
+                      Leave home in 15 mins
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* SMS Notification Banner Preview */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-md flex items-start gap-3 text-xs text-slate-700">
+                  <div className="h-9 w-9 rounded-xl bg-brand-100 flex items-center justify-center text-brand-700 shrink-0">
+                    <Smartphone className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900">ClinicNatin SMS Dispatch</span>
+                      <span className="text-[10px] text-slate-400">Just now</span>
+                    </div>
+                    <p className="text-slate-600 mt-1 leading-relaxed">
+                      &quot;Mabuhay Kenneth! Dr. Reyes is now serving #16. You are 2 numbers away. Please proceed to Room 304, Medical Arts Bldg.&quot;
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* 4. HOW IT WORKS - INTERACTIVE ROLE-BASED WORKFLOWS (SHADCN TABS) */}
       {/* ----------------------------------------------------------------- */}
       <section id="how-it-works" className="py-20 bg-brand-50/30 border-b border-slate-100">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1229,7 +1601,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 4. INTERACTIVE DOCTOR & CLINIC DIRECTORY (WIDESCREEN RESPONSIVE) */}
+      {/* 5. INTERACTIVE DOCTOR & CLINIC DIRECTORY (WIDESCREEN RESPONSIVE) */}
       {/* ----------------------------------------------------------------- */}
       <section id="doctor-directory" className="py-20 bg-white border-b border-slate-100">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1549,7 +1921,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 5. CLINICAL ENGINE & COMPLIANCE BAR (WHO ICD-10 & BIR RR 7-2010) */}
+      {/* 6. CLINICAL ENGINE & COMPLIANCE BAR (WHO ICD-10 & BIR RR 7-2010) */}
       {/* ----------------------------------------------------------------- */}
       <section id="clinical-engine" className="py-16 bg-slate-900 text-white">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1563,7 +1935,7 @@ export default function HomePage() {
                 Engineered for Philippine Medical Practice Compliance
               </h2>
               <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                Clinic Natin is built from the ground up to respect Philippine clinical, tax, and privacy regulations. 
+                Clinic Natin is built from the ground up to respect Philippine clinical, tax, and privacy regulations.
                 Doctors maintain complete autonomy while clinical staff gain automated tools for compliance.
               </p>
 
@@ -1629,7 +2001,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 6. COMPARISON MATRIX: TRADITIONAL CLINIC VS CLINIC NATIN */}
+      {/* 7. COMPARISON MATRIX: TRADITIONAL CLINIC VS CLINIC NATIN */}
       {/* ----------------------------------------------------------------- */}
       <section id="benefits" className="py-20 bg-white border-b border-slate-100">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1666,7 +2038,7 @@ export default function HomePage() {
                     Patient Arrival & Line Formation
                   </TableCell>
                   <TableCell className="text-slate-600 px-6 py-4">
-                    Patients queue outside hospital at 5:00 AM for handwritten numbers.
+                    Patients queue outside hospital at 7:00 AM for handwritten numbers.
                   </TableCell>
                   <TableCell className="text-emerald-900 font-semibold px-6 py-4 bg-emerald-50/20">
                     Book token from bed or quick frontdesk walk-in registration.
@@ -1739,7 +2111,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 7. CLINIC PARTNER CTA BANNER - EXPANSIVE */}
+      {/* 8. CLINIC PARTNER CTA BANNER - EXPANSIVE */}
       {/* ----------------------------------------------------------------- */}
       <section className="py-16 bg-gradient-to-r from-brand-800 via-brand-700 to-emerald-800 text-white">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1775,7 +2147,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 8. FREQUENTLY ASKED QUESTIONS (SHADCN ACCORDION) */}
+      {/* 9. FREQUENTLY ASKED QUESTIONS (SHADCN ACCORDION) */}
       {/* ----------------------------------------------------------------- */}
       <section id="faq" className="py-20 bg-[#FAFCFB] border-b border-slate-100">
         <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1798,7 +2170,7 @@ export default function HomePage() {
                   What exactly is Clinic Natin and how does it work?
                 </AccordionTrigger>
                 <AccordionContent>
-                  Clinic Natin is the modern outpatient operating system built for Philippine private practices, medical arts clinics, and hospitals. 
+                  Clinic Natin is the modern outpatient operating system built for Philippine private practices, medical arts clinics, and hospitals.
                   It connects patients, doctors, and clinic secretaries in real time: patients can book guaranteed consultation slots online or at the clinic counter, complete a 1-minute digital health passport, track their live queue position from home via web or SMS, and arrive only 15 minutes before their turn without waiting hours in crowded corridors.
                 </AccordionContent>
               </AccordionItem>
@@ -1862,7 +2234,7 @@ export default function HomePage() {
       </section>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 9. WIDESCREEN FOOTER */}
+      {/* 10. WIDESCREEN FOOTER */}
       {/* ----------------------------------------------------------------- */}
       <footer className="bg-white border-t border-slate-200 pt-16 pb-12">
         <div className="w-full max-w-[1720px] 2xl:max-w-[1840px] mx-auto px-4 sm:px-6 lg:px-10 xl:px-12">
@@ -1897,6 +2269,11 @@ export default function HomePage() {
                 <li>
                   <Link href="/my-queue" className="hover:text-brand-700 transition">
                     Live Turn Tracker
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/mobile" className="hover:text-brand-700 transition">
+                    Mobile App (PWA)
                   </Link>
                 </li>
                 <li>
@@ -1991,6 +2368,51 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
+
+      {/* ----------------------------------------------------------------- */}
+      {/* MOBILE STICKY BOTTOM QUICK ACTIONS BAR (LG:HIDDEN) */}
+      {/* ----------------------------------------------------------------- */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 px-3 py-2 flex items-center justify-around shadow-2xl">
+        <a
+          href="#doctor-directory"
+          className="flex flex-col items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-brand-700 active:scale-95"
+        >
+          <Search className="h-4 w-4" />
+          <span>Doctors</span>
+        </a>
+
+        <Link
+          href="/my-queue"
+          className="flex flex-col items-center gap-1 text-[11px] font-bold text-brand-700 active:scale-95"
+        >
+          <Ticket className="h-4 w-4 text-brand-700" />
+          <span>Track Turn</span>
+        </Link>
+
+        <Link
+          href="/mobile"
+          className="flex flex-col items-center gap-1 text-[11px] font-bold text-emerald-700 active:scale-95"
+        >
+          <Smartphone className="h-4 w-4 text-emerald-600" />
+          <span>Mobile UI</span>
+        </Link>
+
+        <Link
+          href="/signup"
+          className="flex flex-col items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-brand-700 active:scale-95"
+        >
+          <UserPlus className="h-4 w-4" />
+          <span>Sign Up</span>
+        </Link>
+
+        <Link
+          href="/login"
+          className="flex flex-col items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-brand-700 active:scale-95"
+        >
+          <Building2 className="h-4 w-4" />
+          <span>Staff</span>
+        </Link>
+      </div>
 
       {/* ----------------------------------------------------------------- */}
       {/* INTERACTIVE QUEUE RESERVATION DIALOG (SHADCN DIALOG) */}
